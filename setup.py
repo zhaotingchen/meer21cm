@@ -8,5 +8,5 @@ setuptools.setup(
     version="0.0.1",
     package_dir={"": "src"},
     packages=setuptools.find_packages(where="src"),
-    python_requires=">=3.4,<=3.7",
+    python_requires=">=3.4,<3.8",
 )
