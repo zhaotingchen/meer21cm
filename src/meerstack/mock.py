@@ -13,7 +13,7 @@ from hiimtool.basic_util import f_21,centre_to_edges
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
 from .stack import stack
-from .util import PCAclean,check_unit_equiv,get_wcs_coor
+from .util import PCAclean,check_unit_equiv,get_wcs_coor,plot_map,radec_to_indx
 
 lamb_21 = (constants.c/f_21*units.s).to('m')
 
@@ -47,12 +47,20 @@ def run_poisson_mock(
     x_unit=units.km/units.s,
     ignore_double_counting=False,
     return_indx_and_weight=False,
+    ra_range=(-np.inf,np.inf),
+    dec_range=(-400,400),
+    velocity_width_halfmax=50,
+    fix_ra_dec = None,
+    fix_z = None,
 ):
     def mock_stack(verbose):
         stack_result = stack(
-            himap_g,wproj,ra_g_mock,dec_g_mock,z_g_mock,nu,
+            himap_g,wproj,
+            ra_g_mock[inside_range],dec_g_mock[inside_range],
+            z_g_mock[inside_range],nu,
             W_map_in=W_HI,w_map_in=w_HI,no_vel=no_vel,
             sigma_beam_in=sigma_beam_ch,
+            velocity_width_halfmax = velocity_width_halfmax,
             stack_angular_num_nearby_pix=stack_angular_num_nearby_pix,
             ignore_double_counting=ignore_double_counting,
             x_unit=x_unit,
@@ -89,57 +97,102 @@ def run_poisson_mock(
     if base_map is None:
         base_map = np.zeros(ra.shape+nu.shape)
     rng = default_rng(seed=seed)
+    if W_HI[:,:,0].sum() == 0:
+        raise ValueError('all pixels are masked by W_HI')
+    indx_1,indx_2= np.where(W_HI[:,:,0].astype('bool'))
+    indx_1_g = np.array([])
+    indx_2_g = np.array([])
+    if ra_range is not None:
+        ra_range = np.array(ra_range)
+        ra_range[ra_range>180] -= 360
+    # randomly select positions until enough are unmasked
+    num_gal_in_range = 0
+    while num_gal_in_range<num_g:
+        indx_1_rand = rng.uniform(indx_1.min(),indx_1.max(),size=num_g)
+        indx_2_rand = rng.uniform(indx_2.min(),indx_2.max(),size=num_g)
+        coor_rand = wproj.pixel_to_world(indx_1_rand,indx_2_rand)
+        ra_rand = coor_rand.ra.degree
+        dec_rand = coor_rand.dec.degree
+        ra_rand[ra_rand>180] -= 360
+        sel_rand_indx = (
+            W_HI[:,:,0][
+            np.round(indx_1_rand).astype('int'),
+            np.round(indx_2_rand).astype('int')]
+        ).astype('bool')
+        indx_1_g = np.append(indx_1_g,indx_1_rand[sel_rand_indx])
+        indx_2_g = np.append(indx_2_g,indx_2_rand[sel_rand_indx])
+        inside_range = (
+            sel_rand_indx*
+            (ra_rand>ra_range[0])*(ra_rand<ra_range[1])*
+            (dec_rand>dec_range[0])*(dec_rand<dec_range[1])
+        )
+        num_gal_in_range += inside_range.sum()
+    # convert to angular coor
+    coor_g = wproj.pixel_to_world(indx_1_g,indx_2_g)
+    ra_g_mock = coor_g.ra.degree
+    dec_g_mock = coor_g.dec.degree
+    indx_1_g,indx_2_g = radec_to_indx(ra_g_mock,dec_g_mock,wproj)
+    #indx_1_g = np.round(indx_1_g).astype('int')
+    #indx_2_g = np.round(indx_2_g).astype('int')
+    ra_g_temp = ra_g_mock.copy()
+    ra_g_temp[ra_g_temp>180] -= 360
+    inside_range = (
+        (ra_g_temp>ra_range[0])*(ra_g_temp<ra_range[1])*
+        (dec_g_mock>dec_range[0])*(dec_g_mock<dec_range[1])
+    )
+    # only need num_g sources inside the range
+    # this if is for avoiding num_g exceeding the maximum index
+    if inside_range.mean()==1:
+        indx_stop = num_g
+    else:
+        indx_stop = np.where(inside_range)[0][num_g]
+    ra_g_mock = ra_g_mock[:indx_stop]
+    dec_g_mock = dec_g_mock[:indx_stop]
+    indx_1_g = indx_1_g[:indx_stop]
+    indx_2_g = indx_2_g[:indx_stop]
+    inside_range = inside_range[:indx_stop]
+    if fix_ra_dec is not None:
+        ra_g_mock[inside_range] = fix_ra_dec[0]
+        dec_g_mock[inside_range] = fix_ra_dec[1]
+        fix_indx = radec_to_indx(fix_ra_dec[0],fix_ra_dec[1],wproj)
+        indx_1_g[inside_range] = fix_indx[0]
+        indx_2_g[inside_range] = fix_indx[1]
+    # update num_g to include sources outside the range
+    num_g = ra_g_mock.size
     # samples from himf distribution
     himass_g = sample_from_dist(
         lambda x: himf(10**x,himf_pars[0],10**himf_pars[1],himf_pars[2]),
         mmin,mmax,size=num_g,seed=seed
     )
     rand_z = sample_from_dist(dndz,zmin,zmax,size=num_g,seed=seed)
+    if fix_z is not None:
+        rand_z[inside_range] = fix_z
     if verbose:
         plt.hist(rand_z,bins=20,density=True)
         plt.title('redshift distribution')
         plt.xlabel('z')
         plt.ylabel('dn/dz')
         plt.show()
-    if W_HI[:,:,0].sum() == 0:
-        raise ValueError('all pixels are masked by W_HI')
-    indx_1,indx_2= np.where(W_HI[:,:,0].astype('bool'))
-    indx_1_g = np.array([])
-    indx_2_g = np.array([])
-    # randomly select positions until enough are unmasked
-    while len(indx_1_g)<num_g:
-        indx_1_rand = rng.uniform(indx_1.min(),indx_1.max(),size=num_g)
-        indx_2_rand = rng.uniform(indx_2.min(),indx_2.max(),size=num_g)
-        sel_rand_indx = W_HI[:,:,0][
-            np.round(indx_1_rand).astype('int'),
-            np.round(indx_2_rand).astype('int')
-        ].astype('bool')
-        indx_1_g = np.append(indx_1_g,indx_1_rand[sel_rand_indx])
-        indx_2_g = np.append(indx_2_g,indx_2_rand[sel_rand_indx])
-    # convert to angular coor
-    coor_g = wproj.pixel_to_world(indx_1_g,indx_2_g)
-    ra_g_mock = coor_g.ra.degree
-    dec_g_mock = coor_g.dec.degree
-    indx_1_g = np.round(indx_1_g).astype('int')
-    indx_2_g = np.round(indx_2_g).astype('int')
-    # only need num_g sources
-    ra_g_mock = ra_g_mock[:num_g]
-    dec_g_mock = dec_g_mock[:num_g]
-    indx_1_g = indx_1_g[:num_g]
-    indx_2_g = indx_2_g[:num_g]
-    if verbose:
+
         plt.subplot(projection=wproj)
         ax = plt.gca()
         lon = ax.coords[0]
         lat = ax.coords[1]
         lon.set_major_formatter('d')
-        plt.grid(True, color='grey', ls='solid',lw=0.5)
-        img = np.mean(base_map,2)
-        img[W_HI[:,:,0]==0] = np.nan
-        plt.imshow(img.T)
-        cbar = plt.colorbar(orientation='horizontal',shrink=0.6)
-        cbar.set_label(map_unit)
-        plt.scatter(ra_g_mock,dec_g_mock,transform=ax.get_transform('world'),s=1,label='GAMA galaxies',color='tab:blue')
+        contours = plt.contour(W_HI[:,:,0].T, levels=[0.5], colors='black')  
+        if inside_range.mean()<1: 
+            plt.scatter(
+                ra_g_mock[(1-inside_range).astype('bool')],
+                dec_g_mock[(1-inside_range).astype('bool')],
+                transform=ax.get_transform('world'),s=1,
+                label='galaxy outside the range but in the map',color='tab:blue'
+            )
+        plt.scatter(ra_g_mock[inside_range],dec_g_mock[inside_range],transform=ax.get_transform('world'),s=1,label='galaxy positions',color='tab:red')
+        lon = ax.coords[0]
+        lat = ax.coords[1]
+        #lon.set_ticks(spacing=np.sqrt(pix_area) * units.degree)
+        #lat.set_ticks(spacing=np.sqrt(pix_area) * units.degree)
+        ax.coords.grid(True, color='black', ls='solid')
         plt.xlabel('R.A [deg]',fontsize=18)
         plt.ylabel('Dec. [deg]',fontsize=18)
         plt.legend()
@@ -162,7 +215,7 @@ def run_poisson_mock(
     lumi_dist_g = (1+rand_z)*comov_dist_g
     # convert to flux. from 1705.04210
     # in Jy km s-1
-    hiintflux_g = 10**himass_g*(1+rand_z)/2.35/1e5/(lumi_dist_g)**2
+    hiintflux_g = 10**himass_g*(1+rand_z)/2.356/1e5/(lumi_dist_g)**2
     # random busy functions
     busy_c = 10**(rng.uniform(-3,-2,size=num_g))
     busy_b = 10**(rng.uniform(-2,0,size=num_g))
@@ -223,7 +276,7 @@ def run_poisson_mock(
         sys.path.insert(1,meerpower)
         import Init
         import plot
-        plot.Map(himap_g,W=W_HI,map_ra=ra,map_dec=dec,wproj=wproj,
+        plot_map(himap_g,W=W_HI,map_ra=ra,map_dec=dec,wproj=wproj,
          title='mock HI signal',ZeroCentre=False,
          cbar_label=f"{map_unit:latex}",
         )
@@ -235,7 +288,7 @@ def run_poisson_mock(
         himap_g = PCAclean(himap_g,N_fg=N_fg,W=W_HI,w=w_HI)
     z_g_mock = rand_z
     if not do_stack:
-        return himap_g,ra_g_mock,dec_g_mock,z_g_mock,indx_1_g,indx_2_g,gal_which_ch,hifluxd_ch
+        return himap_g,ra_g_mock,dec_g_mock,z_g_mock,indx_1_g,indx_2_g,gal_which_ch,hifluxd_ch,inside_range
     # run stacking
     stack_result = mock_stack(verbose)
-    return (himap_g,ra_g_mock,dec_g_mock,z_g_mock,indx_1_g,indx_2_g,gal_which_ch,hifluxd_ch)+stack_result
+    return (himap_g,ra_g_mock,dec_g_mock,z_g_mock,indx_1_g,indx_2_g,gal_which_ch,hifluxd_ch,inside_range)+stack_result
