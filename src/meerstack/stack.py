@@ -11,7 +11,7 @@ def weight_source_peaks(
     map_in,wproj,ra_g_in,dec_g_in,z_g_in,nu,
     W_map_in=None,
     w_map_in=None,
-    velocity_width_halfmax = 250,
+    velocity_width_halfmax = 50,
     velocity_profile='gaussian',
     sigma_beam_in=None,
     no_vel=False,
@@ -127,7 +127,7 @@ def weight_source_peaks(
         if no_sel_weight:
             map_gal_weight += map_weight_i
         else:
-            #if a pixel has weight for source i, and it's bigger than the previous weight caused by other sources
+        #if a pixel has weight for source i, and it's bigger than the previous weight caused by other sources
             search_indx = (
                 (map_weight_i>0)*(map_weight_i>(1e-3*map_weight_i))*
                 (map_weight_i>map_gal_weight)
