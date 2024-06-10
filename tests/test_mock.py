@@ -1,0 +1,259 @@
+import numpy as np
+import pytest
+from meerstack.mock import gen_random_gal_pos,run_poisson_mock
+from astropy.cosmology import Planck18
+from hiimtool.basic_util import himf_pars_jones18,centre_to_edges,f_21
+from unittest.mock import patch
+import matplotlib.pyplot as plt
+
+def test_gen_random_gal_pos(test_wproj,test_W,test_GAMA_range):
+    num_g = 10000
+    ra_g,dec_g,inside_range = gen_random_gal_pos(test_wproj,test_W[:,:,0],num_g)
+    # test when no range is specified, the sizes match with n_g
+    assert len(ra_g) == num_g
+    assert len(dec_g) == num_g    
+    assert len(inside_range) == num_g 
+    assert (inside_range).mean() == 1
+    # test when range specified, the number matches and the selected galaxies are in range
+    ra_g,dec_g,inside_range = gen_random_gal_pos(
+        test_wproj,test_W[:,:,0],num_g,
+        ra_range = test_GAMA_range[0],
+        dec_range = test_GAMA_range[1],
+    )
+    assert inside_range.sum()==num_g
+    assert np.mean(ra_g[inside_range]>test_GAMA_range[0][0])==1
+    assert np.mean(ra_g[inside_range]<test_GAMA_range[0][1])==1
+    assert np.mean(dec_g[inside_range]>test_GAMA_range[1][0])==1
+    assert np.mean(dec_g[inside_range]<test_GAMA_range[1][1])==1
+    # currently there is just no good way for default_rng to work with pytest.
+    # saving this for later
+    seed_default_rng = np.random.default_rng(seed=np.random.randint(1,10000))
+    ra_g,dec_g,inside_range = gen_random_gal_pos(
+        test_wproj,test_W[:,:,0],num_g,
+        ra_range = test_GAMA_range[0],
+        dec_range = test_GAMA_range[1],
+        rng=seed_default_rng
+    )
+    assert inside_range.sum()==num_g
+    assert np.mean(ra_g[inside_range]>test_GAMA_range[0][0])==1
+    assert np.mean(ra_g[inside_range]<test_GAMA_range[0][1])==1
+    assert np.mean(dec_g[inside_range]>test_GAMA_range[1][0])==1
+    assert np.mean(dec_g[inside_range]<test_GAMA_range[1][1])==1
+
+def test_gal_pos_in_mock(test_wproj,test_W,test_nu,test_GAMA_range):
+    num_g = 10000
+    himap_g,ra_g,dec_g,z_g,indx_1_g,indx_2_g,gal_which_ch,hifluxd_in,inside_range= run_poisson_mock(
+    test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),test_wproj,
+    W_HI = test_W,
+    seed=42,
+    no_vel=True,
+    mmin=10.5,
+    verbose=False,
+    do_stack=False,
+    x_dim=test_W.shape[0],
+    y_dim=test_W.shape[1],
+    ignore_double_counting=False,
+    return_indx_and_weight=False,
+    ra_range = test_GAMA_range[0],
+    dec_range = test_GAMA_range[1],
+    )
+    nu_edges = centre_to_edges(test_nu)
+    assert np.allclose(himap_g[:,:,0].shape,test_W[:,:,0].shape)
+    assert himap_g.shape[-1] == len(test_nu)
+    assert inside_range.sum()==num_g
+    assert np.mean(ra_g[inside_range]>test_GAMA_range[0][0])==1
+    assert np.mean(ra_g[inside_range]<test_GAMA_range[0][1])==1
+    assert np.mean(dec_g[inside_range]>test_GAMA_range[1][0])==1
+    assert np.mean(dec_g[inside_range]<test_GAMA_range[1][1])==1
+    # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
+    assert (f_21/1e6/(1+z_g)>=nu_edges[gal_which_ch]).mean() == 1
+    assert (f_21/1e6/(1+z_g)<=nu_edges[gal_which_ch+1]).mean() == 1
+    # ra,dec mapping to index should be tested in util
+    # when no velocity, the flux should be one channel
+    assert len(hifluxd_in) == 1
+    
+    #generate only one galaxy
+    num_g = 1
+    #fix z in case it falls in the edge
+    himap_g,ra_g,dec_g,z_g,indx_1_g,indx_2_g,gal_which_ch,hifluxd_in,inside_range= run_poisson_mock(
+    test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),test_wproj,
+    W_HI = test_W,
+    seed=42,
+    no_vel=False,
+    tf_slope = 3.66,
+    tf_zero = 1.6,
+    mmin=10.5,
+    verbose=False,
+    do_stack=False,
+    x_dim=test_W.shape[0],
+    y_dim=test_W.shape[1],
+    ignore_double_counting=False,
+    return_indx_and_weight=False,
+    fix_z=f_21/1e6/test_nu.mean()-1,
+    )
+    assert (himap_g>0).sum()==len(hifluxd_in[hifluxd_in>0])
+    assert (himap_g[himap_g>0]).sum() == hifluxd_in.sum()
+    assert himap_g[indx_1_g,indx_2_g,gal_which_ch]>0
+    # hiflux should have larger width than velocity so some empty channel
+    assert (hifluxd_in==0).sum()>0
+    
+
+def test_raise_error():
+    with pytest.raises(Exception):
+        run_poisson_mock(
+            test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),
+            test_wproj,
+            W_HI = test_W[:,0,0],
+            seed=42,
+            no_vel=True,
+            mmin=10.5,
+            verbose=False,
+            do_stack=False,
+            x_dim=test_W.shape[0],
+            y_dim=test_W.shape[1],
+            ignore_double_counting=False,
+            return_indx_and_weight=False,
+            ra_range = test_GAMA_range[0],
+            dec_range = test_GAMA_range[1],
+        )
+    with pytest.raises(Exception):
+        run_poisson_mock(
+            test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),
+            test_wproj,
+            W_HI = np.zeros_like(test_W),
+            seed=42,
+            no_vel=True,
+            mmin=10.5,
+            verbose=False,
+            do_stack=False,
+            x_dim=test_W.shape[0],
+            y_dim=test_W.shape[1],
+            ignore_double_counting=False,
+            return_indx_and_weight=False,
+            ra_range = test_GAMA_range[0],
+            dec_range = test_GAMA_range[1],
+        )
+    with pytest.raises(Exception):
+        W_input = np.zeros_like(test_W)
+        W_input[:,:,0] += 1
+        run_poisson_mock(
+            test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),
+            test_wproj,
+            W_HI = W_input,
+            seed=42,
+            no_vel=True,
+            mmin=10.5,
+            verbose=False,
+            do_stack=False,
+            x_dim=test_W.shape[0],
+            y_dim=test_W.shape[1],
+            ignore_double_counting=False,
+            return_indx_and_weight=False,
+            ra_range = test_GAMA_range[0],
+            dec_range = test_GAMA_range[1],
+        )
+
+
+def test_plt(test_wproj,test_W,test_nu,test_GAMA_range):
+    plt.switch_backend("Agg")
+    num_g = 1
+    run_poisson_mock(
+    test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),test_wproj,
+    W_HI = test_W,
+    seed=42,
+    no_vel=False,
+    tf_slope = 3.66,
+    tf_zero = 1.6,
+    mmin=10.5,
+    verbose=True,
+    do_stack=False,
+    x_dim=test_W.shape[0],
+    y_dim=test_W.shape[1],
+    ignore_double_counting=False,
+    return_indx_and_weight=False,
+    fix_z=f_21/1e6/test_nu.mean()-1,
+    )
+    plt.close("all")
+    
+def test_mock_healpix(test_wproj,test_W,test_nu,test_GAMA_range):
+    nu = test_nu[:3]
+    num_g = 2
+    himap_g,ra_g,dec_g,z_g,indx_1_g,indx_2_g,gal_which_ch,hifluxd_in,inside_range= run_poisson_mock(
+    nu,num_g,himf_pars_jones18(Planck18.h/0.7),test_wproj,
+    W_HI = test_W,
+    seed=42,
+    no_vel=True,
+    mmin=10.5,
+    verbose=False,
+    do_stack=False,
+    x_dim=test_W.shape[0],
+    y_dim=test_W.shape[1],
+    ignore_double_counting=False,
+    return_indx_and_weight=False,
+    ra_range = test_GAMA_range[0],
+    dec_range = test_GAMA_range[1],
+    fast_ang_pos = False,
+    )
+    nu_edges = centre_to_edges(nu)
+    
+    assert np.allclose(himap_g[:,:,0].shape,test_W[:,:,0].shape)
+    assert himap_g.shape[-1] == len(nu)
+    assert inside_range.sum()==num_g
+    assert np.mean(ra_g[inside_range]>test_GAMA_range[0][0])==1
+    assert np.mean(ra_g[inside_range]<test_GAMA_range[0][1])==1
+    assert np.mean(dec_g[inside_range]>test_GAMA_range[1][0])==1
+    assert np.mean(dec_g[inside_range]<test_GAMA_range[1][1])==1
+    # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
+    assert (f_21/1e6/(1+z_g)>=nu_edges[gal_which_ch]).mean() == 1
+    assert (f_21/1e6/(1+z_g)<=nu_edges[gal_which_ch+1]).mean() == 1
+    # ra,dec mapping to index should be tested in util
+    # when no velocity, the flux should be one channel
+    assert len(hifluxd_in) == 1
+    
+    #generate only one galaxy
+    num_g = 1
+    nu = test_nu[:10]
+    #fix z in case it falls in the edge
+    himap_g,ra_g,dec_g,z_g,indx_1_g,indx_2_g,gal_which_ch,hifluxd_in,inside_range= run_poisson_mock(
+    nu,num_g,himf_pars_jones18(Planck18.h/0.7),test_wproj,
+    W_HI = test_W,
+    seed=42,
+    no_vel=False,
+    tf_slope = 3.66,
+    tf_zero = 1.6,
+    mmin=10.5,
+    verbose=False,
+    do_stack=False,
+    x_dim=test_W.shape[0],
+    y_dim=test_W.shape[1],
+    ignore_double_counting=False,
+    return_indx_and_weight=False,
+    fix_z=f_21/1e6/nu.mean()-1,
+    fast_ang_pos = False,
+    )
+    assert (himap_g>0).sum()==len(hifluxd_in[hifluxd_in>0])
+    assert (himap_g[himap_g>0]).sum() == hifluxd_in.sum()
+    assert himap_g[indx_1_g,indx_2_g,gal_which_ch]>0
+    # hiflux should have larger width than velocity so some empty channel
+    assert (hifluxd_in==0).sum()>0
+    
+def test_invoke_stack(test_wproj,test_W,test_nu,test_GAMA_range):
+    plt.switch_backend("Agg")
+    #generate only one galaxy
+    num_g = 1
+    #fix z in case it falls in the edge
+    himap_g,ra_g,dec_g,z_g,indx_1_g,indx_2_g,gal_which_ch,hifluxd_in,inside_range,stack_3D_map,stack_3D_weight,x_edges,ang_edges = run_poisson_mock(
+    test_nu,num_g,himf_pars_jones18(Planck18.h/0.7),test_wproj,
+    W_HI = test_W,
+    seed=42,
+    no_vel=True,
+    mmin=10.5,
+    verbose=True,
+    x_dim=test_W.shape[0],
+    y_dim=test_W.shape[1],
+    fix_z=f_21/1e6/test_nu.mean()-1,
+    do_stack=True,
+    ignore_double_counting=True,
+    return_indx_and_weight=False,
+    )
+    plt.close("all")
