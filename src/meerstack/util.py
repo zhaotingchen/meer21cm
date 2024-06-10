@@ -6,6 +6,7 @@ import matplotlib.colors as colors
 
 
 def get_wcs_coor(wcs,xx,yy):
+    assert wcs.naxis==2, 'input wcs must be 2-dimensional.'
     coor = wcs.pixel_to_world(xx,yy)
     ra = coor.ra.deg.T
     dec = coor.dec.deg.T
@@ -15,6 +16,7 @@ def PCAclean(M,N_fg,w=None,W=None,returnAnalysis=False,MeanCentre=False,los_axis
     '''
     Performs PCA cleaning of the map data.
     '''
+    assert len(M.shape) == 3, "map must be 3D."
     if los_axis < 0:
         # change -1 to 2
         los_axis = 3+los_axis
@@ -35,7 +37,7 @@ def PCAclean(M,N_fg,w=None,W=None,returnAnalysis=False,MeanCentre=False,los_axis
     # this is weird. Why are there two weights?
     if MeanCentre:
         if W is None:
-            M = M - np.mean(M,1) # Mean centre data
+            M = M - np.mean(M,1)[:,None] # Mean centre data
         else:
             M = M - np.sum(M*W,1)[:,None]/np.sum(W,1)[:,None]
     ### Covariance calculation:
@@ -66,24 +68,19 @@ def check_unit_equiv(u1,u2):
     return ((1*u1/u2).si.unit == units.dimensionless_unscaled)
     
     
-def plot_map(map_in,W=None,ra=None,dec=None,map_ra=None,map_dec=None,wproj=None,title=None,Gal=False,cbar_label=None,cbarshrink=1,ZeroCentre=False,vmin=None,vmax=None,cmap='magma'):
+def plot_map(map_in,wproj,W=None,title=None,cbar_label=None,cbarshrink=1,ZeroCentre=False,vmin=None,vmax=None,cmap='magma'):
     '''
     Stolen from meerpower
     '''
     plt.figure()
-    if map_ra is not None:
-        plt.subplot(projection=wproj)
-        ax = plt.gca()
-        lon = ax.coords[0]
-        lat = ax.coords[1]
-        lon.set_major_formatter('d')
-        #lon.set_ticklabel_visible(False)
-        #lat.set_ticklabel_visible(False)
-        #lon.set_ticklabel(size=fontsize)
-        #lat.set_ticklabel(size=fontsize)
-        lon.set_ticks_position('b')
-        lat.set_ticks_position('l')
-        plt.grid(True, color='grey', ls='solid',lw=0.5)
+    plt.subplot(projection=wproj)
+    ax = plt.gca()
+    lon = ax.coords[0]
+    lat = ax.coords[1]
+    lon.set_major_formatter('d')
+    lon.set_ticks_position('b')
+    lat.set_ticks_position('l')
+    plt.grid(True, color='grey', ls='solid',lw=0.5)
     if len(np.shape(map_in))==3:
         map_in = np.mean(map_in,2) # Average along 3rd dimention (LoS) as default if 3D map given
         if W is not None: W = np.mean(W,2)
@@ -95,25 +92,15 @@ def plot_map(map_in,W=None,ra=None,dec=None,map_ra=None,map_dec=None,wproj=None,
         cmap.set_bad(color='grey')
     else: divnorm = None
     if W is not None: map_in[W==0] = np.nan
-    if ra is not None: # Check ascending direction of R.A coordinates:
-        if ra[0]>ra[1]: # R.A coordinates descend left to right therefore switch:
-            ra = np.flip(ra) # Flip ra so lowest ra is first
-            map_in = np.flip(map_in,0) # Flip map so lowest ra pixel appears left
-    if map_ra is not None:
-        data = plt.imshow(map_in.T,cmap=cmap,norm=divnorm)
-        plt.xlabel('R.A [deg]',fontsize=18)
-        plt.ylabel('Dec. [deg]',fontsize=18)
-    else:
-        if ra is None or dec is None: plt.imshow(map_in.T,cmap=cmap,norm=divnorm)
-        else:
-            data = plt.imshow(map_in.T,cmap=cmap,norm=divnorm,extent=[np.min(ra),np.max(ra),np.min(dec),np.max(dec)])
-            plt.xlabel('R.A [deg]',fontsize=18)
-            plt.ylabel('Dec. [deg]',fontsize=18)
+    plt.imshow(map_in.T,cmap=cmap,norm=divnorm)
     if vmax is not None or vmin is not None: plt.clim(vmin,vmax)
     cbar = plt.colorbar(orientation='horizontal',shrink=cbarshrink,pad=0.2)
     if cbar_label is None:
-        if Gal==False: cbar.set_label('mK')
+        cbar.set_label('mK')
     else: cbar.set_label(cbar_label)
+    ax.invert_xaxis()
+    plt.xlabel('R.A [deg]')
+    plt.ylabel('Dec. [deg]')
     plt.title(title,fontsize=18)
     
 def radec_to_indx(ra_arr,dec_arr,wproj,to_int=True):
