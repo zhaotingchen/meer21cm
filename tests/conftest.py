@@ -2,28 +2,32 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 import numpy as np
+import os
+import meerstack
+
+data_dir = meerstack.__file__.rsplit('/',1)[0]+'/data/'
 
 @pytest.fixture
 def test_wcs():
-    map_file = 'data/test_fits.fits'
+    map_file = data_dir+'test_fits.fits'
     wcs = WCS(map_file)
     return wcs
 
 @pytest.fixture
 def test_wproj():
-    map_file = 'data/test_fits.fits'
+    map_file = data_dir+'test_fits.fits'
     wcs = WCS(map_file)
     wproj = wcs.dropaxis(-1)
     return wproj
 
 @pytest.fixture
 def test_W():
-    map_file = 'data/test_W.npy'
+    map_file = data_dir+'test_W.npy'
     return np.load(map_file)[:,:,0][:,:,None]
 
 @pytest.fixture
 def test_nu():
-    file = 'data/test_nu.npy'
+    file = data_dir+'test_nu.npy'
     return np.load(file)
 
 @pytest.fixture
