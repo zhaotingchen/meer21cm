@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18,centre_to_edges,f_21
-from meerstack.util import get_wcs_coor,PCAclean,check_unit_equiv,radec_to_indx
+from meerstack.util import get_wcs_coor,PCAclean,radec_to_indx
 
 def test_get_wcs_coor(test_wproj,test_wcs):
     with pytest.raises(Exception) as e_info:

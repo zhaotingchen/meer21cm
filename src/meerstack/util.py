@@ -3,7 +3,18 @@ from astropy import constants,units
 from astropy.coordinates import SkyCoord
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
+import healpy as hp
+from astropy.io import fits
+from hiimtool.basic_util import check_unit_equiv
 
+def read_healpix_fits(file):
+    hp_map = hp.read_map(file)
+    hp_nside = hp.get_nside(hp_map)
+    with fits.open(file) as hdul:
+        header = hdul[1].header
+        map_unit = units.Unit(header['TUNIT1'])
+        map_freq = units.Quantity(header['FREQ']).to('Hz').value
+    return hp_map,hp_nside,map_unit,map_freq
 
 def get_wcs_coor(wcs,xx,yy):
     assert wcs.naxis==2, 'input wcs must be 2-dimensional.'
@@ -61,11 +72,6 @@ def PCAclean(M,N_fg,w=None,W=None,returnAnalysis=False,MeanCentre=False,los_axis
         return Residual,A
     return Residual
 
-def check_unit_equiv(u1,u2):
-    """
-    Check if two units are equivelant
-    """
-    return ((1*u1/u2).si.unit == units.dimensionless_unscaled)
     
     
 def plot_map(map_in,wproj,W=None,title=None,cbar_label=None,cbarshrink=1,ZeroCentre=False,vmin=None,vmax=None,cmap='magma'):
@@ -110,3 +116,15 @@ def radec_to_indx(ra_arr,dec_arr,wproj,to_int=True):
         indx_1 = np.round(indx_1).astype('int')
         indx_2 = np.round(indx_2).astype('int')
     return indx_1,indx_2
+
+#def healpix_to_wcs(hp_map,wproj,map_unit):
+#    if not check_unit_equiv(map_unit,units.K):
+#        if not check_unit_equiv(map_unit,units.Jy):
+#            raise(
+#                ValueError,
+#                'map unit has be to either temperature or flux density.'
+#            )
+#        else:
+#            self.map_unit_type = 'F'  
+#        else:
+#            self.map_unit_type = 'T'
