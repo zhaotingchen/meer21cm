@@ -22,3 +22,5 @@ import sys
 sys.path.append('path/to/hiimtool/src/')
 sys.path.append('path/to/meerstack/src/')
 ```
+## Development
+If you want to contribute to the developing of `meerstack`, make sure you check [requirements](DEVELOPING.md).
