@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import healpy as hp
 from astropy.io import fits
-from hiimtool.basic_util import check_unit_equiv
+from hiimtool.basic_util import check_unit_equiv,jy_to_kelvin
 
 def read_healpix_fits(file):
     hp_map = hp.read_map(file)
@@ -117,14 +117,23 @@ def radec_to_indx(ra_arr,dec_arr,wproj,to_int=True):
         indx_2 = np.round(indx_2).astype('int')
     return indx_1,indx_2
 
-#def healpix_to_wcs(hp_map,wproj,map_unit):
-#    if not check_unit_equiv(map_unit,units.K):
-#        if not check_unit_equiv(map_unit,units.Jy):
-#            raise(
-#                ValueError,
-#                'map unit has be to either temperature or flux density.'
-#            )
-#        else:
-#            self.map_unit_type = 'F'  
-#        else:
-#            self.map_unit_type = 'T'
+
+def convert_hpmap_in_jy_to_temp(hp_map,freq):
+    nside = hp.get_nside(hp_map)
+    hp_map = jy_to_kelvin(
+        hp_map,
+        hp.nside2resol(nside),
+        freq
+    )
+    return hp_map
+    
+def healpix_to_wcs(hp_map,xx,yy,wcs):
+    """
+    Project the healpix map onto a 2-D wcs grid.
+    Map has to be in temperature unit.
+    """
+    nside = hp.get_nside(hp_map)
+    ra_map,dec_map = get_wcs_coor(wcs,xx,yy)
+    pix_indx = hp.ang2pix(nside,ra_map,dec_map,lonlat=True)
+    output_map = hp_map[pix_indx].T
+    return output_map
