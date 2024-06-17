@@ -8,6 +8,21 @@ import meerstack
 data_dir = meerstack.__file__.rsplit('/',1)[0]+'/data/'
 
 @pytest.fixture
+def test_haslam_map():
+    map_file = data_dir+'haslam408_dsds_Remazeilles2014.fits'
+    return map_file
+
+@pytest.fixture
+def test_gsm_1ghz_jy():
+    map_file = data_dir+'gdsm16_1ghz_jy.fits'
+    return map_file
+
+@pytest.fixture
+def test_gsm_1ghz():
+    map_file = data_dir+'gdsm16_1ghz.fits'
+    return map_file
+
+@pytest.fixture
 def test_wcs():
     map_file = data_dir+'test_fits.fits'
     wcs = WCS(map_file)
