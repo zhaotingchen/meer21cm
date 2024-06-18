@@ -1,4 +1,6 @@
 # **meerstack**
+[![codecov](https://codecov.io/gh/zhaotingchen/meerstack/graph/badge.svg?token=BEE45774LQ)](https://codecov.io/gh/zhaotingchen/meerstack)
+
 `meerstack` deals with single dish stacking with 21cm intensity mapping.
 
 ## Installation
