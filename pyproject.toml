@@ -43,3 +43,9 @@ lint = [
     "pre-commit"
 ]
 full = ["meerstack[test]","meerstack[lint]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.*"]
