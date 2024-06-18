@@ -37,3 +37,15 @@ test = [
     "pytest",
     "pytest-cov",
 ]
+lint = [
+    "black",
+    "flake8",
+    "pre-commit"
+]
+full = ["meerstack[test]","meerstack[lint]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.*"]
