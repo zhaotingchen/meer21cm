@@ -36,7 +36,9 @@ def weight_source_peaks(
     num_g = ra_g_in.size
     if ignore_double_counting:
         return np.zeros(map_in.shape, dtype="int") - 1, W_map_in
-    xx, yy = np.meshgrid(np.arange(map_in.shape[0]), np.arange(map_in.shape[1]))
+    xx, yy = np.meshgrid(
+        np.arange(map_in.shape[0]), np.arange(map_in.shape[1]), indexing="ij"
+    )
     # the coordinates of each pixel in the map
     ra, dec = get_wcs_coor(wproj, xx, yy)
     # in deg^2
@@ -212,7 +214,9 @@ def stack(
         w_map_in = np.ones_like(map_in)
     num_ch = map_in.shape[-1]
     num_g = ra_g_in.size
-    xx, yy = np.meshgrid(np.arange(map_in.shape[0]), np.arange(map_in.shape[1]))
+    xx, yy = np.meshgrid(
+        np.arange(map_in.shape[0]), np.arange(map_in.shape[1]), indexing="ij"
+    )
     # the coordinates of each pixel in the map
     ra, dec = get_wcs_coor(wproj, xx, yy)
 

@@ -21,8 +21,8 @@ def read_healpix_fits(file):
 def get_wcs_coor(wcs, xx, yy):
     assert wcs.naxis == 2, "input wcs must be 2-dimensional."
     coor = wcs.pixel_to_world(xx, yy)
-    ra = coor.ra.deg.T
-    dec = coor.dec.deg.T
+    ra = coor.ra.deg
+    dec = coor.dec.deg
     return ra, dec
 
 
@@ -174,5 +174,5 @@ def healpix_to_wcs(hp_map, xx, yy, wcs):
     nside = hp.get_nside(hp_map)
     ra_map, dec_map = get_wcs_coor(wcs, xx, yy)
     pix_indx = hp.ang2pix(nside, ra_map, dec_map, lonlat=True)
-    output_map = hp_map[pix_indx].T
+    output_map = hp_map[pix_indx]
     return output_map
