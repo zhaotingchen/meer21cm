@@ -5,7 +5,7 @@ from astropy import constants, units
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
-from .util import check_unit_equiv, get_wcs_coor
+from meerstack.util import check_unit_equiv, get_wcs_coor, radec_to_indx
 
 
 def weight_source_peaks(
@@ -47,7 +47,10 @@ def weight_source_peaks(
     dvdf = (constants.c / nu).to("km/s").value.mean()
     # in km/s
     vel_resol = dvdf * np.diff(nu).mean()
-    num_ch_vel = int(4 * velocity_width_halfmax // vel_resol) + 1
+    if no_vel:
+        num_ch_vel = 0
+    else:
+        num_ch_vel = int(4 * velocity_width_halfmax // vel_resol) + 1
     # this profile is only for assigning pixels to sources, not for actual weighting
     if velocity_profile == "gaussian":
         profile_func = (
@@ -63,52 +66,57 @@ def weight_source_peaks(
         )
     else:
         raise ValueError("Unrecognised velocity profile: " + str(velocity_profile))
-    # some internal integrals for calculating HI flux density per channel
-    step_size = (velocity_width_halfmax * 4 + 2 * vel_resol) / (internal_step - 1)
-    vel_max_int = step_size * internal_step
-    # vel_int_arr centres at the galaxy position along los
-    vel_int_arr = np.linspace(-vel_max_int, vel_max_int, num=internal_step)
-    vel_int_edges = centre_to_edges(vel_int_arr)
-    # how the profile looks like across the velocities
-    if no_vel:
-        hiprofile_g = np.zeros_like(vel_int_edges)
-        hiprofile_g[vel_int_edges == 0] = 1
-    else:
-        hiprofile_g = profile_func(vel_int_edges)
-        hiprofile_g /= np.sum(hiprofile_g)
 
     gal_freq = f_21 / (1 + z_g_in) / 1e6
     # which channel each source centre belongs to
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - nu[:, None]), axis=0)
 
-    hicumflux_g = np.cumsum(hiprofile_g, axis=0)
+    # some internal integrals for calculating HI flux density per channel
+    if not no_vel:
+        step_size = (velocity_width_halfmax * 4 + 2 * vel_resol) / (internal_step - 1)
+        vel_max_int = step_size * internal_step
+        # vel_int_arr centres at the galaxy position along los
+        vel_int_arr = np.linspace(-vel_max_int, vel_max_int, num=internal_step)
+        vel_int_edges = centre_to_edges(vel_int_arr)
+        ## how the profile looks like across the velocities
+        # if no_vel:
+        #    hiprofile_g = np.zeros_like(vel_int_edges)
+        #    hiprofile_g[vel_int_edges == 0] = 1
+        hiprofile_g = profile_func(vel_int_edges)
+        hiprofile_g /= np.sum(hiprofile_g)
 
-    # deviation from the channel centre in velocity
-    vel_start_pos = (gal_freq - nu[gal_which_ch]) * dvdf
-    # zero is centre channel
-    vel_ch_arr = np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1) * vel_resol
-    vel_ch_arr = centre_to_edges(vel_ch_arr)
-    # zero should correspond to the deviation so shifting
-    vel_gal_arr = vel_ch_arr[:, None] + vel_start_pos[None, :]
-    # which integration step each channel belongs to
-    vel_indx = (
-        ((vel_gal_arr[:, :, None] - vel_int_edges[None, None, :]) > 0).reshape(
-            (-1, len(vel_int_edges))
+        hicumflux_g = np.cumsum(hiprofile_g, axis=0)
+        # deviation from the channel centre in velocity
+        vel_start_pos = (gal_freq - nu[gal_which_ch]) * dvdf
+        # zero is centre channel
+        vel_ch_arr = (
+            np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1) * vel_resol
         )
-    ).sum(axis=-1) - 1
-    vel_indx = vel_indx.reshape(vel_gal_arr.shape)
+        vel_ch_arr = centre_to_edges(vel_ch_arr)
+        # zero should correspond to the deviation so shifting
+        vel_gal_arr = vel_ch_arr[:, None] + vel_start_pos[None, :]
+        # which integration step each channel belongs to
+        vel_indx = (
+            ((vel_gal_arr[:, :, None] - vel_int_edges[None, None, :]) > 0).reshape(
+                (-1, len(vel_int_edges))
+            )
+        ).sum(axis=-1) - 1
+        vel_indx = vel_indx.reshape(vel_gal_arr.shape)
 
-    # this is not the real flux density, just a normalised weight for determining the assignment
-    hifluxd_ch = np.zeros(vel_indx.shape)
-    for i in range(num_g):
-        hifluxd_ch[:, i] = hicumflux_g[:][vel_indx[:, i]]
-    hifluxd_ch = np.diff(hifluxd_ch, axis=0)
+        # this is not the real flux density, just a normalised weight for determining the assignment
+        hifluxd_ch = np.zeros(vel_indx.shape)
+        for i in range(num_g):
+            hifluxd_ch[:, i] = hicumflux_g[:][vel_indx[:, i]]
+        hifluxd_ch = np.diff(hifluxd_ch, axis=0)
+    else:
+        hifluxd_ch = np.ones((1, num_g))
 
     # find the pixels each source belongs to
-    coor_g = SkyCoord(ra_g_in, dec_g_in, unit="deg")
-    indx_1_g, indx_2_g = wproj.world_to_pixel(coor_g)
-    indx_1_g = np.round(indx_1_g).astype("int")
-    indx_2_g = np.round(indx_2_g).astype("int")
+    # coor_g = SkyCoord(ra_g_in, dec_g_in, unit="deg")
+    # indx_1_g, indx_2_g = wproj.world_to_pixel(coor_g)
+    # indx_1_g = np.round(indx_1_g).astype("int")
+    # indx_2_g = np.round(indx_2_g).astype("int")
+    indx_1_g, indx_2_g = radec_to_indx(ra_g_in, dec_g_in, wproj)
 
     # assign each pixel with a source index, -1 is any source
     map_gal_indx = np.zeros(map_in.shape, dtype="int") - 1
@@ -118,27 +126,27 @@ def weight_source_peaks(
     # only for debugging, never use in production
     if gal_sel_indx is not None:
         gal_arr = gal_arr[gal_sel_indx[0] : gal_sel_indx[1]]
-    if no_sel_weight:
-        map_gal_indx = np.zeros(map_in.shape, dtype="int") - 1
     for gal_i in gal_arr:
         # weight of source i on the entire map
         map_weight_i = np.zeros_like(map_in)
         # zero-pad the map for out-of-frequency-range profiles
-        map_weight_i = np.concatenate(
-            (
-                map_weight_i[:, :, :num_ch_vel],
-                map_weight_i,
-                map_weight_i[:, :, :num_ch_vel],
-            ),
-            axis=-1,
-        )
+        if not no_vel:
+            map_weight_i = np.concatenate(
+                (
+                    map_weight_i[:, :, :num_ch_vel],
+                    map_weight_i,
+                    map_weight_i[:, :, :num_ch_vel],
+                ),
+                axis=-1,
+            )
         map_weight_i[
             indx_1_g[gal_i],
             indx_2_g[gal_i],
             gal_which_ch[gal_i] : gal_which_ch[gal_i] + 2 * num_ch_vel + 1,
         ] = hifluxd_ch[:, gal_i]
         # only take the frequency range
-        map_weight_i = map_weight_i[:, :, num_ch_vel:-(num_ch_vel)]
+        if not no_vel:
+            map_weight_i = map_weight_i[:, :, num_ch_vel:-(num_ch_vel)]
         # smooth to the beam
         if sigma_beam_in is not None:
             for i in range(len(nu)):
@@ -229,7 +237,6 @@ def stack(
     dvdf = (constants.c / nu).to("km/s").value.mean()
     # in km/s
     vel_resol = dvdf * np.diff(nu).mean()
-    num_ch_vel = int(4 * velocity_width_halfmax // vel_resol) + 1
     # if x_unit is frequency based
     if check_unit_equiv(x_unit, units.Hz):
         freq_stack_arr = (
