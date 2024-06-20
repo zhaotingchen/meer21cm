@@ -608,10 +608,3 @@ def stack(
 #        plt.xlabel(r'$\Delta _z$ ['+f"{x_unit:latex}"+']')
 #        plt.show()
 #    return stack_3D_map,stack_3D_weight,x_edges,ang_edges
-#
-# def simple_stack(
-#    map_in,
-#    W_map_in=None,
-#    w_map_in=None,
-# ):
-#    return 1
