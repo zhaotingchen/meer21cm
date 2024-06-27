@@ -343,7 +343,9 @@ def stack(
             + stack_angular_num_nearby_pix
             + 1,
         ]
-    stack_3D_map /= stack_3D_weight
+    with np.errstate(divide="ignore", invalid="ignore"):
+        stack_3D_map /= stack_3D_weight
+    stack_3D_map[stack_3D_weight == 0] = 0.0
     # in deg
     ang_resol = np.sqrt(pix_area)
     ang_edges = (
