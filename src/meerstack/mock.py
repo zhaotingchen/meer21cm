@@ -185,9 +185,11 @@ def run_poisson_mock(
     pix_resol = np.sqrt(pix_area)
 
     if base_map is not None:
-        xx, yy = np.meshgrid(np.arange(base_map.shape[0]), np.arange(base_map.shape[1]))
+        xx, yy = np.meshgrid(
+            np.arange(base_map.shape[0]), np.arange(base_map.shape[1]), indexing="ij"
+        )
     elif x_dim is not None and y_dim is not None:
-        xx, yy = np.meshgrid(np.arange(x_dim), np.arange(y_dim))
+        xx, yy = np.meshgrid(np.arange(x_dim), np.arange(y_dim), indexing="ij")
     else:
         raise ValueError("either base_map or (x_dim,y_dim) is neededd")
 
