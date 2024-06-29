@@ -5,7 +5,7 @@ from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
-from meerstack.stack import weight_source_peaks, stack
+from meerstack.stack import weight_source_peaks, stack, sum_3d_stack
 from meerstack.util import radec_to_indx
 from astropy import constants, units
 
@@ -259,3 +259,20 @@ def test_stack(test_wproj, test_W, test_nu):
         return_indx_and_weight=False,
     )
     assert stack_3D_map[ang_mid_point, ang_mid_point, freq_mid_point] == 1.0
+
+
+def test_sum_3d_stack():
+    test_3D_map = np.zeros((5, 5, 201))
+    test_3D_map[:, :, 95:106] = 1.0
+    angular_test, spectral_test = sum_3d_stack(
+        test_3D_map, vel_ch_avg=5, ang_sum_dist=3.0
+    )
+    assert np.allclose(angular_test, np.ones_like(angular_test) * 11.0)
+    assert np.allclose(spectral_test[95:106], np.ones(11) * 25)
+    assert angular_test.sum() == test_3D_map.sum()
+    assert spectral_test.sum() == test_3D_map.sum()
+    angular_test, spectral_test = sum_3d_stack(
+        test_3D_map, vel_ch_avg=2, ang_sum_dist=1.0
+    )
+    assert np.allclose(angular_test, np.ones_like(angular_test) * 5.0)
+    assert np.allclose(spectral_test[95:106], np.ones(11) * 5)
