@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import healpy as hp
 from astropy.io import fits
-from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
+from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
+from astropy.cosmology import Planck18
 
 
 def read_healpix_fits(file):
@@ -191,3 +192,50 @@ def rebin_spectrum(spectrum, rebin_width=3, mode="avg"):
     if mode == "sum":
         spectrum_rebin *= rebin_width
     return spectrum_rebin
+
+
+def find_rotation_matrix(vec):
+    """
+    find the rotation matrix to rotate the input vector to (0,0,1).
+    """
+    theta_rot = np.arctan2(vec[1], vec[0])
+    rot_mat_1 = np.array(
+        [
+            [np.cos(-theta_rot), -np.sin(-theta_rot), 0],
+            [np.sin(-theta_rot), np.cos(-theta_rot), 0],
+            [0, 0, 1],
+        ]
+    )
+    inter_vec = rot_mat_1 @ vec
+    phi_rot = -np.arctan2(inter_vec[0], inter_vec[2])
+    rot_mat_2 = np.array(
+        [
+            [np.cos(-phi_rot), 0, -np.sin(-phi_rot)],
+            [0, 1, 0],
+            [np.sin(-phi_rot), 0, np.cos(-phi_rot)],
+        ]
+    )
+    return rot_mat_2 @ rot_mat_1
+
+
+def minimum_enclosing_box_of_lightcone(ra_arr, dec_arr, freq, cosmo=Planck18):
+    """
+    not really minimum but should be okay.
+    """
+    ra_temp = ra_arr.copy()
+    ra_temp[ra_temp > 180] -= 360
+    ra_mean = ra_temp.mean()
+    dec_mean = dec_arr.mean()
+    mean_vec = hp.ang2vec(ra_mean, dec_mean, lonlat=True)
+    rot_mat = find_rotation_matrix(mean_vec)
+    z_arr = f_21 / freq - 1
+    vec_arr = hp.ang2vec(ra_arr, dec_arr, lonlat=True)
+    # rotate so that centre of field is the line-of-sight [0,0,1]
+    vec_arr = np.einsum("ab,ib->ia", rot_mat, vec_arr)
+    comov_dist_arr = cosmo.comoving_distance(z_arr)
+    pos_arr = vec_arr[:, None, :] * comov_dist_arr[None, :, None]
+    pos_arr = pos_arr.reshape((-1, 3))
+    x_min, y_min, z_min = pos_arr.min(axis=0)
+    x_max, y_max, z_max = pos_arr.max(axis=0)
+    inv_rot = np.linalg.inv(rot_mat)
+    return (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
