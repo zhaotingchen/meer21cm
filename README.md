@@ -15,7 +15,7 @@ cd meerstack/
 pip install -e .
 ```
 
-It uses [hiimtool](https://github.com/zhaotingchen/hiimtool) as dependency which needs to be installed separately as well.
+It uses [hiimtool](https://github.com/zhaotingchen/hiimtool) for some functionalities.
 
 If you are using it on ilifu and don't want to create your own environment for it, you can simply clone the repo and do:
 
@@ -25,4 +25,4 @@ sys.path.append('path/to/hiimtool/src/')
 sys.path.append('path/to/meerstack/src/')
 ```
 ## Development
-If you want to contribute to the developing of `meerstack`, make sure you check [requirements](DEVELOPING.md).
+If you want to contribute to the developing of `meerstack`, make sure you check [the workflow](DEVELOPING.md).

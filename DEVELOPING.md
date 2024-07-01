@@ -1,5 +1,5 @@
 ## Installtion
-In order to run the tests, you need to clone the repo and install the optional dependencies
+In order to run the tests, you need to create your own fork, clone the repo and install the optional dependencies
 ```
 pip install -e ".[full]"
 ```
@@ -12,7 +12,7 @@ You should always use Git for making changes to the code. To enforce a unified c
 - make your changes
 - run the tests to make sure nothing breaks (see below).
 - stage the changes (GUI or `git add files_you_changed`). If you are using CLI and get lost, try `git status` to see what's going on.
-- run `git commit "message you want to insert"` or commit from GUI. `pre-commit` will run checks and files will be changed to conform to the *Black* code style.
+- run `git commit "message you want to insert"` or commit from GUI. `pre-commit` will run checks and files will be changed to conform to the *Black* code style if needed.
 - If changes have been made, stage these changes and run `git commit -m "message you want to insert"` again.
 - push to remote by running `git push -u origin new_branch_name`. If you have already pushed it before then ignore `-u`.
 - Go to the github repo and create a pull request. **MAKE SURE** you ask for a review and have it approved with all tests passed. Branch protection rules may not be in place and in no circumstance should you merge into main without asking.
@@ -35,7 +35,7 @@ pytest --cov=meerstack tests/ --cov-report term --cov-report html:coverage.html
 ```
 which will generate a folder `coverage.html` (do not commit it, leave it untracked). You can open the html files inside to see the coverage.
 
-When you push, Github Actions have been set up so the tests will be checked and a coverage report will also be generated. Although I do not recommend it, you can just check the coverage in the pull request instead of checking locally.
+When you push, Github Actions have been set up so the tests will be checked and a coverage report will also be generated on codecov. Although I do not recommend it, you can just check the coverage in the pull request instead of checking locally.
 
 ## Caution
 - Avoid even tracking a large file. **Never commit** a change where **a large file** (>100MB) is added to the repo. If you have done so, you need to rewind back to the commit before that and start over. No, deleting it in a later commit will not fix it.
