@@ -379,6 +379,22 @@ def stack(
         return stack_3D_map, stack_3D_weight, x_edges, ang_edges
 
 
+def sum_3d_stack(stack_3D_map, vel_ch_avg=5, ang_sum_dist=3.0):
+    mid_point = stack_3D_map.shape[-1] // 2
+    ang_centre = stack_3D_map.shape[0] // 2
+    xx, yy = np.meshgrid(
+        np.linspace(-ang_centre, ang_centre, stack_3D_map.shape[0]),
+        np.linspace(-ang_centre, ang_centre, stack_3D_map.shape[0]),
+    )
+    pix_dist = np.sqrt(xx**2 + yy**2)
+    pix_sel = pix_dist <= (ang_sum_dist)
+    angular_stack_map = stack_3D_map[
+        :, :, mid_point - vel_ch_avg : mid_point + vel_ch_avg + 1
+    ].sum(axis=-1)
+    spectral_stack_map = stack_3D_map[pix_sel].sum(axis=0)
+    return angular_stack_map, spectral_stack_map
+
+
 # def _stack(
 #    map_in,wproj,ra_g_in,dec_g_in,z_g_in,nu,
 #    W_map_in=None,

@@ -176,3 +176,18 @@ def healpix_to_wcs(hp_map, xx, yy, wcs):
     pix_indx = hp.ang2pix(nside, ra_map, dec_map, lonlat=True)
     output_map = hp_map[pix_indx]
     return output_map
+
+
+def rebin_spectrum(spectrum, rebin_width=3, mode="avg"):
+    assert spectrum.size % 2 == 1
+    assert rebin_width % 2 == 1
+    rebin_pad = spectrum.size % rebin_width
+    if rebin_pad % 2 == 1:
+        rebin_pad += rebin_width
+    rebin_pad = rebin_pad // 2
+    spectrum_rebin = (
+        spectrum[rebin_pad:-rebin_pad].reshape((-1, rebin_width)).mean(axis=-1)
+    )
+    if mode == "sum":
+        spectrum_rebin *= rebin_width
+    return spectrum_rebin
