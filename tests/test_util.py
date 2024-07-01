@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
-from meerstack.util import get_wcs_coor, PCAclean, radec_to_indx
+from meerstack.util import get_wcs_coor, PCAclean, radec_to_indx, rebin_spectrum
 
 
 def test_get_wcs_coor(test_wproj, test_wcs):
@@ -68,3 +68,13 @@ def test_radec_to_indx(test_wproj):
     indx_1, indx_2 = radec_to_indx(0, -30, test_wproj, to_int=False)
     assert np.round(indx_1) == indx_i
     assert np.round(indx_2) == indx_j
+
+
+def test_rebin_spectrum():
+    test_spectrum = np.zeros(503)
+    test_spectrum[503 // 2] = 1.0
+    test_rebin = rebin_spectrum(test_spectrum, rebin_width=3)
+    assert test_rebin.sum() == 1 / 3
+    assert test_rebin.size == 503 // 3
+    test_rebin = rebin_spectrum(test_spectrum, rebin_width=3, mode="sum")
+    assert test_rebin.sum() == 1
