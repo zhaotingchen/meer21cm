@@ -101,3 +101,10 @@ def test_minimum_enclosing_box_of_lightcone():
     assert ((xlen - cov_dist * 0.1 * np.pi / 180) / xlen).to("").value < 0.01
     assert ((ylen - cov_dist * 0.1 * np.pi / 180) / ylen).to("").value < 0.01
     assert ((cov_scale - zlen) / cov_scale).to("").value < 0.01
+    test_vec = rot_mat @ np.array(
+        [(xmin + xlen / 2).value, (ymin + ylen / 2).value, (zmin + zlen / 2).value]
+    )
+    test_vec /= np.sqrt(np.sum(test_vec**2))
+    ra_cen, dec_cen = hp.vec2ang(test_vec, lonlat=True)
+    assert np.abs(ra_rand - ra_cen) < 0.1
+    assert np.abs(dec_rand - dec_cen) < 0.1
