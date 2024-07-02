@@ -1,10 +1,44 @@
 import numpy as np
 import pytest
-from meerstack.mock import gen_random_gal_pos, run_poisson_mock
+from meerstack.mock import gen_random_gal_pos, run_poisson_mock, HISimulation
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
+
+
+def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
+    num_g = 10000
+    hisim = HISimulation(
+        nu=test_nu,
+        wproj=test_wproj,
+        num_g=num_g,
+        num_pix_x=test_W.shape[0],
+        num_pix_y=test_W.shape[1],
+        density="poisson",
+        W_HI=test_W,
+        verbose=False,
+        do_stack=False,
+        x_dim=test_W.shape[0],
+        y_dim=test_W.shape[1],
+        ignore_double_counting=False,
+        return_indx_and_weight=False,
+        seed=42,
+        himf_pars=himf_pars_jones18(Planck18.h / 0.7),
+    )
+    hisim.get_gal_pos(cache=True)
+    assert hisim.do_stack == False
+    assert hisim.seed == 42
+    ra_g, dec_g, inside_range = (hisim.ra_g_mock, hisim.dec_g_mock, hisim.inside_range)
+    # test when no range is specified, the sizes match with n_g
+    assert len(ra_g) == num_g
+    assert len(dec_g) == num_g
+    assert len(inside_range) == num_g
+    assert (inside_range).mean() == 1
+    z_g_mock = hisim.get_gal_z()
+    assert ((z_g_mock - hisim.z_ch.min()) >= 0).mean() == 1
+    assert ((z_g_mock - hisim.z_ch.max()) <= 0).mean() == 1
+    hisim.get_hifluxdensity_ch(cache=True)
 
 
 def test_gen_random_gal_pos(test_wproj, test_W, test_GAMA_range):
@@ -30,14 +64,14 @@ def test_gen_random_gal_pos(test_wproj, test_W, test_GAMA_range):
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
     # currently there is just no good way for default_rng to work with pytest.
     # saving this for later
-    seed_default_rng = np.random.default_rng(seed=np.random.randint(1, 10000))
+    seed_default_rng = np.random.randint(1, 10000)
     ra_g, dec_g, inside_range = gen_random_gal_pos(
         test_wproj,
         test_W[:, :, 0],
         num_g,
         ra_range=test_GAMA_range[0],
         dec_range=test_GAMA_range[1],
-        rng=seed_default_rng,
+        seed=seed_default_rng,
     )
     assert inside_range.sum() == num_g
     assert np.mean(ra_g[inside_range] > test_GAMA_range[0][0]) == 1
@@ -122,7 +156,11 @@ def test_gal_pos_in_mock(test_wproj, test_W, test_nu, test_GAMA_range):
         ignore_double_counting=False,
         return_indx_and_weight=False,
         fix_z=f_21 / 1e6 / test_nu.mean() - 1,
+        fix_ra_dec=(350, -30),
     )
+    assert z_g == f_21 / 1e6 / test_nu.mean() - 1
+    assert ra_g == 350
+    assert dec_g == -30
     assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
     assert (himap_g[himap_g > 0]).sum() == hifluxd_in.sum()
     assert himap_g[indx_1_g, indx_2_g, gal_which_ch] > 0
@@ -300,7 +338,7 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
         fast_ang_pos=False,
     )
     assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
-    assert (himap_g[himap_g > 0]).sum() == hifluxd_in.sum()
+    assert np.allclose((himap_g[himap_g > 0]).sum(), hifluxd_in.sum())
     assert himap_g[indx_1_g, indx_2_g, gal_which_ch] > 0
     # hiflux should have larger width than velocity so some empty channel
     assert (hifluxd_in == 0).sum() > 0
