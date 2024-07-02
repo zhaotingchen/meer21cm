@@ -5,6 +5,17 @@ from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from meerstack.util import *
 
 
+def test_get_default_args():
+    def test_func(x, arg1=1):
+        return 1
+
+    defaults = get_default_args(test_func)
+    assert len(defaults) == 1
+    for k, v in defaults.items():
+        assert k == "arg1"
+        assert v == 1
+
+
 def test_get_wcs_coor(test_wproj, test_wcs):
     with pytest.raises(Exception) as e_info:
         get_wcs_coor(test_wcs, np.arange(10), np.arange(10))

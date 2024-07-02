@@ -7,6 +7,16 @@ import healpy as hp
 from astropy.io import fits
 from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
 from astropy.cosmology import Planck18
+import inspect
+
+
+def get_default_args(func):
+    signature = inspect.signature(func)
+    return {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
 
 
 def read_healpix_fits(file):
