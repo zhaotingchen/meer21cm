@@ -25,6 +25,8 @@ dependencies = [
     'scipy',
     # Conditional
     'backports.cached_property; python_version < "3.8"',
+    'powerbox; python_version >= "3.9"',
+    'halomod; python_version >= "3.9"',
 ]
 
 
