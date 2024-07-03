@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import sys
 import os
+from scipy.interpolate import interp1d
 
 matplotlib.rcParams["figure.figsize"] = (18, 9)
 from astropy.cosmology import Planck18
@@ -27,9 +28,16 @@ from .util import (
     plot_map,
     radec_to_indx,
     get_default_args,
+    find_rotation_matrix,
+    minimum_enclosing_box_of_lightcone,
+    hod_obuljen18,
 )
 import healpy as hp
 
+python_ver = sys.version_info[0] + sys.version_info[1] / 10
+if python_ver >= 3.9:
+    from powerbox import LogNormalPowerBox
+    from halomod import TracerHaloModel as THM
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
@@ -44,7 +52,6 @@ class HISimulation:
         density="poisson",
         **sim_parameters,
     ):
-        self.dndz = lambda x: np.ones_like(x)
         self.cache = False
         self.nu = nu
         self.z_ch = f_21 / self.nu / 1e6 - 1
@@ -61,13 +68,20 @@ class HISimulation:
         func_list = (generate_hi_flux, flux_to_sky_map)
         if self.density == "poisson":
             func_list += (gen_random_gal_pos,)
+        elif self.density == "lognormal":
+            func_list += (gen_clustering_gal_pos,)
         for func in func_list:
             defaults = get_default_args(func)
             self.__dict__.update(defaults)
         self.__dict__.update(sim_parameters)
+        if self.density == "poisson" and "dndz" not in self.__dict__.keys():
+            self.dndz = lambda x: np.ones_like(x)
         if "W_HI" in self.__dict__.keys():
-            W_HI = np.mean(self.W_HI, axis=-1) == 1
-            self.W_HI = W_HI[:, :, None] * np.ones_like(nu)[None, None, :]
+            if len(self.W_HI.shape) == 3:
+                W_HI = np.mean(self.W_HI, axis=-1) == 1
+                self.W_HI = W_HI[:, :, None] * np.ones_like(nu)[None, None, :]
+        else:
+            self.W_HI = np.ones((num_pix_x, num_pix_y, len(nu)))
         # in deg^2
         self.pix_area = proj_plane_pixel_area(wproj)
         self.pix_resol = np.sqrt(self.pix_area)
@@ -81,16 +95,6 @@ class HISimulation:
         # the coordinates of each pixel in the map
         self.ra_map, self.dec_map = get_wcs_coor(wproj, xx, yy)
 
-    def get_gal_z(self, cache=None):
-        if cache is None:
-            cache = self.cache
-        rand_z = sample_from_dist(
-            self.dndz, self.zmin, self.zmax, size=self.num_g_tot, seed=self.seed
-        )
-        if cache:
-            self.z_g_mock = rand_z
-        return rand_z
-
     def get_gal_pos(self, cache=None):
         if cache is None:
             cache = self.cache
@@ -103,28 +107,56 @@ class HISimulation:
                 dec_range=self.dec_range,
                 seed=self.seed,
             )
+            # update number of galaxies to include outside range
+            self.num_g_tot = ra_g_mock.size
+            z_g_mock = sample_from_dist(
+                self.dndz, self.zmin, self.zmax, size=self.num_g_tot, seed=self.seed
+            )
+        elif self.density == "lognormal":
+            if python_ver < 3.9:
+                raise ImportError(
+                    "Lognormal simulation for Python < 3.9 is unsupported."
+                )
+            (
+                ra_g_mock,
+                dec_g_mock,
+                z_g_mock,
+                inside_range,
+                mmin_halo,
+            ) = gen_clustering_gal_pos(
+                self.nu,
+                self.cosmo,
+                self.wproj,
+                self.num_g,
+                self.W_HI,
+                relative_resol_to_pix=self.relative_resol_to_pix,
+                ra_range=self.ra_range,
+                dec_range=self.dec_range,
+                seed=self.seed,
+                target_relative_to_num_g=self.target_relative_to_num_g,
+            )
+            self.num_g_tot = ra_g_mock.size
         indx_1_g, indx_2_g = radec_to_indx(ra_g_mock, dec_g_mock, self.wproj)
-        # update number of galaxies to include outside range
-        self.num_g_tot = ra_g_mock.size
+
         if cache:
             self.ra_g_mock = ra_g_mock
             self.dec_g_mock = dec_g_mock
             self.inside_range = inside_range
             self.indx_1_g = indx_1_g
             self.indx_2_g = indx_2_g
-        return ra_g_mock, dec_g_mock, inside_range, indx_1_g, indx_2_g
+            self.z_g_mock = z_g_mock
+            if self.density == "lognormal":
+                self.mmin_halo = mmin_halo
+        return ra_g_mock, dec_g_mock, z_g_mock, inside_range, indx_1_g, indx_2_g
 
     def get_hifluxdensity_ch(self, cache=None):
         if cache is None:
             cache = self.cache
         if "ra_g_mock" not in self.__dict__.keys():
-            ra_g_mock, dec_g_mock, _, _, _ = self.get_gal_pos(cache=cache)
+            ra_g_mock, dec_g_mock, z_g_mock, _, _, _ = self.get_gal_pos(cache=cache)
         else:
             ra_g_mock = self.ra_g_mock
             dec_g_mock = self.dec_g_mock
-        if "z_g_mock" not in self.__dict__.keys():
-            z_g_mock = self.get_gal_z(cache=cache)
-        else:
             z_g_mock = self.z_g_mock
         hifluxd_ch, himass_g = generate_hi_flux(
             self.nu,
@@ -153,7 +185,7 @@ class HISimulation:
             cache = self.cache
         if z_g is None:
             if "z_g_mock" not in self.__dict__.keys():
-                z_g = self.get_gal_z(cache=cache)
+                _, _, z_g, _, _, _ = self.get_gal_pos(cache=cache)
             else:
                 z_g = self.z_g_mock
         gal_freq = f_21 / (1 + z_g) / 1e6
@@ -194,7 +226,117 @@ class HISimulation:
             map_unit=self.map_unit,
             sigma_beam_ch=self.sigma_beam_ch,
         )
+        if cache:
+            self.hi_map = himap_g
         return himap_g
+
+
+def gen_clustering_gal_pos(
+    nu,
+    cosmo,
+    wproj,
+    num_g,
+    W_HI,
+    relative_resol_to_pix=0.5,
+    ra_range=(-np.inf, np.inf),
+    dec_range=(-400, 400),
+    seed=None,
+    target_relative_to_num_g=1.5,
+):
+    ra_range = np.array(ra_range)
+    ra_range[ra_range > 180] -= 360
+    num_pix_x = W_HI.shape[0]
+    num_pix_y = W_HI.shape[1]
+    pix_area = proj_plane_pixel_area(wproj)
+    pix_resol = np.sqrt(pix_area)
+    tot_area = pix_area * (W_HI[:, :, 0].sum())
+    range_area = (ra_range[1] - ra_range[0]) * (dec_range[1] - dec_range[0])
+    if range_area < tot_area:
+        fraction_area = tot_area / range_area
+    else:
+        fraction_area = 1
+    xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
+    ra_map, dec_map = get_wcs_coor(wproj, xx, yy)
+    z_ch = f_21 / nu / 1e6 - 1
+    ra_pix = ra_map[W_HI[:, :, 0] > 0]
+    dec_pix = dec_map[W_HI[:, :, 0] > 0]
+    # obtain cuboid dimensions
+    (
+        x_start,
+        y_start,
+        z_start,
+        L_x,
+        L_y,
+        L_z,
+        rot_back,
+    ) = minimum_enclosing_box_of_lightcone(ra_pix, dec_pix, nu * 1e6, cosmo=cosmo)
+    target_resol = np.round(
+        relative_resol_to_pix
+        * pix_resol
+        * np.pi
+        / 180
+        * cosmo.comoving_distance(z_ch).value.min()
+    )
+    L_x = (np.floor(L_x.value // target_resol) + 1) * target_resol
+    L_y = (np.floor(L_y.value // target_resol) + 1) * target_resol
+    L_z = (np.floor(L_z.value // target_resol) + 1) * target_resol
+    L_box = np.array([L_x, L_y, L_z])
+    N_box = (L_box / target_resol).astype("int")
+    # powerbox bug: only even N works
+    N_box[N_box % 2 == 1] += 1
+    hm = THM(z=z_ch.mean(), cosmo_model=cosmo, hc_spectrum="nonlinear")
+    cumu_halo_density = hm.ngtm * cosmo.h**3
+    n_halo = cumu_halo_density * np.prod(L_box)
+    target_halo_num = target_relative_to_num_g * num_g * fraction_area
+    mmin_halo = np.log10(hm.m[np.where(n_halo < target_halo_num)[0][0] - 1])
+    nbar_halo = cumu_halo_density[np.where(n_halo < target_halo_num)[0][0] - 1]
+    power_hh = hm.power_hh(hm.k * cosmo.h, mmin=mmin_halo) / cosmo.h**3
+    power_hh_func = interp1d(np.log10(hm.k * cosmo.h), np.log10(power_hh))
+    pk_func = lambda k: 10 ** (power_hh_func(np.log10(k)))
+    pb = LogNormalPowerBox(
+        N=N_box,
+        dim=3,
+        pk=pk_func,
+        boxlength=L_box,
+        seed=seed,
+    )
+    halo_pos = pb.create_discrete_sample(
+        nbar=nbar_halo,
+        randomise_in_cell=True,
+        store_pos=True,
+        min_at_zero=True,
+    )
+    halo_pos[:, 0] += x_start.value
+    halo_pos[:, 1] += y_start.value
+    halo_pos[:, 2] += z_start.value
+    halo_pos_on_sky = np.einsum("ij,aj->ai", rot_back, halo_pos)
+    halo_comov_dist = np.sqrt(np.sum(halo_pos_on_sky**2, axis=-1))
+    z_interp = np.linspace(z_ch.min() - 0.2, z_ch.max() + 0.2, 1001)
+    comov_interp = cosmo.comoving_distance(z_interp).value
+    inv_comov_func = interp1d(comov_interp, z_interp)
+    halo_z = inv_comov_func(halo_comov_dist)
+    z_g_mock = halo_z.copy()
+    ra_g_mock, dec_g_mock = hp.vec2ang(
+        halo_pos_on_sky / halo_comov_dist[:, None], lonlat=True
+    )
+    indx_in_band = (halo_z >= z_ch.min()) * (halo_z <= z_ch.max())
+    ra_g_mock = ra_g_mock[indx_in_band]
+    dec_g_mock = dec_g_mock[indx_in_band]
+    z_g_mock = z_g_mock[indx_in_band]
+    indx_1_g, indx_2_g = radec_to_indx(ra_g_mock, dec_g_mock, wproj)
+    indx_in_W = W_HI[indx_1_g, indx_2_g, 0] > 0
+    ra_g_mock = ra_g_mock[indx_in_W]
+    dec_g_mock = dec_g_mock[indx_in_W]
+    z_g_mock = z_g_mock[indx_in_W]
+    ra_g_temp = ra_g_mock.copy()
+    ra_g_temp[ra_g_temp > 180] -= 360
+    inside_range = (
+        (ra_g_temp > ra_range[0])
+        * (ra_g_temp < ra_range[1])
+        * (dec_g_mock > dec_range[0])
+        * (dec_g_mock < dec_range[1])
+    )
+    return ra_g_mock, dec_g_mock, z_g_mock, inside_range, mmin_halo
 
 
 def gen_random_gal_pos(
@@ -577,6 +719,7 @@ def run_poisson_mock(
     fix_z=None,
     fast_ang_pos=True,
     hp_map_extend=2.0,
+    **kwargs,
 ):
     def mock_stack(verbose):
         stack_result = stack(
@@ -675,9 +818,11 @@ def run_poisson_mock(
     # ra_g_mock, dec_g_mock, inside_range = gen_random_gal_pos(
     #    wproj, W_HI[:, :, 0], num_g, ra_range=ra_range, dec_range=dec_range, seed=seed
     # )
-    ra_g_mock, dec_g_mock, inside_range, indx_1_g, indx_2_g = hisim.get_gal_pos(
+    ra_g_mock, dec_g_mock, rand_z, inside_range, indx_1_g, indx_2_g = hisim.get_gal_pos(
         cache=True
     )
+    # update num_g to include sources outside the range
+    num_g = hisim.num_g_tot
     # indx_1_g, indx_2_g = radec_to_indx(ra_g_mock, dec_g_mock, wproj)
     if fix_ra_dec is not None:
         hisim.ra_g_mock[inside_range] = fix_ra_dec[0]
@@ -686,10 +831,6 @@ def run_poisson_mock(
         hisim.indx_1_g[inside_range] = fix_indx[0]
         hisim.indx_2_g[inside_range] = fix_indx[1]
 
-    # update num_g to include sources outside the range
-    num_g = hisim.num_g_tot
-    # rand_z = sample_from_dist(dndz, zmin, zmax, size=num_g, seed=seed)
-    rand_z = hisim.get_gal_z(cache=True)
     if fix_z is not None:
         hisim.z_g_mock[inside_range] = fix_z
         rand_z = hisim.z_g_mock

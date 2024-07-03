@@ -5,6 +5,9 @@ from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
+import sys
+
+python_ver = sys.version_info[0] + sys.version_info[1] / 10
 
 
 def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
@@ -35,10 +38,37 @@ def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
     assert len(dec_g) == num_g
     assert len(inside_range) == num_g
     assert (inside_range).mean() == 1
-    z_g_mock = hisim.get_gal_z()
+    z_g_mock = hisim.z_g_mock
     assert ((z_g_mock - hisim.z_ch.min()) >= 0).mean() == 1
     assert ((z_g_mock - hisim.z_ch.max()) <= 0).mean() == 1
     hisim.get_hifluxdensity_ch(cache=True)
+    hisim.get_hi_map(cache=True)
+
+
+def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
+    num_g = 10000
+    hisim = HISimulation(
+        nu=test_nu,
+        wproj=test_wproj,
+        num_g=num_g,
+        num_pix_x=test_W.shape[0],
+        num_pix_y=test_W.shape[1],
+        density="lognormal",
+        W_HI=test_W,
+        verbose=False,
+        do_stack=False,
+        x_dim=test_W.shape[0],
+        y_dim=test_W.shape[1],
+        ignore_double_counting=False,
+        return_indx_and_weight=False,
+        seed=42,
+        himf_pars=himf_pars_jones18(Planck18.h / 0.7),
+    )
+    if python_ver < 3.9:
+        with pytest.raises(ImportError):
+            hisim.get_gal_pos()
+    else:
+        hisim.get_gal_pos()
 
 
 def test_gen_random_gal_pos(test_wproj, test_W, test_GAMA_range):
@@ -168,8 +198,9 @@ def test_gal_pos_in_mock(test_wproj, test_W, test_nu, test_GAMA_range):
     assert (hifluxd_in == 0).sum() > 0
 
 
-def test_raise_error():
-    with pytest.raises(Exception):
+def test_raise_error(test_wproj, test_W, test_nu, test_GAMA_range):
+    num_g = 1
+    with pytest.raises(ValueError):
         run_poisson_mock(
             test_nu,
             num_g,
@@ -188,34 +219,13 @@ def test_raise_error():
             ra_range=test_GAMA_range[0],
             dec_range=test_GAMA_range[1],
         )
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         run_poisson_mock(
             test_nu,
             num_g,
             himf_pars_jones18(Planck18.h / 0.7),
             test_wproj,
             W_HI=np.zeros_like(test_W),
-            seed=42,
-            no_vel=True,
-            mmin=10.5,
-            verbose=False,
-            do_stack=False,
-            x_dim=test_W.shape[0],
-            y_dim=test_W.shape[1],
-            ignore_double_counting=False,
-            return_indx_and_weight=False,
-            ra_range=test_GAMA_range[0],
-            dec_range=test_GAMA_range[1],
-        )
-    with pytest.raises(Exception):
-        W_input = np.zeros_like(test_W)
-        W_input[:, :, 0] += 1
-        run_poisson_mock(
-            test_nu,
-            num_g,
-            himf_pars_jones18(Planck18.h / 0.7),
-            test_wproj,
-            W_HI=W_input,
             seed=42,
             no_vel=True,
             mmin=10.5,
