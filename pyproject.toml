@@ -25,7 +25,7 @@ dependencies = [
     'scipy',
     # Conditional
     'backports.cached_property; python_version < "3.8"',
-    'powerbox@git+https://github.com/zhaotingchen/powerbox/tree#egg=cuboid; python_version >= "3.9"',
+    'powerbox@git+https://github.com/zhaotingchen/powerbox#egg=cuboid; python_version >= "3.9"',
     'halomod; python_version >= "3.9"',
 ]
 
