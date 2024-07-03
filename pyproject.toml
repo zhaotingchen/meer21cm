@@ -17,12 +17,13 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    # due to halomod dependency on scipy.integrate.simps
+    'scipy < 1.14',
     "numpy",
     "hiimtool@git+https://github.com/zhaotingchen/hiimtool",
     "healpy",
     "matplotlib",
     "astropy",
-    'scipy',
     # Conditional
     'backports.cached_property; python_version < "3.8"',
     'powerbox@git+https://github.com/zhaotingchen/powerbox ; python_version >= "3.9"',
