@@ -241,7 +241,7 @@ def gen_clustering_gal_pos(
     ra_range=(-np.inf, np.inf),
     dec_range=(-400, 400),
     seed=None,
-    target_relative_to_num_g=1.5,
+    target_relative_to_num_g=2.0,
 ):
     ra_range = np.array(ra_range)
     ra_range[ra_range > 180] -= 360
@@ -324,6 +324,17 @@ def gen_clustering_gal_pos(
     dec_g_mock = dec_g_mock[indx_in_band]
     z_g_mock = z_g_mock[indx_in_band]
     indx_1_g, indx_2_g = radec_to_indx(ra_g_mock, dec_g_mock, wproj)
+    indx_in_wproj = (
+        (indx_1_g >= 0)
+        * (indx_2_g >= 0)
+        * (indx_1_g < W_HI.shape[0])
+        * (indx_2_g < W_HI.shape[1])
+    )
+    ra_g_mock = ra_g_mock[indx_in_wproj]
+    dec_g_mock = dec_g_mock[indx_in_wproj]
+    z_g_mock = z_g_mock[indx_in_wproj]
+    indx_1_g = indx_1_g[indx_in_wproj]
+    indx_2_g = indx_2_g[indx_in_wproj]
     indx_in_W = W_HI[indx_1_g, indx_2_g, 0] > 0
     ra_g_mock = ra_g_mock[indx_in_W]
     dec_g_mock = dec_g_mock[indx_in_W]
@@ -869,14 +880,10 @@ def run_poisson_mock(
         )
         lon = ax.coords[0]
         lat = ax.coords[1]
-        # lon.set_ticks(spacing=np.sqrt(pix_area) * units.degree)
-        # lat.set_ticks(spacing=np.sqrt(pix_area) * units.degree)
         ax.coords.grid(True, color="black", ls="solid")
         plt.xlabel("R.A [deg]", fontsize=18)
         plt.ylabel("Dec. [deg]", fontsize=18)
         plt.legend()
-        # plt.show()
-        # plt.close()
 
     vel_resol = hisim.vel_resol
 
@@ -902,19 +909,207 @@ def run_poisson_mock(
     # overlay mock on the original map
     himap_g += base_map
     if not do_stack:
-        return (
+        stack_result = ()
+    else:
+        # run stacking
+        stack_result = mock_stack(verbose)
+    return (
+        himap_g,
+        ra_g_mock,
+        dec_g_mock,
+        z_g_mock,
+        indx_1_g,
+        indx_2_g,
+        gal_which_ch,
+        hifluxd_ch,
+        inside_range,
+    ) + stack_result
+
+
+def run_lognormal_mock(
+    nu,
+    num_g,
+    himf_pars,
+    wproj,
+    base_map=None,
+    verbose=False,
+    seed=None,
+    mmin_from_hod=hod_obuljen18,
+    mmin=11.0,
+    mmax=14.0,
+    W_HI=None,
+    w_HI=None,
+    no_vel=True,
+    tf_slope=None,
+    tf_zero=None,
+    cosmo=Planck18,
+    map_unit=units.Jy,
+    sigma_beam_ch=None,
+    mycmap="bwr",
+    zmin=None,
+    zmax=None,
+    internal_step=1001,
+    x_dim=None,
+    y_dim=None,
+    ra_range=(-np.inf, np.inf),
+    dec_range=(-400, 400),
+    fast_ang_pos=True,
+    hp_map_extend=2.0,
+    velocity_width_halfmax=50,
+    stack_angular_num_nearby_pix=10,
+    x_unit=units.km / units.s,
+    ignore_double_counting=False,
+    return_indx_and_weight=False,
+    do_stack=False,
+):
+    def mock_stack(verbose):
+        stack_result = stack(
             himap_g,
-            ra_g_mock,
-            dec_g_mock,
-            z_g_mock,
-            indx_1_g,
-            indx_2_g,
-            gal_which_ch,
-            hifluxd_ch,
-            inside_range,
+            wproj,
+            ra_g_mock[inside_range],
+            dec_g_mock[inside_range],
+            z_g_mock[inside_range],
+            nu,
+            W_map_in=W_HI,
+            w_map_in=w_HI,
+            no_vel=no_vel,
+            sigma_beam_in=sigma_beam_ch,
+            velocity_width_halfmax=velocity_width_halfmax,
+            stack_angular_num_nearby_pix=stack_angular_num_nearby_pix,
+            ignore_double_counting=ignore_double_counting,
+            x_unit=x_unit,
+            verbose=verbose,
+            return_indx_and_weight=return_indx_and_weight,
         )
-    # run stacking
-    stack_result = mock_stack(verbose)
+        return stack_result
+
+    if base_map is not None:
+        num_pix_x = base_map.shape[0]
+        num_pix_y = base_map.shape[1]
+    elif x_dim is not None and y_dim is not None:
+        num_pix_x = x_dim
+        num_pix_y = y_dim
+    else:
+        raise ValueError("either base_map or (x_dim,y_dim) is needed")
+    if W_HI is None:
+        W_HI = np.ones((num_pix_x, num_pix_y, len(nu)))
+    if len(W_HI.shape) == 2:
+        W_HI = W_HI[:, :, None]
+    elif len(W_HI.shape) != 3:
+        raise ValueError("W mask has to be 2d or 3d")
+
+    if W_HI[:, :, 0].sum() == 0:
+        raise ValueError("all pixels are masked by W_HI")
+    hisim = HISimulation(
+        nu,
+        wproj,
+        num_g,
+        num_pix_x,
+        num_pix_y,
+        density="lognormal",
+        himf_pars=himf_pars,
+        base_map=base_map,
+        verbose=verbose,
+        seed=seed,
+        mmin=mmin,
+        mmax=mmax,
+        no_vel=no_vel,
+        W_HI=W_HI,
+        w_HI=w_HI,
+        tf_slope=tf_slope,
+        tf_zero=tf_zero,
+        cosmo=cosmo,
+        map_unit=map_unit,
+        sigma_beam_ch=sigma_beam_ch,
+        mycmap=mycmap,
+        zmin=zmin,
+        zmax=zmax,
+        internal_step=internal_step,
+        x_dim=x_dim,
+        y_dim=y_dim,
+        ra_range=ra_range,
+        dec_range=dec_range,
+        fast_ang_pos=fast_ang_pos,
+        hp_map_extend=hp_map_extend,
+    )
+    # the coordinates of each pixel in the map
+    ra, dec = hisim.ra_map, hisim.dec_map
+    if base_map is None:
+        base_map = np.zeros(ra.shape + nu.shape)
+    (
+        ra_g_mock,
+        dec_g_mock,
+        z_g_mock,
+        inside_range,
+        indx_1_g,
+        indx_2_g,
+    ) = hisim.get_gal_pos(cache=True)
+    mmin_halo = hisim.mmin_halo
+    gal_which_ch = hisim.gal_ch_id()
+    hisim.mmin = np.log10(mmin_from_hod(mmin_halo))
+    hifluxd_ch, himass_g = hisim.get_hifluxdensity_ch(cache=True)
+    inside_indx = np.where(inside_range)[0]
+    mass_indx = np.argsort(himass_g[inside_range])[-num_g:]
+    inside_range = np.zeros_like(inside_range)
+    inside_range[inside_indx[mass_indx]] = True
+    hisim.inside_range = inside_range
+    if verbose:
+        plt.hist(z_g_mock, bins=20, density=True)
+        plt.title("redshift distribution")
+        plt.xlabel("z")
+        plt.ylabel("dn/dz")
+        # plt.show()
+        # plt.close()
+
+        plt.figure()
+        plt.subplot(projection=wproj)
+        ax = plt.gca()
+        ax.invert_xaxis()
+        lon = ax.coords[0]
+        lat = ax.coords[1]
+        lon.set_major_formatter("d")
+        contours = plt.contour(W_HI[:, :, 0].T, levels=[0.5], colors="black")
+        if inside_range.mean() < 1:
+            plt.scatter(
+                ra_g_mock[(1 - inside_range).astype("bool")],
+                dec_g_mock[(1 - inside_range).astype("bool")],
+                transform=ax.get_transform("world"),
+                s=1,
+                label="galaxy outside the range but in the map",
+                color="tab:blue",
+            )
+        plt.scatter(
+            ra_g_mock[inside_range],
+            dec_g_mock[inside_range],
+            transform=ax.get_transform("world"),
+            s=1,
+            label="galaxy positions",
+            color="tab:red",
+        )
+        lon = ax.coords[0]
+        lat = ax.coords[1]
+        ax.coords.grid(True, color="black", ls="solid")
+        plt.xlabel("R.A [deg]", fontsize=18)
+        plt.ylabel("Dec. [deg]", fontsize=18)
+        plt.legend()
+    himap_g = hisim.get_hi_map(cache=True)
+    if verbose:
+        plot_map(
+            himap_g,
+            wproj,
+            W=W_HI,
+            title="mock HI signal",
+            ZeroCentre=False,
+            cbar_label=f"{map_unit:latex}",
+        )
+        plt.show()
+    # overlay mock on the original map
+    himap_g += base_map
+    if not do_stack:
+        stack_result = ()
+    else:
+        # run stacking
+        stack_result = mock_stack(verbose)
     return (
         himap_g,
         ra_g_mock,

@@ -1,6 +1,12 @@
 import numpy as np
 import pytest
-from meerstack.mock import gen_random_gal_pos, run_poisson_mock, HISimulation
+from meerstack.mock import (
+    gen_random_gal_pos,
+    run_poisson_mock,
+    HISimulation,
+    run_lognormal_mock,
+    gen_clustering_gal_pos,
+)
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from unittest.mock import patch
@@ -71,23 +77,48 @@ def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
         hisim.get_gal_pos()
 
 
-def test_gen_random_gal_pos(test_wproj, test_W, test_GAMA_range):
-    num_g = 10000
-    ra_g, dec_g, inside_range = gen_random_gal_pos(test_wproj, test_W[:, :, 0], num_g)
-    # test when no range is specified, the sizes match with n_g
-    assert len(ra_g) == num_g
-    assert len(dec_g) == num_g
-    assert len(inside_range) == num_g
-    assert (inside_range).mean() == 1
+@pytest.mark.parametrize(
+    "i, test_gal_func", [(0, gen_random_gal_pos), (1, gen_clustering_gal_pos)]
+)
+def test_gen_random_gal_pos(
+    i, test_gal_func, test_wproj, test_nu, test_W, test_GAMA_range
+):
+    num_g = 1000
+    if i == 0:
+        ra_g, dec_g, inside_range = test_gal_func(test_wproj, test_W[:, :, 0], num_g)
+        # test when no range is specified, the sizes match with n_g
+        assert len(ra_g) == num_g
+        assert len(dec_g) == num_g
+        assert len(inside_range) == num_g
+    elif i == 1:
+        ra_g, dec_g, z_g_mock, inside_range, mmin_halo = test_gal_func(
+            test_nu, Planck18, test_wproj, num_g, test_W
+        )
+        assert len(ra_g) >= num_g
+        assert len(dec_g) >= num_g
+        assert len(inside_range) >= num_g
+    assert (inside_range).mean() == 1.0
     # test when range specified, the number matches and the selected galaxies are in range
-    ra_g, dec_g, inside_range = gen_random_gal_pos(
-        test_wproj,
-        test_W[:, :, 0],
-        num_g,
-        ra_range=test_GAMA_range[0],
-        dec_range=test_GAMA_range[1],
-    )
-    assert inside_range.sum() == num_g
+    if i == 0:
+        ra_g, dec_g, inside_range = test_gal_func(
+            test_wproj,
+            test_W[:, :, 0],
+            num_g,
+            ra_range=test_GAMA_range[0],
+            dec_range=test_GAMA_range[1],
+        )
+        assert inside_range.sum() == num_g
+    elif i == 1:
+        ra_g, dec_g, z_g_mock, inside_range, mmin_halo = test_gal_func(
+            test_nu,
+            Planck18,
+            test_wproj,
+            num_g,
+            test_W,
+            ra_range=test_GAMA_range[0],
+            dec_range=test_GAMA_range[1],
+        )
+        assert inside_range.sum() >= num_g
     assert np.mean(ra_g[inside_range] > test_GAMA_range[0][0]) == 1
     assert np.mean(ra_g[inside_range] < test_GAMA_range[0][1]) == 1
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
@@ -110,7 +141,12 @@ def test_gen_random_gal_pos(test_wproj, test_W, test_GAMA_range):
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
 
 
-def test_gal_pos_in_mock(test_wproj, test_W, test_nu, test_GAMA_range):
+@pytest.mark.parametrize(
+    "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
+)
+def test_gal_pos_in_mock(
+    i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range
+):
     num_g = 10000
     (
         himap_g,
@@ -122,7 +158,7 @@ def test_gal_pos_in_mock(test_wproj, test_W, test_nu, test_GAMA_range):
         gal_which_ch,
         hifluxd_in,
         inside_range,
-    ) = run_poisson_mock(
+    ) = test_mock_func(
         test_nu,
         num_g,
         himf_pars_jones18(Planck18.h / 0.7),
@@ -158,50 +194,54 @@ def test_gal_pos_in_mock(test_wproj, test_W, test_nu, test_GAMA_range):
     # generate only one galaxy
     num_g = 1
     # fix z in case it falls in the edge
-    (
-        himap_g,
-        ra_g,
-        dec_g,
-        z_g,
-        indx_1_g,
-        indx_2_g,
-        gal_which_ch,
-        hifluxd_in,
-        inside_range,
-    ) = run_poisson_mock(
-        test_nu,
-        num_g,
-        himf_pars_jones18(Planck18.h / 0.7),
-        test_wproj,
-        W_HI=test_W,
-        seed=42,
-        no_vel=False,
-        tf_slope=3.66,
-        tf_zero=1.6,
-        mmin=10.5,
-        verbose=False,
-        do_stack=False,
-        x_dim=test_W.shape[0],
-        y_dim=test_W.shape[1],
-        ignore_double_counting=False,
-        return_indx_and_weight=False,
-        fix_z=f_21 / 1e6 / test_nu.mean() - 1,
-        fix_ra_dec=(350, -30),
-    )
-    assert z_g == f_21 / 1e6 / test_nu.mean() - 1
-    assert ra_g == 350
-    assert dec_g == -30
-    assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
-    assert (himap_g[himap_g > 0]).sum() == hifluxd_in.sum()
-    assert himap_g[indx_1_g, indx_2_g, gal_which_ch] > 0
-    # hiflux should have larger width than velocity so some empty channel
-    assert (hifluxd_in == 0).sum() > 0
+    if i == 0:
+        (
+            himap_g,
+            ra_g,
+            dec_g,
+            z_g,
+            indx_1_g,
+            indx_2_g,
+            gal_which_ch,
+            hifluxd_in,
+            inside_range,
+        ) = test_mock_func(
+            test_nu,
+            num_g,
+            himf_pars_jones18(Planck18.h / 0.7),
+            test_wproj,
+            W_HI=test_W,
+            seed=42,
+            no_vel=False,
+            tf_slope=3.66,
+            tf_zero=1.6,
+            mmin=10.5,
+            verbose=False,
+            do_stack=False,
+            x_dim=test_W.shape[0],
+            y_dim=test_W.shape[1],
+            ignore_double_counting=False,
+            return_indx_and_weight=False,
+            fix_z=f_21 / 1e6 / test_nu.mean() - 1,
+            fix_ra_dec=(350, -30),
+        )
+        assert z_g == f_21 / 1e6 / test_nu.mean() - 1
+        assert ra_g == 350
+        assert dec_g == -30
+        assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
+        assert (himap_g[himap_g > 0]).sum() == hifluxd_in.sum()
+        assert himap_g[indx_1_g, indx_2_g, gal_which_ch] > 0
+        # hiflux should have larger width than velocity so some empty channel
+        assert (hifluxd_in == 0).sum() > 0
 
 
-def test_raise_error(test_wproj, test_W, test_nu, test_GAMA_range):
+@pytest.mark.parametrize(
+    "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
+)
+def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
     num_g = 1
     with pytest.raises(ValueError):
-        run_poisson_mock(
+        test_mock_func(
             test_nu,
             num_g,
             himf_pars_jones18(Planck18.h / 0.7),
@@ -220,7 +260,7 @@ def test_raise_error(test_wproj, test_W, test_nu, test_GAMA_range):
             dec_range=test_GAMA_range[1],
         )
     with pytest.raises(ValueError):
-        run_poisson_mock(
+        test_mock_func(
             test_nu,
             num_g,
             himf_pars_jones18(Planck18.h / 0.7),
@@ -354,10 +394,13 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     assert (hifluxd_in == 0).sum() > 0
 
 
-def test_invoke_stack(test_wproj, test_W, test_nu, test_GAMA_range):
+@pytest.mark.parametrize(
+    "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
+)
+def test_invoke_stack(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
     plt.switch_backend("Agg")
     # generate only one galaxy
-    num_g = 1
+    num_g = 100
     # fix z in case it falls in the edge
     (
         himap_g,
@@ -373,7 +416,7 @@ def test_invoke_stack(test_wproj, test_W, test_nu, test_GAMA_range):
         stack_3D_weight,
         x_edges,
         ang_edges,
-    ) = run_poisson_mock(
+    ) = test_mock_func(
         test_nu,
         num_g,
         himf_pars_jones18(Planck18.h / 0.7),
@@ -385,7 +428,6 @@ def test_invoke_stack(test_wproj, test_W, test_nu, test_GAMA_range):
         verbose=True,
         x_dim=test_W.shape[0],
         y_dim=test_W.shape[1],
-        fix_z=f_21 / 1e6 / test_nu.mean() - 1,
         do_stack=True,
         ignore_double_counting=True,
         return_indx_and_weight=False,
