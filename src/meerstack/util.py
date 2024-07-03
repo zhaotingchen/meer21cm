@@ -249,3 +249,9 @@ def minimum_enclosing_box_of_lightcone(ra_arr, dec_arr, freq, cosmo=Planck18):
     x_max, y_max, z_max = pos_arr.max(axis=0)
     inv_rot = np.linalg.inv(rot_mat)
     return (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
+
+
+def hod_obuljen18(logmh, m0h=9.52, mminh=11.27, alpha=0.44, cosmo=Planck18):
+    marr = 10**logmh  # in Msun/h
+    himass = 10 ** (m0h) * (marr / 10**mminh) ** alpha * np.exp(-(10**mminh) / marr)
+    return himass / cosmo.h

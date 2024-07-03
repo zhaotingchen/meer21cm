@@ -119,3 +119,9 @@ def test_minimum_enclosing_box_of_lightcone():
     ra_cen, dec_cen = hp.vec2ang(test_vec, lonlat=True)
     assert np.abs(ra_rand - ra_cen) < 0.1
     assert np.abs(dec_rand - dec_cen) < 0.1
+
+
+def test_hod_obuljen18():
+    mass_1 = np.log10(hod_obuljen18(11.27))
+    mass_2 = np.log10(10**9.52 * np.exp(-1) / Planck18.h)
+    assert np.allclose(mass_1, mass_2)
