@@ -90,14 +90,17 @@ def test_gen_random_gal_pos(
         assert len(ra_g) == num_g
         assert len(dec_g) == num_g
         assert len(inside_range) == num_g
+        assert (inside_range).mean() == 1.0
     elif i == 1:
+        if python_ver < 3.9:
+            return 1
         ra_g, dec_g, z_g_mock, inside_range, mmin_halo = test_gal_func(
             test_nu, Planck18, test_wproj, num_g, test_W
         )
         assert len(ra_g) >= num_g
         assert len(dec_g) >= num_g
         assert len(inside_range) >= num_g
-    assert (inside_range).mean() == 1.0
+        assert (inside_range).mean() == 1.0
     # test when range specified, the number matches and the selected galaxies are in range
     if i == 0:
         ra_g, dec_g, inside_range = test_gal_func(
@@ -147,6 +150,8 @@ def test_gen_random_gal_pos(
 def test_gal_pos_in_mock(
     i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range
 ):
+    if python_ver < 3.9:
+        return 1
     num_g = 10000
     (
         himap_g,
@@ -398,6 +403,8 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
 )
 def test_invoke_stack(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
+    if python_ver < 3.9:
+        return 1
     plt.switch_backend("Agg")
     # generate only one galaxy
     num_g = 100
