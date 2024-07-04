@@ -2,7 +2,18 @@ import numpy as np
 import pytest
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
-from meerstack.util import get_wcs_coor, PCAclean, radec_to_indx, rebin_spectrum
+from meerstack.util import *
+
+
+def test_get_default_args():
+    def test_func(x, arg1=1):
+        return 1
+
+    defaults = get_default_args(test_func)
+    assert len(defaults) == 1
+    for k, v in defaults.items():
+        assert k == "arg1"
+        assert v == 1
 
 
 def test_get_wcs_coor(test_wproj, test_wcs):
@@ -78,3 +89,39 @@ def test_rebin_spectrum():
     assert test_rebin.size == 503 // 3
     test_rebin = rebin_spectrum(test_spectrum, rebin_width=3, mode="sum")
     assert test_rebin.sum() == 1
+
+
+def test_find_rotation_matrix():
+    vec = np.random.randn(3)
+    vec /= np.sqrt(np.sum(vec**2))
+    rot_mat = find_rotation_matrix(vec)
+    assert np.allclose(rot_mat @ vec, [0, 0, 1])
+
+
+def test_minimum_enclosing_box_of_lightcone():
+    ra_rand = np.random.uniform(0, 359.9, 1)[0]
+    dec_rand = np.random.uniform(-90, 89.9, 1)[0]
+    ra_test = np.array((ra_rand, ra_rand + 0.1))
+    dec_test = np.array((dec_rand, dec_rand + 0.1))
+    freq_test = np.array((f_21 / (1 + 0.5001), f_21 / (1 + 0.5)))
+    (xmin, ymin, zmin, xlen, ylen, zlen, rot_mat) = minimum_enclosing_box_of_lightcone(
+        ra_test, dec_test, freq_test
+    )
+    cov_dist = Planck18.comoving_distance(0.5)
+    cov_scale = Planck18.comoving_distance(0.5001) - Planck18.comoving_distance(0.5)
+    assert ((xlen - cov_dist * 0.1 * np.pi / 180) / xlen).to("").value < 0.01
+    assert ((ylen - cov_dist * 0.1 * np.pi / 180) / ylen).to("").value < 0.01
+    assert ((cov_scale - zlen) / cov_scale).to("").value < 0.01
+    test_vec = rot_mat @ np.array(
+        [(xmin + xlen / 2).value, (ymin + ylen / 2).value, (zmin + zlen / 2).value]
+    )
+    test_vec /= np.sqrt(np.sum(test_vec**2))
+    ra_cen, dec_cen = hp.vec2ang(test_vec, lonlat=True)
+    assert np.abs(ra_rand - ra_cen) < 0.1
+    assert np.abs(dec_rand - dec_cen) < 0.1
+
+
+def test_hod_obuljen18():
+    mass_1 = np.log10(hod_obuljen18(11.27))
+    mass_2 = np.log10(10**9.52 * np.exp(-1) / Planck18.h)
+    assert np.allclose(mass_1, mass_2)
