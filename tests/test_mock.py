@@ -13,7 +13,7 @@ from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
 
-python_ver = sys.version_info[0] + sys.version_info[1] / 10
+python_ver = sys.version_info
 
 
 def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
@@ -25,7 +25,6 @@ def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
         num_pix_x=test_W.shape[0],
         num_pix_y=test_W.shape[1],
         density="poisson",
-        W_HI=test_W,
         verbose=False,
         do_stack=False,
         x_dim=test_W.shape[0],
@@ -35,6 +34,9 @@ def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
         seed=42,
         himf_pars=himf_pars_jones18(Planck18.h / 0.7),
     )
+    assert np.allclose(hisim.W_HI, np.ones_like(hisim.W_HI))
+    # test no cache
+    hisim.get_hi_map()
     hisim.get_gal_pos(cache=True)
     assert hisim.do_stack == False
     assert hisim.seed == 42
@@ -70,11 +72,29 @@ def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
         seed=42,
         himf_pars=himf_pars_jones18(Planck18.h / 0.7),
     )
-    if python_ver < 3.9:
+    if python_ver < (3, 9):
         with pytest.raises(ImportError):
             hisim.get_gal_pos()
     else:
         hisim.get_gal_pos()
+    with pytest.raises(ValueError):
+        hisim = HISimulation(
+            nu=test_nu,
+            wproj=test_wproj,
+            num_g=num_g,
+            num_pix_x=test_W.shape[0],
+            num_pix_y=test_W.shape[1],
+            density="newthing",
+            W_HI=test_W,
+            verbose=False,
+            do_stack=False,
+            x_dim=test_W.shape[0],
+            y_dim=test_W.shape[1],
+            ignore_double_counting=False,
+            return_indx_and_weight=False,
+            seed=42,
+            himf_pars=himf_pars_jones18(Planck18.h / 0.7),
+        )
 
 
 @pytest.mark.parametrize(
@@ -92,7 +112,7 @@ def test_gen_random_gal_pos(
         assert len(inside_range) == num_g
         assert (inside_range).mean() == 1.0
     elif i == 1:
-        if python_ver < 3.9:
+        if python_ver < (3, 9):
             return 1
         ra_g, dec_g, z_g_mock, inside_range, mmin_halo = test_gal_func(
             test_nu, Planck18, test_wproj, num_g, test_W
@@ -150,7 +170,7 @@ def test_gen_random_gal_pos(
 def test_gal_pos_in_mock(
     i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range
 ):
-    if python_ver < 3.9:
+    if python_ver < (3, 9):
         return 1
     num_g = 10000
     (
@@ -403,7 +423,7 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
 )
 def test_invoke_stack(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
-    if python_ver < 3.9:
+    if python_ver < (3, 9):
         return 1
     plt.switch_backend("Agg")
     # generate only one galaxy
@@ -438,5 +458,7 @@ def test_invoke_stack(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_
         do_stack=True,
         ignore_double_counting=True,
         return_indx_and_weight=False,
+        ra_range=test_GAMA_range[0],
+        dec_range=test_GAMA_range[1],
     )
     plt.close("all")

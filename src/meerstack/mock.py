@@ -203,7 +203,7 @@ class HISimulation:
         else:
             hifluxd_ch = self.hifluxd_ch
         if "ra_g_mock" not in self.__dict__.keys():
-            ra_g_mock, dec_g_mock, _, _, _ = self.get_gal_pos(cache=cache)
+            ra_g_mock, dec_g_mock, _, _, _, _ = self.get_gal_pos(cache=cache)
         else:
             ra_g_mock = self.ra_g_mock
             dec_g_mock = self.dec_g_mock
