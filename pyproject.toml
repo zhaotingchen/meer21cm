@@ -44,9 +44,14 @@ test = [
 lint = [
     "black",
     "flake8",
-    "pre-commit"
+    "pre-commit",
 ]
-full = ["meerstack[test]","meerstack[lint]"]
+docs = [
+    "sphinx",
+    "sphinx_rtd_theme",
+    "myst-parser",
+]
+full = ["meerstack[test]","meerstack[lint]","meerstack[docs]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

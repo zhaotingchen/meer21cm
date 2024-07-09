@@ -366,7 +366,7 @@ def gen_random_gal_pos(
 
     Parameters
     ----------
-        wproj: `astropy.wcs.WCS` object.
+        wproj: :class:`astropy.wcs.WCS` object.
             The two-dimensional wcs object for the map.
         W_HI: numpy array.
             The two-dimensional binary mask for the map.
