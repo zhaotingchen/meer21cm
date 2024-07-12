@@ -5,6 +5,15 @@ from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from meerstack.util import *
 
 
+def test_generate_colored_noise():
+    rand_arr = [
+        generate_colored_noise(100, 100, lambda k: np.ones_like(k)) for i in range(1000)
+    ]
+    rand_arr = np.array(rand_arr)
+    assert np.allclose(rand_arr.mean(), 0.0)
+    assert np.abs(rand_arr.std() - 1.0) < 0.2
+
+
 def test_get_default_args():
     def test_func(x, arg1=1):
         return 1

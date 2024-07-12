@@ -1,6 +1,14 @@
 Releases
 ========
 
+v0.1.0
+------
+
+Features
+++++++++
+* Generation of colored noise for simulating systematics
+* A bit more docs
+
 v0.0.1
 ------
 This is the first version
