@@ -8,7 +8,11 @@ from astropy.io import fits
 from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
 from astropy.cosmology import Planck18
 import inspect
-from powerbox import PowerBox
+import sys
+
+python_ver = sys.version_info[0] + sys.version_info[1] / 10
+if python_ver >= 3.9:
+    from powerbox import PowerBox
 
 
 def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
@@ -32,16 +36,18 @@ def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
         rand_arr: float array.
             The random noise.
     """
-    pb = PowerBox(
-        x_size,
-        power_k_func,
-        dim=1,
-        boxlength=x_len,
-        a=0.0,
-        b=2 * np.pi,
-        seed=None,
-    )
-    rand_arr = pb.delta_x()
+    rand_arr = None
+    if python_ver >= 3.9:
+        pb = PowerBox(
+            x_size,
+            power_k_func,
+            dim=1,
+            boxlength=x_len,
+            a=0.0,
+            b=2 * np.pi,
+            seed=None,
+        )
+        rand_arr = pb.delta_x()
     return rand_arr
 
 
