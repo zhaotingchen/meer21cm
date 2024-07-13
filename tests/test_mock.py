@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from meerstack.mock import (
+from meer21cm.mock import (
     gen_random_gal_pos,
     run_poisson_mock,
     HISimulation,

@@ -1,4 +1,4 @@
-Developing meerstack
+Developing meer21cm
 =========
 
 .. include:: ../../DEVELOPING.md

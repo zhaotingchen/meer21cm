@@ -3,9 +3,9 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import numpy as np
 import os
-import meerstack
+import meer21cm
 
-data_dir = meerstack.__file__.rsplit("/", 1)[0] + "/data/"
+data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
 
 @pytest.fixture

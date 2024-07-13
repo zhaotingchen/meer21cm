@@ -1,7 +1,7 @@
-meerstack
+meer21cm
 =========
 
 .. toctree::
    :maxdepth: 4
 
-   meerstack
+   meer21cm

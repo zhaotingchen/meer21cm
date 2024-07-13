@@ -1,17 +1,17 @@
-# **meerstack**
-[![codecov](https://codecov.io/gh/zhaotingchen/meerstack/graph/badge.svg?token=BEE45774LQ)](https://codecov.io/gh/zhaotingchen/meerstack)
+# **meer21cm**
+[![codecov](https://codecov.io/gh/zhaotingchen/meer21cm/graph/badge.svg?token=BEE45774LQ)](https://codecov.io/gh/zhaotingchen/meer21cm)
 
-`meerstack` deals with single dish stacking with 21cm intensity mapping.
+`meer21cm` deals with single dish 21cm intensity mapping using MeerKAT.
 
 ## Installation
 Clone this repo:
 ```
-git clone https://github.com/zhaotingchen/meerstack
+git clone https://github.com/zhaotingchen/meer21cm
 ```
 
 And run
 ```
-cd meerstack/
+cd meer21cm/
 pip install -e .
 ```
 
@@ -22,7 +22,7 @@ If you are using it on ilifu and don't want to create your own environment for i
 ```python
 import sys
 sys.path.append('path/to/hiimtool/src/')
-sys.path.append('path/to/meerstack/src/')
+sys.path.append('path/to/meer21cm/src/')
 ```
 ## Development
-If you want to contribute to the developing of `meerstack`, make sure you check [the workflow](DEVELOPING.md).
+If you want to contribute to the developing of `meer21cm`, make sure you check [the workflow](DEVELOPING.md).

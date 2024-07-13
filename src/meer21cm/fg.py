@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import matplotlib
 import sys
 import os
-import meerstack.util as stack_util
-from meerstack.util import read_healpix_fits
-from meerstack.util import convert_hpmap_in_jy_to_temp
-from meerstack.util import healpix_to_wcs
+import meer21cm.util as stack_util
+from meer21cm.util import read_healpix_fits
+from meer21cm.util import convert_hpmap_in_jy_to_temp
+from meer21cm.util import healpix_to_wcs
 
 from astropy import constants, units
 from astropy.io import fits
