@@ -1,6 +1,22 @@
 Releases
 ========
 
+v0.1.0
+------
+
+Features
+++++++++
+* Generation of colored noise for simulating systematics
+* A bit more docs
+
+Enhancements
+++++++++++++
+* RSD effect in lognormal mocks based on Kaiser effects
+
+Bugfixes
+++++++++
+* Fixed a mismatch of h unit in the lognormal simulation
+
 v0.0.1
 ------
 This is the first version
