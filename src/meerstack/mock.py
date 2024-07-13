@@ -33,12 +33,12 @@ from .util import (
     hod_obuljen18,
 )
 import healpy as hp
-from powerbox import dft
 
 python_ver = sys.version_info[0] + sys.version_info[1] / 10
 if python_ver >= 3.9:
     from powerbox import LogNormalPowerBox
     from halomod import TracerHaloModel as THM
+    from powerbox import dft
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
@@ -332,7 +332,7 @@ def gen_clustering_gal_pos(
         velocity_k_z = np.nan_to_num(
             -1j
             * (1 / (1 + hm.z))
-            * cosmo.H(hm.z)
+            * cosmo.H(hm.z).to("km s^-1 Mpc^-1").value
             * hm.growth_factor
             * pb.kvec[2][None, None, :]
             / pb.k() ** 2

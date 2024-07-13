@@ -172,7 +172,7 @@ def test_gen_random_gal_pos(
 def test_gal_pos_in_mock(
     i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range
 ):
-    if python_ver < (3, 9):
+    if i == 1 and python_ver < (3, 9):
         return 1
     num_g = 10000
     (
@@ -267,6 +267,8 @@ def test_gal_pos_in_mock(
 )
 def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
     num_g = 1
+    if i == 1 and python_ver < (3, 9):
+        return 1
     with pytest.raises(ValueError):
         test_mock_func(
             test_nu,
