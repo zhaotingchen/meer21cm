@@ -7,7 +7,7 @@
 .. include:: ../../README.md
    :parser: myst_parser.sphinx_
 
-Welcome to meerstack's documentation!
+Welcome to meer21cm's documentation!
 =====================================
 
 .. toctree::
@@ -17,4 +17,4 @@ Welcome to meerstack's documentation!
    develop
    contributors
    changelog
-   meerstack
+   meer21cm

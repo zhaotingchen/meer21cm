@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from meerstack.fg import ForegroundSimulation as FgSim
+from meer21cm.fg import ForegroundSimulation as FgSim
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from astropy import units, constants

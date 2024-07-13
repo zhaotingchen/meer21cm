@@ -5,7 +5,7 @@ from astropy import constants, units
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
-from meerstack.util import check_unit_equiv, get_wcs_coor, radec_to_indx
+from meer21cm.util import check_unit_equiv, get_wcs_coor, radec_to_indx
 
 
 def weight_source_peaks(

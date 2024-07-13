@@ -24,14 +24,14 @@ Whenever you have made some changes to the code, you want to make sure the code 
 
 In the top level of the source directory, run:
 ```
-pytest --cov=meerstack tests/
+pytest --cov=meer21cm tests/
 ```
 
 The above command run the tests and generate a report. Make sure there are no failed tests before you push.
 
 You may want to add tests to cover more lines of code. There are multiple output formats available to check which lines are getting covered. I find html to be the easiest to read locally:
 ```
-pytest --cov=meerstack tests/ --cov-report term --cov-report html:coverage.html
+pytest --cov=meer21cm tests/ --cov-report term --cov-report html:coverage.html
 ```
 which will generate a folder `coverage.html` (do not commit it, leave it untracked). You can open the html files inside to see the coverage.
 

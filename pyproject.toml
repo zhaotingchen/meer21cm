@@ -3,12 +3,12 @@ requires = ["setuptools>=43.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "meerstack"
-version = "0.0.1"
+name = "meer21cm"
+version = "0.1.0"
 authors = [
   { name="Zhaoting Chen", email="ztchenustc@gmail.com" },
 ]
-description = "A package for HI stacking using MeerKLASS"
+description = "A package for 21cm intensity mapping data analysis with MeerKLASS"
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
@@ -33,8 +33,8 @@ dependencies = [
 
 
 [project.urls]
-Homepage = "https://github.com/zhaotingchen/meerstack"
-Issues = "https://github.com/zhaotingchen/meerstack/issues"
+Homepage = "https://github.com/zhaotingchen/meer21cm"
+Issues = "https://github.com/zhaotingchen/meer21cm/issues"
 
 [project.optional-dependencies]
 test = [
@@ -51,7 +51,7 @@ docs = [
     "sphinx_rtd_theme",
     "myst-parser",
 ]
-full = ["meerstack[test]","meerstack[lint]","meerstack[docs]"]
+full = ["meer21cm[test]","meer21cm[lint]","meer21cm[docs]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

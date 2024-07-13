@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
-from meerstack.util import *
+from meer21cm.util import *
 import sys
 
 python_ver = sys.version_info
