@@ -33,6 +33,7 @@ from .util import (
     hod_obuljen18,
 )
 import healpy as hp
+from powerbox import dft
 
 python_ver = sys.version_info[0] + sys.version_info[1] / 10
 if python_ver >= 3.9:
@@ -134,6 +135,7 @@ class HISimulation:
                 dec_range=self.dec_range,
                 seed=self.seed,
                 target_relative_to_num_g=self.target_relative_to_num_g,
+                kaiser_rsd=self.kaiser_rsd,
             )
             self.num_g_tot = ra_g_mock.size
         indx_1_g, indx_2_g = radec_to_indx(ra_g_mock, dec_g_mock, self.wproj)
@@ -241,8 +243,11 @@ def gen_clustering_gal_pos(
     ra_range=(-np.inf, np.inf),
     dec_range=(-400, 400),
     seed=None,
-    target_relative_to_num_g=2.0,
+    target_relative_to_num_g=2.5,
+    kaiser_rsd=False,
 ):
+    if kaiser_rsd and seed is None:
+        raise ValueError("seed must be set for simulating RSD.")
     ra_range = np.array(ra_range)
     ra_range[ra_range > 180] -= 360
     num_pix_x = W_HI.shape[0]
@@ -290,7 +295,7 @@ def gen_clustering_gal_pos(
     target_halo_num = target_relative_to_num_g * num_g * fraction_area
     mmin_halo = np.log10(hm.m[np.where(n_halo < target_halo_num)[0][0] - 1])
     nbar_halo = cumu_halo_density[np.where(n_halo < target_halo_num)[0][0] - 1]
-    power_hh = hm.power_hh(hm.k * cosmo.h, mmin=mmin_halo) / cosmo.h**3
+    power_hh = hm.power_hh(hm.k, mmin=mmin_halo) / cosmo.h**3
     power_hh_func = interp1d(np.log10(hm.k * cosmo.h), np.log10(power_hh))
     pk_func = lambda k: 10 ** (power_hh_func(np.log10(k)))
     pb = LogNormalPowerBox(
@@ -306,6 +311,51 @@ def gen_clustering_gal_pos(
         store_pos=True,
         min_at_zero=True,
     )
+    if kaiser_rsd:
+        pmm_func = lambda k: hm.power_auto_matter_fnc(k / cosmo.h) / cosmo.h**3
+        pb2 = LogNormalPowerBox(
+            N=N_box,
+            dim=3,
+            pk=pmm_func,
+            boxlength=L_box,
+            seed=seed,
+        )
+        delta_m = pb2.delta_x()
+        delta_k = dft.fft(
+            delta_m,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0]
+        # rotation of a vector is not deterministic, any direction would do
+        velocity_k_z = np.nan_to_num(
+            -1j
+            * (1 / (1 + hm.z))
+            * cosmo.H(hm.z)
+            * hm.growth_factor
+            * pb.kvec[2][None, None, :]
+            / pb.k() ** 2
+            * delta_k
+        )
+        velocity_z = dft.ifft(
+            velocity_k_z,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0].real
+        x_edges = centre_to_edges(pb.x[0] - pb.x[0][0])
+        y_edges = centre_to_edges(pb.x[1] - pb.x[1][0])
+        z_edges = centre_to_edges(pb.x[2] - pb.x[2][0])
+        indx_x = np.digitize(halo_pos[:, 0], x_edges) - 1
+        indx_y = np.digitize(halo_pos[:, 1], y_edges) - 1
+        indx_z = np.digitize(halo_pos[:, 2], z_edges) - 1
+        indx_x[indx_x == (len(x_edges) - 1)] = -1
+        indx_y[indx_y == (len(y_edges) - 1)] = -1
+        indx_z[indx_z == (len(z_edges) - 1)] = -1
+        velocity_halo_para = velocity_z[indx_x, indx_y, indx_z]
+
     halo_pos[:, 0] += x_start.value
     halo_pos[:, 1] += y_start.value
     halo_pos[:, 2] += z_start.value
@@ -316,6 +366,13 @@ def gen_clustering_gal_pos(
     inv_comov_func = interp1d(comov_interp, z_interp)
     halo_z = inv_comov_func(halo_comov_dist)
     z_g_mock = halo_z.copy()
+    if kaiser_rsd:
+        halo_comov_dist += (
+            (1 + z_g_mock)
+            * velocity_halo_para
+            / cosmo.comoving_distance(z_g_mock).value
+        )
+        z_g_mock = inv_comov_func(halo_comov_dist)
     ra_g_mock, dec_g_mock = hp.vec2ang(
         halo_pos_on_sky / halo_comov_dist[:, None], lonlat=True
     )
@@ -961,6 +1018,7 @@ def run_lognormal_mock(
     ignore_double_counting=False,
     return_indx_and_weight=False,
     do_stack=False,
+    kaiser_rsd=False,
 ):
     def mock_stack(verbose):
         stack_result = stack(
@@ -1031,6 +1089,7 @@ def run_lognormal_mock(
         dec_range=dec_range,
         fast_ang_pos=fast_ang_pos,
         hp_map_extend=hp_map_extend,
+        kaiser_rsd=kaiser_rsd,
     )
     # the coordinates of each pixel in the map
     ra, dec = hisim.ra_map, hisim.dec_map
