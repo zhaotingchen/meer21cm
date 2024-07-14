@@ -17,12 +17,5 @@ pip install -e .
 
 It uses [hiimtool](https://github.com/zhaotingchen/hiimtool) for some functionalities.
 
-If you are using it on ilifu and don't want to create your own environment for it, you can simply clone the repo and do:
-
-```python
-import sys
-sys.path.append('path/to/hiimtool/src/')
-sys.path.append('path/to/meer21cm/src/')
-```
 ## Development
 If you want to contribute to the developing of `meer21cm`, make sure you check [the workflow](DEVELOPING.md).
