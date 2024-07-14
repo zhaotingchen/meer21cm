@@ -22,7 +22,6 @@ from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
 from .stack import stack
 from .util import (
-    PCAclean,
     check_unit_equiv,
     get_wcs_coor,
     plot_map,

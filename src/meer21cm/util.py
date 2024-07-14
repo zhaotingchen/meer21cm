@@ -78,7 +78,7 @@ def get_wcs_coor(wcs, xx, yy):
     return ra, dec
 
 
-def PCAclean(
+def pcaclean(
     M,
     N_fg,
     w=None,
