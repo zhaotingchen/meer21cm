@@ -15,6 +15,33 @@ if python_ver >= 3.9:
     from powerbox import PowerBox
 
 
+def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
+    """
+    Calculate the angle between two points on the sphere.
+
+    Parameters
+    ----------
+        ra1: float array
+            The RA of the first point
+        dec1: float array
+            The Dec of the first point
+        ra2: float array
+            The RA of the second point
+        dec2: float array
+            The Dec of the second point
+        unit: str, default 'deg'.
+    Returns
+    -------
+        result: float array.
+            The angle in the specified unit.
+
+    """
+    vec1 = hp.ang2vec(ra1, dec1, lonlat=True)
+    vec2 = hp.ang2vec(ra2, dec2, lonlat=True)
+    result = (np.arccos((vec1 * vec2).sum(axis=-1)) * units.rad).to(unit).value
+    return result
+
+
 def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
     """
     Generate random 1D gaussian fluctuations following a specific spectrum. This is similar to ``colorednoise`` package for generating colored noise. It is simply wrapping the :class:`powerbox.PowerBox` under the hood.

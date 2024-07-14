@@ -8,6 +8,15 @@ import sys
 python_ver = sys.version_info
 
 
+def test_get_ang_between_coord():
+    ra1 = np.zeros(11)
+    ra2 = np.array([0])
+    dec1 = np.linspace(-30, -40, 11)
+    dec2 = np.array([80])
+    ang = get_ang_between_coord(ra1, dec1, ra2, dec2)
+    assert np.allclose(ang, dec2 - dec1)
+
+
 def test_generate_colored_noise():
     if python_ver < (3, 9):
         return 1
