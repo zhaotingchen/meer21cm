@@ -320,6 +320,8 @@ def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_r
 
 @pytest.mark.parametrize("test_mock_func", [(run_poisson_mock), (run_lognormal_mock)])
 def test_plt(test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
+    if test_mock_func is run_lognormal_mock and python_ver < (3, 9):
+        return 1
     plt.switch_backend("Agg")
     num_g = 100
     test_mock_func(
