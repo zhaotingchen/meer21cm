@@ -318,10 +318,13 @@ def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_r
             )
 
 
-def test_plt(test_wproj, test_W, test_nu, test_GAMA_range):
+@pytest.mark.parametrize("test_mock_func", [(run_poisson_mock), (run_lognormal_mock)])
+def test_plt(test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
+    if test_mock_func is run_lognormal_mock and python_ver < (3, 9):
+        return 1
     plt.switch_backend("Agg")
-    num_g = 1
-    run_poisson_mock(
+    num_g = 100
+    test_mock_func(
         test_nu,
         num_g,
         himf_pars_jones18(Planck18.h / 0.7),
@@ -338,7 +341,8 @@ def test_plt(test_wproj, test_W, test_nu, test_GAMA_range):
         y_dim=test_W.shape[1],
         ignore_double_counting=False,
         return_indx_and_weight=False,
-        fix_z=f_21 / 1e6 / test_nu.mean() - 1,
+        fix_z=np.ones(num_g) * f_21 / 1e6 / test_nu.mean() - 1,
+        fix_ra_dec=(np.ones(num_g) * 350, np.ones(num_g) * (-30.0)),
     )
     plt.close("all")
 

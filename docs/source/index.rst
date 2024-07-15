@@ -7,8 +7,6 @@
 .. include:: ../../README.md
    :parser: myst_parser.sphinx_
 
-Welcome to meer21cm's documentation!
-=====================================
 
 .. toctree::
    :maxdepth: 2

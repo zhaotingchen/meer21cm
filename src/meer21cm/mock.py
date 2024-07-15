@@ -22,7 +22,6 @@ from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
 from .stack import stack
 from .util import (
-    PCAclean,
     check_unit_equiv,
     get_wcs_coor,
     plot_map,
@@ -1010,6 +1009,8 @@ def run_lognormal_mock(
     y_dim=None,
     ra_range=(-np.inf, np.inf),
     dec_range=(-400, 400),
+    fix_ra_dec=None,
+    fix_z=None,
     fast_ang_pos=True,
     hp_map_extend=2.0,
     velocity_width_halfmax=50,
@@ -1112,6 +1113,21 @@ def run_lognormal_mock(
     inside_range = np.zeros_like(inside_range)
     inside_range[inside_indx[mass_indx]] = True
     hisim.inside_range = inside_range
+    if fix_ra_dec is not None:
+        ra_g_mock[inside_range] = fix_ra_dec[0]
+        dec_g_mock[inside_range] = fix_ra_dec[1]
+        fix_indx = radec_to_indx(fix_ra_dec[0], fix_ra_dec[1], wproj)
+        indx_1_g[inside_range] = fix_indx[0]
+        indx_2_g[inside_range] = fix_indx[1]
+        hisim.ra_g_mock[inside_range] = fix_ra_dec[0]
+        hisim.dec_g_mock[inside_range] = fix_ra_dec[1]
+        hisim.indx_1_g[inside_range] = fix_indx[0]
+        hisim.indx_2_g[inside_range] = fix_indx[1]
+
+    if fix_z is not None:
+        z_g_mock[inside_range] = fix_z
+        hisim.z_g_mock[inside_range] = fix_z
+
     if verbose:
         plt.hist(z_g_mock, bins=20, density=True)
         plt.title("redshift distribution")

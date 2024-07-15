@@ -1,6 +1,15 @@
 Releases
 ========
 
+v0.1.1
+------
+
+Enhancements
+++++++++++++
+* allow fixed RA and Dec in lognormal simulations
+* add calculation of angles between coorindates on the sphere
+
+
 v0.1.0
 ------
 
