@@ -98,6 +98,25 @@ def read_healpix_fits(file):
 
 
 def get_wcs_coor(wcs, xx, yy):
+    """
+    Retrieve RA and Dec coordinates of pixels in the WCS.
+
+    Parameters
+    ----------
+        wproj: :class:`astropy.wcs.WCS` object.
+            The two-dimensional wcs object for the map.
+        xx: array
+            The first indx of the pixel.
+        yy: array
+            The second indx of the pixel.
+
+    Returns
+    -------
+        ra: array.
+            The RA of the pixels.
+        dec: array.
+            The Dec of the pixels.
+    """
     assert wcs.naxis == 2, "input wcs must be 2-dimensional."
     coor = wcs.pixel_to_world(xx, yy)
     ra = coor.ra.deg
