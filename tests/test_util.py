@@ -8,6 +8,13 @@ import sys
 python_ver = sys.version_info
 
 
+def test_freq_redshift():
+    assert freq_to_redshift(f_21) == 0.0
+    assert freq_to_redshift(f_21 / 2) == 1.0
+    assert redshift_to_freq(0.0) == f_21
+    assert redshift_to_freq(1.0) == f_21 / 2
+
+
 def test_get_ang_between_coord():
     ra1 = np.zeros(11)
     ra2 = np.array([0])

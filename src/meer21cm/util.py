@@ -15,6 +15,36 @@ if python_ver >= 3.9:
     from powerbox import PowerBox
 
 
+def freq_to_redshift(freq):
+    """
+    Convert frequency of 21cm emission to redshift
+
+    Parameters
+    ----------
+    freq: float
+
+    Returns
+    -------
+    redshift: float
+    """
+    return f_21 / freq - 1
+
+
+def redshift_to_freq(redshift):
+    """
+    Convert redshift to frequency
+
+    Parameters
+    ----------
+    redshift: float
+
+    Returns
+    -------
+    freq: float
+    """
+    return f_21 / (1 + redshift)
+
+
 def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     """
     Calculate the angle between two points on the sphere.
