@@ -10,6 +10,14 @@ meer21cm.fg module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.io module
+------------------
+
+.. automodule:: meer21cm.io
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.mock module
 --------------------
 
