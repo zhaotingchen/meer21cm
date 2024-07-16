@@ -27,6 +27,12 @@ def test_gsm_1ghz():
 
 
 @pytest.fixture
+def test_fits():
+    map_file = data_dir + "test_fits.fits"
+    return map_file
+
+
+@pytest.fixture
 def test_wcs():
     map_file = data_dir + "test_fits.fits"
     wcs = WCS(map_file)

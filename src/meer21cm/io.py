@@ -1,0 +1,179 @@
+"""
+Module for reading and pre-processing MeerKLASS maps.
+"""
+
+import numpy as np
+from astropy.io import fits
+from astropy.wcs import WCS
+import os
+from .util import get_wcs_coor
+
+meerkat_L_band_nu_min = 856.0 * 1e6  # in Hz
+meerkat_L_band_nu_max = 1712.0 * 1e6  # in Hz
+meerkat_4k_delta_nu = 0.208984375 * 1e6  # in Hz
+
+
+def cal_freq(
+    ch_id,
+    nu_min=meerkat_L_band_nu_min,
+    nu_max=meerkat_L_band_nu_max,
+    delta_nu=meerkat_4k_delta_nu,
+):
+    """
+    returns the centre of the frequency channel for channel id `ch_id`.
+
+    Parameters
+    ----------
+        ch_id: int.
+            The channel id.
+        nu_min: float, default 856.0*1e6 Hz.
+            The lower end of the frequency range.
+        nu_max: float, default 1712.0*1e6 Hz.
+            The higher end of the frequency range.
+        delta_nu: float, default 0.208984375*1e6 Hz.
+            The channel bandwidth.
+
+    Returns
+    -------
+        freq: float.
+           The frequency of the channel.
+    """
+    return ch_id * delta_nu + nu_min
+
+
+def filter_incomplete_los(
+    map_intensity,
+    map_has_sampling,
+    map_weight,
+    map_pix_counts,
+    los_axis=-1,
+):
+    """
+    Filter the map so that along the line-of-sight, only pixels that has sampling at every channel gets selected.
+
+    Parameters
+    ----------
+        map_intensity: array.
+            The input map.
+        map_has_sampling: boolean array.
+            Whether the pixel has measurement.
+        map_weight: array.
+            the pixel weights.
+        map_pix_counts: array.
+            The channel bandwidth.
+        los_axis: int, default -1.
+            which axis is the los.
+
+    Returns
+    -------
+        map_intensity: array.
+           map after pixels that have incomplete los sampling are masked.
+        map_has_sampling: array.
+           sampling after pixels that have incomplete los sampling are masked.
+        map_weight: array.
+           weights after pixels that have incomplete los sampling are masked.
+        map_pix_counts: array.
+           counts after pixels that have incomplete los sampling are masked.
+    """
+    if los_axis < 0:
+        los_axis += 3
+    axes = [0, 1, 2]
+    axes.remove(los_axis)
+    # make sure los is the last axis
+    axes = axes + [
+        los_axis,
+    ]
+    map_intensity = np.transpose(map_intensity, axes=axes)
+    map_has_sampling = np.transpose(map_has_sampling, axes=axes)
+    map_weight = np.transpose(map_weight, axes=axes)
+    map_pix_counts = np.transpose(map_pix_counts, axes=axes)
+
+    full_sample_los = map_has_sampling.mean(axis=-1) == 1.0
+    map_intensity *= full_sample_los[:, :, None]
+    map_has_sampling *= full_sample_los[:, :, None]
+    map_weight *= full_sample_los[:, :, None]
+    map_pix_counts *= full_sample_los[:, :, None]
+
+    # back to original shape
+    map_intensity = np.transpose(map_intensity, axes=axes)
+    map_has_sampling = np.transpose(map_has_sampling, axes=axes)
+    map_weight = np.transpose(map_weight, axes=axes)
+    map_pix_counts = np.transpose(map_pix_counts, axes=axes)
+    return (
+        map_intensity,
+        map_has_sampling,
+        map_weight,
+        map_pix_counts,
+    )
+
+
+def read_map(
+    map_file,
+    counts_file=None,
+    nu_min=-np.inf,
+    nu_max=np.inf,
+    ch_start=1,
+    los_axis=-1,
+):
+    """
+    Read fits files of MeerKAT 4k L-band data into arrays.
+
+    Parameters
+    ----------
+        map_file: str.
+            The input map file.
+        counts_file: str, default None.
+            The input pixel counts file.
+        nu_min: float, default -np.inf.
+            The lower end of frequency cut.
+        nu_max: float, default np.inf.
+            The higher end of freuqency cut.
+        ch_start: int, default 1.
+            The starting channel of the data.
+        los_axis: int, default -1.
+            which axis is the los.
+
+    Returns
+    -------
+        map_data: array.
+            The map data.
+        counts: array.
+            The number of sampling for each pixel. If no ``counts_file`` is specified, it is the same as ``map_has_sampling``.
+        map_has_sampling: boolean array.
+            Whether the pixels are samplied.
+        ra: array.
+            The RA coordinates of each pixel
+        dec: array.
+            The Dec coordinates of each pixel
+        nu: array.
+            The frequencies of each channel in the data.
+        wproj: :class:`astropy.wcs.WCS` object.
+            The two-dimensional wcs object for the map.
+    """
+    map_data = fits.open(map_file)[0].data
+    num_ch = map_data.shape[los_axis]
+    nu_data = cal_freq(np.arange(ch_start, ch_start + num_ch))
+    nu_sel = np.where((nu_data > nu_min) & (nu_data < nu_max))[0]
+    nu_sel_min, nu_sel_max = nu_sel.min(), nu_sel.max()
+    sel_indx = [
+        slice(None, None, 1),
+    ] * 3
+    sel_indx[los_axis] = slice(nu_sel_min, nu_sel_max + 1, 1)
+    sel_indx = tuple(sel_indx)
+    nu = nu_data[nu_sel]
+    map_data = np.nan_to_num(map_data[sel_indx])
+
+    map_has_sampling = map_data != 0
+    if counts_file is not None:
+        counts = fits.open(counts_file)[0].data
+        counts = counts[sel_indx]
+    else:
+        counts = map_has_sampling
+    wproj = WCS(map_file).dropaxis(los_axis)
+    xx, yy = np.meshgrid(
+        np.arange(map_data.shape[0]),
+        np.arange(map_data.shape[1]),
+        indexing="ij",
+    )
+    ra, dec = get_wcs_coor(wproj, xx, yy)
+    return map_data, counts, map_has_sampling, ra, dec, nu, wproj
