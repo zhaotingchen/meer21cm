@@ -3,6 +3,39 @@ import matplotlib.colors as colors
 import numpy as np
 
 
+def plot_pixels_along_los(
+    map_in,
+    map_has_sampling,
+    zaxis=None,
+    map_units="",
+    xlabel="",
+    ylabel="",
+    lw=0.01,
+    title="",
+    los_axis=-1,
+):
+    plt.figure()
+    map_in[map_has_sampling == 0] = np.nan
+    if los_axis < 0:
+        los_axis += 3
+    axes = [0, 1, 2]
+    axes.remove(los_axis)
+    # make sure los is the last axis
+    axes = axes + [
+        los_axis,
+    ]
+    map_in = np.transpose(map_in, axes=axes)
+    nz = map_in.shape[-1]
+    map_in = map_in.reshape((-1, nz))
+    if zaxis is None:
+        zaxis = np.arange(nz)
+    for i in range(len(map_in)):
+        plt.plot(zaxis, map_in[i], lw=lw, color="black")
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+
+
 def plot_map(
     map_in,
     wproj,
