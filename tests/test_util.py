@@ -21,7 +21,7 @@ def test_get_ang_between_coord():
     dec1 = np.linspace(-30, -40, 11)
     dec2 = np.array([80])
     ang = get_ang_between_coord(ra1, dec1, ra2, dec2)
-    assert np.allclose(ang, dec2 - dec1)
+    assert np.allclose(ang.ravel(), dec2 - dec1)
 
 
 def test_generate_colored_noise():

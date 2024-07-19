@@ -69,7 +69,7 @@ def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     vec1 = hp.ang2vec(ra1, dec1, lonlat=True)
     vec2 = hp.ang2vec(ra2, dec2, lonlat=True)
     result = (np.arccos((vec1 * vec2).sum(axis=-1)) * units.rad).to(unit).value
-    return result
+    return result.T
 
 
 def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
