@@ -55,51 +55,41 @@ def test_get_wcs_coor(test_wproj, test_wcs):
 def test_pcaclean():
     test_arr = np.random.normal(size=(10))
     with pytest.raises(Exception) as e_info:
-        pcaclean(test_arr, 1, returnAnalysis=True)
+        pcaclean(test_arr, 1, return_analysis=True)
     test_arr = np.random.normal(size=(200, 200, 10))
-    C, eignumb, eigenval, V = pcaclean(test_arr, 1, returnAnalysis=True)
+    C, eignumb, eigenval, V = pcaclean(test_arr, 1, return_analysis=True)
     assert (np.abs(C - np.eye((test_arr.shape[-1]))) < 0.1).mean() == 1
     test_arr = np.random.normal(size=(10, 200, 200))
+    # test renorm
     C, eignumb, eigenval, V = pcaclean(
         test_arr,
         1,
-        returnAnalysis=True,
+        weights=2 * np.ones_like(test_arr),
+        return_analysis=True,
         los_axis=0,
-        w=np.ones_like(test_arr),
-        W=np.ones_like(test_arr),
-        MeanCentre=True,
+        mean_centre=True,
     )
     assert C.shape == (10, 10)
     assert V.shape == (10, 10)
+    assert (np.abs(C - np.eye((test_arr.shape[0]))) < 0.1).mean() == 1
     assert np.allclose(eignumb, np.linspace(1, 10, 10))
     assert np.std(eigenval) < 0.1
     res_arr = pcaclean(
         test_arr,
         1,
-        returnAnalysis=False,
+        return_analysis=False,
         los_axis=0,
-        w=np.ones_like(test_arr),
-        W=np.ones_like(test_arr),
-        MeanCentre=True,
+        weights=2 * np.ones_like(test_arr),
+        mean_centre=True,
     )
     assert res_arr.shape == test_arr.shape
     assert np.abs((res_arr).mean()) < 1e-3
     res_arr, A_mat = pcaclean(
         test_arr,
         1,
-        returnAnalysis=False,
+        return_analysis=False,
         los_axis=0,
-        w=np.ones_like(test_arr),
-        W=np.ones_like(test_arr),
-        MeanCentre=True,
-        return_A=True,
-    )
-    res_arr, A_mat = pcaclean(
-        test_arr,
-        1,
-        returnAnalysis=False,
-        los_axis=0,
-        MeanCentre=True,
+        mean_centre=True,
         return_A=True,
     )
 

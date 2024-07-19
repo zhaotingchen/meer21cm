@@ -15,7 +15,8 @@ def plot_pixels_along_los(
     los_axis=-1,
 ):
     plt.figure()
-    map_in[map_has_sampling == 0] = np.nan
+    map_plot = map_in.copy()
+    map_plot[map_has_sampling == 0] = np.nan
     if los_axis < 0:
         los_axis += 3
     axes = [0, 1, 2]
@@ -24,13 +25,13 @@ def plot_pixels_along_los(
     axes = axes + [
         los_axis,
     ]
-    map_in = np.transpose(map_in, axes=axes)
-    nz = map_in.shape[-1]
-    map_in = map_in.reshape((-1, nz))
+    map_plot = np.transpose(map_plot, axes=axes)
+    nz = map_plot.shape[-1]
+    map_plot = map_plot.reshape((-1, nz))
     if zaxis is None:
         zaxis = np.arange(nz)
-    for i in range(len(map_in)):
-        plt.plot(zaxis, map_in[i], lw=lw, color="black")
+    for i in range(len(map_plot)):
+        plt.plot(zaxis, map_plot[i], lw=lw, color="black")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)

@@ -155,19 +155,18 @@ def get_wcs_coor(wcs, xx, yy):
 
 
 def pcaclean(
-    M,
+    signal,
     N_fg,
-    w=None,
-    W=None,
-    returnAnalysis=False,
-    MeanCentre=False,
+    weights=None,
+    return_analysis=False,
+    mean_centre=False,
     los_axis=-1,
     return_A=False,
 ):
     """
     Performs PCA cleaning of the map data.
     """
-    assert len(M.shape) == 3, "map must be 3D."
+    assert len(signal.shape) == 3, "map must be 3D."
     if los_axis < 0:
         # change -1 to 2
         los_axis = 3 + los_axis
@@ -178,42 +177,35 @@ def pcaclean(
         los_axis,
     ] + axes
     # transpose map data
-    M = np.transpose(M, axes=axes)
-    nz, nx, ny = M.shape
-    M = M.reshape((len(M), -1))
-    if W is not None:
-        W = np.transpose(W, axes=axes)
-        W = W.reshape((len(M), -1))
-    if w is not None:
-        w = np.transpose(w, axes=axes)
-        w = W.reshape((len(M), -1))
-    # this is weird. Why are there two weights?
-    if MeanCentre:
-        if W is None:
-            M = M - np.mean(M, 1)[:, None]  # Mean centre data
-        else:
-            M = M - np.sum(M * W, 1)[:, None] / np.sum(W, 1)[:, None]
+    signal = np.transpose(signal, axes=axes)
+    nz, nx, ny = signal.shape
+    signal = signal.reshape((nz, -1))
+    if weights is not None:
+        weights = np.transpose(weights, axes=axes)
+        weights = weights.reshape((nz, -1))
+    else:
+        weights = np.ones_like(signal)
+    if mean_centre:
+        signal = (
+            signal - np.sum(signal * weights, 1)[:, None] / np.sum(weights, 1)[:, None]
+        )
     ### Covariance calculation:
-    if w is None:
-        w = 1.0
-    C = np.cov(w * M)  # include weight in frequency covariance estimate
-    if returnAnalysis == True:
-        eigenval = np.linalg.eigh(C)[0]
-        eignumb = np.linspace(1, len(eigenval), len(eigenval))
-        eigenval = eigenval[::-1]  # Put largest eigenvals first
-        V = np.linalg.eigh(C)[1][
-            :, ::-1
-        ]  # Eigenvectors from covariance matrix with most dominant first
-        return C, eignumb, eigenval, V
-    ### Remove dominant modes:
-    V = np.linalg.eigh(C)[1][
+    covariance = (
+        np.einsum("ia,ia,ja,ja->ij", signal, weights, signal, weights)
+    ) / np.einsum("ia,ja->ij", weights, weights)
+    V = np.linalg.eigh(covariance)[1][
         :, ::-1
     ]  # Eigenvectors from covariance matrix with most dominant first
+    if return_analysis:
+        eigenval = np.linalg.eigh(covariance)[0]
+        eignumb = np.linspace(1, len(eigenval), len(eigenval))
+        eigenval = eigenval[::-1]  # Put largest eigenvals first
+        return covariance, eignumb, eigenval, V
     A = V[:, :N_fg]  # Mixing matrix, first N_fg most dominant modes of eigenvectors
     S = np.dot(
-        A.T, M
+        A.T, signal
     )  # not including weights in mode subtraction (as per Yi-Chao's approach)
-    Residual = M - np.dot(A, S)
+    Residual = signal - np.dot(A, S)
     Residual = np.reshape(Residual, (nz, nx, ny))
     Residual = np.transpose(Residual, axes=np.argsort(axes))
     if return_A:
