@@ -56,8 +56,8 @@ def isotropic_beam_profile(xdim, ydim, wproj, beam_func, ang_unit=units.deg):
     return beam_func(ang_dist)
 
 
-def dish_beam_sigma(dish_diameter, nu, gamma=1.0, unit=units.rad):
-    """
+def dish_beam_sigma(dish_diameter, nu, gamma=1.0, ang_unit=units.rad):
+    r"""
     Calculate the beam size of a dish telescope assuming
 
     .. math::
@@ -69,10 +69,25 @@ def dish_beam_sigma(dish_diameter, nu, gamma=1.0, unit=units.rad):
     and D is the dish diameter.
 
     The sigma of the Gaussian beam is then
-    :math:`\sigma = \theta_{\rm FWHM}/ 2\sqrt{2 {\rm ln}2}`
+    :math:`\sigma = \theta_{\rm FWHM}/ 2\sqrt{2 {\rm ln}2}`.
+
+    Parameters
+    ----------
+        dish_diameter: float.
+            The diameter of the dish in metre.
+        nu: float.
+            The observing frequency in Hz.
+        gamma: float, default 1.0.
+            The aperture efficiency.
+        ang_unit: str or :class:`astropy.units.Unit`.
+            The unit of the output.
+    Returns
+    -------
+        beam_sigma: float.
+            The sigma of the beam.
     """
     beam_fwhm = (
         constants.c / (nu * units.Hz * dish_diameter * units.m) * units.rad
-    ).to(unit).value * gamma
+    ).to(ang_unit).value * gamma
     beam_sigma = beam_fwhm / (2 * np.sqrt(2 * np.log(2)))
     return beam_sigma
