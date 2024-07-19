@@ -1,8 +1,62 @@
 import numpy as np
-from scipy.signal import convolve
 from .util import get_wcs_coor, get_ang_between_coord
 from astropy import units, constants
 from astropy.wcs.utils import proj_plane_pixel_area
+from scipy.signal import convolve
+
+
+def weighted_convolution(
+    signal,
+    kernel,
+    weights,
+    kernel_renorm=True,
+    los_axis=-1,
+):
+    if los_axis < 0:
+        los_axis += 3
+    # make sure los is the last axis
+    axes = [0, 1, 2]
+    axes.remove(los_axis)
+    axes = axes + [
+        los_axis,
+    ]
+    signal = np.transpose(signal * weights, axes=axes)
+    kernel = np.transpose(kernel, axes=axes)
+    weights = np.transpose(weights, axes=axes)
+    if kernel_renorm:
+        kernel /= kernel.sum(axis=(0, 1))[None, None, :]
+    kernel_square = kernel**2
+    kernel_square /= kernel_square.sum(axis=(0, 1))[None, None, :]
+    conv_signal = np.zeros_like(signal)
+    conv_variance = np.zeros_like(signal)
+    for ch_i in range(signal.shape[-1]):
+        weight_renorm = convolve(
+            weights[:, :, ch_i],
+            kernel[:, :, ch_i],
+            mode="same",
+        )
+        weight_renorm[weight_renorm == 0] = np.inf
+        conv_signal[:, :, ch_i] = (
+            convolve(
+                signal[:, :, ch_i],
+                kernel[:, :, ch_i],
+                mode="same",
+            )
+            / weight_renorm
+        )
+        conv_variance[:, :, ch_i] = (
+            convolve(
+                weights[:, :, ch_i],
+                kernel_square[:, :, ch_i],
+                mode="same",
+            )
+            / weight_renorm**2
+        )
+    conv_variance[conv_variance == 0] = np.inf
+    conv_weights = 1 / conv_variance
+    conv_weights = np.transpose(conv_weights, axes=axes)
+    conv_signal = np.transpose(conv_signal, axes=axes)
+    return conv_signal, conv_weights
 
 
 def gaussian_beam(sigma):
