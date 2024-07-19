@@ -24,13 +24,13 @@ from .stack import stack
 from .util import (
     check_unit_equiv,
     get_wcs_coor,
-    plot_map,
     radec_to_indx,
     get_default_args,
     find_rotation_matrix,
     minimum_enclosing_box_of_lightcone,
     hod_obuljen18,
 )
+from .plot import plot_map
 import healpy as hp
 
 python_ver = sys.version_info[0] + sys.version_info[1] / 10

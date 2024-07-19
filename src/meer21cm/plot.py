@@ -1,0 +1,61 @@
+import matplotlib.pyplot as plt
+import matplotlib.colors as colors
+import numpy as np
+
+
+def plot_map(
+    map_in,
+    wproj,
+    W=None,
+    title=None,
+    cbar_label=None,
+    cbarshrink=1,
+    ZeroCentre=False,
+    vmin=None,
+    vmax=None,
+    cmap="magma",
+):
+    """
+    Stolen from meerpower
+    """
+    plt.figure()
+    plt.subplot(projection=wproj)
+    ax = plt.gca()
+    lon = ax.coords[0]
+    lat = ax.coords[1]
+    lon.set_major_formatter("d")
+    lon.set_ticks_position("b")
+    lat.set_ticks_position("l")
+    plt.grid(True, color="grey", ls="solid", lw=0.5)
+    if len(np.shape(map_in)) == 3:
+        map_in = np.mean(
+            map_in, 2
+        )  # Average along 3rd dimention (LoS) as default if 3D map given
+        if W is not None:
+            W = np.mean(W, 2)
+    if vmax is not None:
+        map_in[map_in > vmax] = vmax
+    if vmin is not None:
+        map_in[map_in < vmin] = vmin
+    if ZeroCentre == True:
+        divnorm = colors.TwoSlopeNorm(
+            vmin=np.min(map_in), vcenter=0, vmax=np.max(map_in)
+        )
+        cmap = copy.copy(matplotlib.cm.get_cmap("seismic"))
+        cmap.set_bad(color="grey")
+    else:
+        divnorm = None
+    if W is not None:
+        map_in[W == 0] = np.nan
+    plt.imshow(map_in.T, cmap=cmap, norm=divnorm)
+    if vmax is not None or vmin is not None:
+        plt.clim(vmin, vmax)
+    cbar = plt.colorbar(orientation="horizontal", shrink=cbarshrink, pad=0.2)
+    if cbar_label is None:
+        cbar.set_label("mK")
+    else:
+        cbar.set_label(cbar_label)
+    ax.invert_xaxis()
+    plt.xlabel("R.A [deg]")
+    plt.ylabel("Dec. [deg]")
+    plt.title(title, fontsize=18)
