@@ -41,5 +41,7 @@ def test_dish_beam_sigma():
     nu = 1e9  # Hz
     dish_size = 10  # m
     beam_sigma = dish_beam_sigma(dish_size, nu)
-    fwhm = (constants.c / (nu * units.Hz * dish_size * units.m)).to("").value
+    fwhm = (
+        (constants.c / (nu * units.Hz * dish_size * units.m)).to("").value * 180 / np.pi
+    )
     assert np.allclose(beam_sigma * 2 * np.sqrt(2 * np.log(2)), fwhm)

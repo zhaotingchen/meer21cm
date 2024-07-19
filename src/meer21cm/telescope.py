@@ -12,6 +12,42 @@ def weighted_convolution(
     kernel_renorm=True,
     los_axis=-1,
 ):
+    r"""
+    Perform weighted convolution of signal. The weighted convolution of the signal is defined as
+
+    .. math::
+        \tilde{s} = [(s \cdot w) * b]/[w * b],
+
+    where :math:`s` is the signal, :math:`w` is the weight,
+    :math:`b` is the convolution kernel and :math:`w` denotes convolution.
+
+    The convolution also creates new weights for the output signal so that
+
+    .. math::
+        \tilde{w} = [w * b]^2 / [w * b^2]
+
+    Parameters
+    ----------
+        signal: float.
+            The input signal to be convolved
+        kernel: float.
+            The convolution kernel
+        weights: float.
+            The weights for the signal
+        kernel_renorm: boolean, default True.
+            Whether to renormalise the kernel so that the sum of the kernel is one.
+            Should be set to ``True`` for temperature and ``False`` for flux density.
+        los_axis: int, default -1.
+            which axis is the los.
+
+
+    Returns
+    -------
+        conv_signal: float.
+            The convolved signal.
+        conv_weights: float.
+            The convolved weights.
+    """
     if los_axis < 0:
         los_axis += 3
     # make sure los is the last axis
@@ -110,14 +146,14 @@ def isotropic_beam_profile(xdim, ydim, wproj, beam_func, ang_unit=units.deg):
     return beam_func(ang_dist)
 
 
-def dish_beam_sigma(dish_diameter, nu, gamma=1.0, ang_unit=units.rad):
+def dish_beam_sigma(dish_diameter, nu, gamma=1.0, ang_unit=units.deg):
     r"""
     Calculate the beam size of a dish telescope assuming
 
     .. math::
-        \theta_{\rm FWHM} = \gamma \frac{\lambda}{D}
+        \theta_{\rm FWHM} = \gamma \frac{\lambda}{D},
 
-    , where :math:`\theta_{\rm FWHM}` is the FWHM of the beam,
+    where :math:`\theta_{\rm FWHM}` is the FWHM of the beam,
     :math:`\gamma` is the aperture efficiency,
     :math:`\lambda` is the observing wavelength,
     and D is the dish diameter.
@@ -133,7 +169,7 @@ def dish_beam_sigma(dish_diameter, nu, gamma=1.0, ang_unit=units.rad):
             The observing frequency in Hz.
         gamma: float, default 1.0.
             The aperture efficiency.
-        ang_unit: str or :class:`astropy.units.Unit`.
+        ang_unit: str or :class:`astropy.units.Unit`, default ``deg``.
             The unit of the output.
     Returns
     -------
