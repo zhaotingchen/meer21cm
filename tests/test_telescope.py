@@ -1,5 +1,6 @@
 from meer21cm.telescope import *
 import numpy as np
+from astropy import constants, units
 
 
 def test_gaussian_beam():
@@ -19,3 +20,11 @@ def test_isotropic_beam_profile(test_wproj, test_W):
     assert np.abs(beam_image[xdim // 2, ydim // 2 + 1] - beam_pix) < 0.01
     assert np.abs(beam_image[xdim // 2 - 1, ydim // 2] - beam_pix) < 0.01
     assert np.abs(beam_image[xdim // 2 + 1, ydim // 2] - beam_pix) < 0.01
+
+
+def test_dish_beam_sigma():
+    nu = 1e9  # Hz
+    dish_size = 10  # m
+    beam_sigma = dish_beam_sigma(dish_size, nu)
+    fwhm = (constants.c / (nu * units.Hz * dish_size * units.m)).to("").value
+    assert np.allclose(beam_sigma * 2 * np.sqrt(2 * np.log(2)), fwhm)
