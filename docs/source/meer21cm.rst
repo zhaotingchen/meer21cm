@@ -1,6 +1,13 @@
 meer21cm package
 ================
 
+meer21cm.cosmology module
+------------------
+
+.. automodule:: meer21cm.cosmology
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 meer21cm.fg module
 ------------------
@@ -30,6 +37,14 @@ meer21cm.stack module
 ---------------------
 
 .. automodule:: meer21cm.stack
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+meer21cm.telescope module
+---------------------
+
+.. automodule:: meer21cm.telescope
    :members:
    :undoc-members:
    :show-inheritance:
