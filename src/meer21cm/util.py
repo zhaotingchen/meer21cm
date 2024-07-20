@@ -191,7 +191,7 @@ def pcaclean(
         )
     ### Covariance calculation:
     covariance = (
-        np.einsum("ia,ia,ja,ja->ij", signal, weights, signal, weights)
+        np.einsum("ia,ja->ij", signal * weights, signal * weights)
     ) / np.einsum("ia,ja->ij", weights, weights)
     V = np.linalg.eigh(covariance)[1][
         :, ::-1
