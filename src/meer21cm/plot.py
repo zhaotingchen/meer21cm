@@ -93,3 +93,26 @@ def plot_map(
     plt.xlabel("R.A [deg]")
     plt.ylabel("Dec. [deg]")
     plt.title(title, fontsize=18)
+
+
+def plot_eigenspectrum(
+    eigenval,
+    eignumb=None,
+    eignumb_cut=40,
+    title="",
+):
+    plt.figure()
+    if len(eigenval.shape) == 1:
+        eigenval = np.array(
+            [
+                eigenval,
+            ]
+        )
+    if eignumb is None:
+        eignumb = np.arange(eigenval.shape[1])
+    for i in range(len(eigenval)):
+        plt.plot(eignumb[:eignumb_cut], eigenval[i][:eignumb_cut], "-o")
+    plt.yscale("log")
+    plt.xlabel("Eigennumber")
+    plt.ylabel("Eigenvalue")
+    plt.title(title)
