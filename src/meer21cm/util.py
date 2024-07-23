@@ -285,29 +285,37 @@ def minimum_enclosing_box_of_lightcone(
     freq,
     cosmo=Planck18,
     ang_unit="deg",
+    tile=True,
+    return_coord=False,
 ):
     """
     not really minimum but should be okay.
     """
-    ra_arr = (ra_arr * units.Unit(ang_unit)).to("deg").value
-    dec_arr = (dec_arr * units.Unit(ang_unit)).to("deg").value
+    ra_arr = (ra_arr.ravel() * units.Unit(ang_unit)).to("deg").value
+    dec_arr = (dec_arr.ravel() * units.Unit(ang_unit)).to("deg").value
     ra_temp = ra_arr.copy()
     ra_temp[ra_temp > 180] -= 360
     ra_mean = ra_temp.mean()
     dec_mean = dec_arr.mean()
     mean_vec = hp.ang2vec(ra_mean, dec_mean, lonlat=True)
     rot_mat = find_rotation_matrix(mean_vec)
-    z_arr = f_21 / freq - 1
+    z_arr = f_21 / freq.ravel() - 1
     vec_arr = hp.ang2vec(ra_arr, dec_arr, lonlat=True)
     # rotate so that centre of field is the line-of-sight [0,0,1]
     vec_arr = np.einsum("ab,ib->ia", rot_mat, vec_arr)
     comov_dist_arr = cosmo.comoving_distance(z_arr)
-    pos_arr = vec_arr[:, None, :] * comov_dist_arr[None, :, None]
+    if tile:
+        pos_arr = vec_arr[:, None, :] * comov_dist_arr[None, :, None]
+    else:
+        pos_arr = vec_arr * comov_dist_arr[:, None]
     pos_arr = pos_arr.reshape((-1, 3))
     x_min, y_min, z_min = pos_arr.min(axis=0)
     x_max, y_max, z_max = pos_arr.max(axis=0)
     inv_rot = np.linalg.inv(rot_mat)
-    return (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
+    result = (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
+    if return_coord:
+        result += (pos_arr,)
+    return result
 
 
 def hod_obuljen18(
