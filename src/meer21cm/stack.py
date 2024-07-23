@@ -27,6 +27,7 @@ def weight_source_peaks(
     project_mat=None,
     gal_sel_indx=None,
     no_sel_weight=False,
+    ang_unit="deg",
 ):
     if W_map_in is None:
         W_map_in = np.ones_like(map_in)
@@ -34,6 +35,8 @@ def weight_source_peaks(
         w_map_in = np.ones_like(map_in)
     num_ch = map_in.shape[-1]
     num_g = ra_g_in.size
+    ra_g_in = (ra_g_in * units.Unit(ang_unit)).to("deg").value
+    dec_g_in = (dec_g_in * units.Unit(ang_unit)).to("deg").value
     if ignore_double_counting:
         return np.zeros(map_in.shape, dtype="int") - 1, W_map_in
     xx, yy = np.meshgrid(
@@ -67,7 +70,7 @@ def weight_source_peaks(
     else:
         raise ValueError("Unrecognised velocity profile: " + str(velocity_profile))
 
-    gal_freq = f_21 / (1 + z_g_in) / 1e6
+    gal_freq = f_21 / (1 + z_g_in)
     # which channel each source centre belongs to
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - nu[:, None]), axis=0)
 
@@ -194,6 +197,7 @@ def stack(
     stack_angular_num_nearby_pix=10,
     x_unit=units.km / units.s,
     return_indx_and_weight=False,
+    ang_unit="deg",
 ):
     # calculate what pixels to stack
     map_gal_indx, map_gal_weight = weight_source_peaks(
@@ -215,6 +219,7 @@ def stack(
         project_mat=project_mat,
         gal_sel_indx=gal_sel_indx,
         no_sel_weight=no_sel_weight,
+        ang_unit=ang_unit,
     )
     if W_map_in is None:
         W_map_in = np.ones_like(map_in)
@@ -222,13 +227,15 @@ def stack(
         w_map_in = np.ones_like(map_in)
     num_ch = map_in.shape[-1]
     num_g = ra_g_in.size
+    ra_g_in = (ra_g_in * units.Unit(ang_unit)).to("deg").value
+    dec_g_in = (dec_g_in * units.Unit(ang_unit)).to("deg").value
     xx, yy = np.meshgrid(
         np.arange(map_in.shape[0]), np.arange(map_in.shape[1]), indexing="ij"
     )
     # the coordinates of each pixel in the map
     ra, dec = get_wcs_coor(wproj, xx, yy)
 
-    gal_freq = f_21 / (1 + z_g_in) / 1e6
+    gal_freq = f_21 / (1 + z_g_in)
     # which channel each source centre belongs to
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - nu[:, None]), axis=0)
     # in deg^2
@@ -460,7 +467,7 @@ def sum_3d_stack(stack_3D_map, vel_ch_avg=5, ang_sum_dist=3.0):
 #        hiprofile_g = profile_func(vel_int_edges)
 #        hiprofile_g /= np.sum(hiprofile_g)
 #
-#    gal_freq = f_21/(1+z_g_in)/1e6
+#    gal_freq = f_21/(1+z_g_in)
 #    # which channel each source centre belongs to
 #    gal_which_ch = np.argmin(np.abs(gal_freq[None,:]-nu[:,None]),axis=0)
 #

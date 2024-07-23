@@ -56,7 +56,7 @@ def test_W():
 @pytest.fixture
 def test_nu():
     file = data_dir + "test_nu.npy"
-    return np.load(file)
+    return np.load(file) * 1e6
 
 
 @pytest.fixture

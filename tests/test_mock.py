@@ -212,8 +212,8 @@ def test_gal_pos_in_mock(
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
     # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
-    assert (f_21 / 1e6 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
-    assert (f_21 / 1e6 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
+    assert (f_21 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
+    assert (f_21 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
     # ra,dec mapping to index should be tested in util
     # when no velocity, the flux should be one channel
     assert len(hifluxd_in) == 1
@@ -249,10 +249,10 @@ def test_gal_pos_in_mock(
             y_dim=test_W.shape[1],
             ignore_double_counting=False,
             return_indx_and_weight=False,
-            fix_z=f_21 / 1e6 / test_nu.mean() - 1,
+            fix_z=f_21 / test_nu.mean() - 1,
             fix_ra_dec=(350, -30),
         )
-        assert z_g == f_21 / 1e6 / test_nu.mean() - 1
+        assert z_g == f_21 / test_nu.mean() - 1
         assert ra_g == 350
         assert dec_g == -30
         assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
@@ -341,7 +341,7 @@ def test_plt(test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
         y_dim=test_W.shape[1],
         ignore_double_counting=False,
         return_indx_and_weight=False,
-        fix_z=np.ones(num_g) * f_21 / 1e6 / test_nu.mean() - 1,
+        fix_z=np.ones(num_g) * f_21 / test_nu.mean() - 1,
         fix_ra_dec=(np.ones(num_g) * 350, np.ones(num_g) * (-30.0)),
     )
     plt.close("all")
@@ -389,8 +389,8 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
     # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
-    assert (f_21 / 1e6 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
-    assert (f_21 / 1e6 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
+    assert (f_21 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
+    assert (f_21 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
     # ra,dec mapping to index should be tested in util
     # when no velocity, the flux should be one channel
     assert len(hifluxd_in) == 1
@@ -426,7 +426,7 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
         y_dim=test_W.shape[1],
         ignore_double_counting=False,
         return_indx_and_weight=False,
-        fix_z=f_21 / 1e6 / nu.mean() - 1,
+        fix_z=f_21 / nu.mean() - 1,
         fast_ang_pos=False,
     )
     assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])

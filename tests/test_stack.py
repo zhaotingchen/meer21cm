@@ -15,7 +15,7 @@ def test_weight_source_peaks(test_wproj, test_W, test_nu):
     ra_in = np.array([350.0])
     dec_in = np.array([-25.0])
     z_in = np.array([0.45])
-    gal_freq = f_21 / (1 + z_in) / 1e6
+    gal_freq = f_21 / (1 + z_in)
     indx_1, indx_2 = radec_to_indx(ra_in, dec_in, test_wproj)
     # which channel each source centre belongs to
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - test_nu[:, None]), axis=0)
@@ -83,7 +83,7 @@ def test_weight_source_peaks(test_wproj, test_W, test_nu):
     ra_in = np.array([350.0, 350.0])
     dec_in = np.array([-27.0, -27.0])
     z_in = np.array([0.45, 0.4505])
-    gal_freq = f_21 / (1 + z_in) / 1e6
+    gal_freq = f_21 / (1 + z_in)
     indx_1, indx_2 = radec_to_indx(ra_in, dec_in, test_wproj)
     map_gal_indx, map_gal_weight = weight_source_peaks(
         map_in,
@@ -118,7 +118,7 @@ def test_stack(test_wproj, test_W, test_nu):
     ra_in = np.array([350.0])
     dec_in = np.array([-25.0])
     z_in = np.array([0.45])
-    gal_freq = f_21 / (1 + z_in) / 1e6
+    gal_freq = f_21 / (1 + z_in)
     indx_1, indx_2 = radec_to_indx(ra_in, dec_in, test_wproj)
     # which channel each source centre belongs to
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - test_nu[:, None]), axis=0)
@@ -230,7 +230,7 @@ def test_stack(test_wproj, test_W, test_nu):
     dec_in = np.array([-27.0, -24.0])
     z_in = np.array([0.45, 0.4505])
     indx_1, indx_2 = radec_to_indx(ra_in, dec_in, test_wproj)
-    gal_freq = f_21 / (1 + z_in) / 1e6
+    gal_freq = f_21 / (1 + z_in)
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - test_nu[:, None]), axis=0)
     map_in = np.zeros((test_W.shape[0], test_W.shape[1], len(test_nu)))
     map_in[indx_1[0], indx_2[0], gal_which_ch[0]] = 1.5

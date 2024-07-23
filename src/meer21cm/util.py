@@ -127,7 +127,7 @@ def read_healpix_fits(file):
     return hp_map, hp_nside, map_unit, map_freq
 
 
-def get_wcs_coor(wcs, xx, yy):
+def get_wcs_coor(wcs, xx, yy, ang_unit="deg"):
     """
     Retrieve RA and Dec coordinates of pixels in the WCS.
 
@@ -149,8 +149,8 @@ def get_wcs_coor(wcs, xx, yy):
     """
     assert wcs.naxis == 2, "input wcs must be 2-dimensional."
     coor = wcs.pixel_to_world(xx, yy)
-    ra = coor.ra.deg
-    dec = coor.dec.deg
+    ra = getattr(coor.ra, ang_unit)
+    dec = getattr(coor.dec, ang_unit)
     return ra, dec
 
 
@@ -213,8 +213,8 @@ def pcaclean(
     return Residual
 
 
-def radec_to_indx(ra_arr, dec_arr, wproj, to_int=True):
-    coor = SkyCoord(ra_arr, dec_arr, unit="deg")
+def radec_to_indx(ra_arr, dec_arr, wproj, to_int=True, ang_unit="deg"):
+    coor = SkyCoord(ra_arr, dec_arr, unit=ang_unit)
     indx_1, indx_2 = wproj.world_to_pixel(coor)
     if to_int:
         indx_1 = np.round(indx_1).astype("int")
@@ -279,10 +279,18 @@ def find_rotation_matrix(vec):
     return rot_mat_2 @ rot_mat_1
 
 
-def minimum_enclosing_box_of_lightcone(ra_arr, dec_arr, freq, cosmo=Planck18):
+def minimum_enclosing_box_of_lightcone(
+    ra_arr,
+    dec_arr,
+    freq,
+    cosmo=Planck18,
+    ang_unit="deg",
+):
     """
     not really minimum but should be okay.
     """
+    ra_arr = (ra_arr * units.Unit(ang_unit)).to("deg").value
+    dec_arr = (dec_arr * units.Unit(ang_unit)).to("deg").value
     ra_temp = ra_arr.copy()
     ra_temp[ra_temp > 180] -= 360
     ra_mean = ra_temp.mean()
@@ -302,7 +310,17 @@ def minimum_enclosing_box_of_lightcone(ra_arr, dec_arr, freq, cosmo=Planck18):
     return (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
 
 
-def hod_obuljen18(logmh, m0h=9.52, mminh=11.27, alpha=0.44, cosmo=Planck18):
-    marr = 10**logmh  # in Msun/h
+def hod_obuljen18(
+    logmh,
+    m0h=9.52,
+    mminh=11.27,
+    alpha=0.44,
+    cosmo=Planck18,
+    input_has_h=True,
+    output_has_h=False,
+):
+    input_h_unit = 1.0 if input_has_h else cosmo.h
+    output_h_unit = 1.0 if output_has_h else 1 / cosmo.h
+    marr = 10**logmh * input_h_unit  # in Msun/h
     himass = 10 ** (m0h) * (marr / 10**mminh) ** alpha * np.exp(-(10**mminh) / marr)
-    return himass / cosmo.h
+    return himass * output_h_unit
