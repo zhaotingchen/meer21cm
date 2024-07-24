@@ -327,6 +327,42 @@ def hod_obuljen18(
     input_has_h=True,
     output_has_h=False,
 ):
+    r"""
+    HI-halo mass relation reported in Obuljen et al. (2018) [1].
+    The default settings assume the mass is in M_sun/h, and returns mass **without** h unit.
+    Note that, if you want input without h unit, you must change the ``m0h`` and ``mminh`` manually as well.
+    The HI-halo mass relation follows
+
+    .. math::
+        M_{\rm HI} (M_h) = M_0 (M_h/M_{\rm min})^\alpha \, {\rm exp}[-M_{\rm min}/M_h],
+
+
+
+    Parameters
+    ----------
+        logmh: float.
+            input halo mass in log10
+        m0h: optional, default 9.52.
+            The :math:`M_0` parameter in the HOD in log10
+        mminh: optional, default 11.27.
+            The :math:`M_{min}` parameter in the HOD in log10
+        alpha: optional, default 0.44.
+            The :math:`\alpha` parameter in the HOD.
+        cosmo: optional, default Planck18.
+            The default cosmology, used only for h unit.
+        input_has_h: optional, default True.
+            Whether the input mass has h unit.
+        output_has_h: optional, default False.
+            Whether the output mass has h unit.
+
+    Returns
+    -------
+        The HI mass for the input halo mass.
+
+    References
+    ----------
+    .. [1] Obuljen, A. et al., "The H I content of dark matter haloes at z ≈ 0 from ALFALFA ", https://ui.adsabs.harvard.edu/abs/2019MNRAS.486.5124O.
+    """
     input_h_unit = 1.0 if input_has_h else cosmo.h
     output_h_unit = 1.0 if output_has_h else 1 / cosmo.h
     marr = 10**logmh * input_h_unit  # in Msun/h
