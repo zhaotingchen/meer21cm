@@ -282,9 +282,9 @@ def gen_clustering_gal_pos(
         / 180
         * cosmo.comoving_distance(z_ch).value.min()
     )
-    L_x = (np.floor(L_x.value // target_resol) + 1) * target_resol
-    L_y = (np.floor(L_y.value // target_resol) + 1) * target_resol
-    L_z = (np.floor(L_z.value // target_resol) + 1) * target_resol
+    L_x = (np.floor(L_x // target_resol) + 1) * target_resol
+    L_y = (np.floor(L_y // target_resol) + 1) * target_resol
+    L_z = (np.floor(L_z // target_resol) + 1) * target_resol
     L_box = np.array([L_x, L_y, L_z])
     N_box = (L_box / target_resol).astype("int")
     # powerbox bug: only even N works
@@ -356,9 +356,9 @@ def gen_clustering_gal_pos(
         indx_z[indx_z == (len(z_edges) - 1)] = -1
         velocity_halo_para = velocity_z[indx_x, indx_y, indx_z]
 
-    halo_pos[:, 0] += x_start.value
-    halo_pos[:, 1] += y_start.value
-    halo_pos[:, 2] += z_start.value
+    halo_pos[:, 0] += x_start
+    halo_pos[:, 1] += y_start
+    halo_pos[:, 2] += z_start
     halo_pos_on_sky = np.einsum("ij,aj->ai", rot_back, halo_pos)
     halo_comov_dist = np.sqrt(np.sum(halo_pos_on_sky**2, axis=-1))
     z_interp = np.linspace(z_ch.min() - 0.2, z_ch.max() + 0.2, 1001)
