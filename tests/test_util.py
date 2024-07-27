@@ -5,8 +5,6 @@ from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from meer21cm.util import *
 import sys
 
-python_ver = sys.version_info
-
 
 def test_freq_redshift():
     assert freq_to_redshift(f_21) == 0.0
@@ -25,8 +23,6 @@ def test_get_ang_between_coord():
 
 
 def test_generate_colored_noise():
-    if python_ver < (3, 9):
-        return 1
     rand_arr = [
         generate_colored_noise(100, 100, lambda k: np.ones_like(k)) for i in range(1000)
     ]

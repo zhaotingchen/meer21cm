@@ -13,8 +13,6 @@ from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
 
-python_ver = sys.version_info
-
 
 def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
     num_g = 10000
@@ -72,11 +70,7 @@ def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
         seed=42,
         himf_pars=himf_pars_jones18(Planck18.h / 0.7),
     )
-    if python_ver < (3, 9):
-        with pytest.raises(ImportError):
-            hisim.get_gal_pos()
-    else:
-        hisim.get_gal_pos()
+    hisim.get_gal_pos()
     with pytest.raises(ValueError):
         hisim = HISimulation(
             nu=test_nu,
@@ -112,8 +106,6 @@ def test_gen_random_gal_pos(
         assert len(inside_range) == num_g
         assert (inside_range).mean() == 1.0
     elif i == 1:
-        if python_ver < (3, 9):
-            return 1
         ra_g, dec_g, z_g_mock, inside_range, mmin_halo = test_gal_func(
             test_nu, Planck18, test_wproj, num_g, test_W
         )
@@ -172,8 +164,6 @@ def test_gen_random_gal_pos(
 def test_gal_pos_in_mock(
     i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range
 ):
-    if i == 1 and python_ver < (3, 9):
-        return 1
     num_g = 10000
     (
         himap_g,
@@ -267,8 +257,6 @@ def test_gal_pos_in_mock(
 )
 def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
     num_g = 1
-    if i == 1 and python_ver < (3, 9):
-        return 1
     with pytest.raises(ValueError):
         test_mock_func(
             test_nu,
@@ -320,8 +308,6 @@ def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_r
 
 @pytest.mark.parametrize("test_mock_func", [(run_poisson_mock), (run_lognormal_mock)])
 def test_plt(test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
-    if test_mock_func is run_lognormal_mock and python_ver < (3, 9):
-        return 1
     plt.switch_backend("Agg")
     num_g = 100
     test_mock_func(
@@ -440,8 +426,6 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
 )
 def test_invoke_stack(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
-    if python_ver < (3, 9):
-        return 1
     plt.switch_backend("Agg")
     # generate only one galaxy
     num_g = 100
