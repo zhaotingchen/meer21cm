@@ -47,8 +47,8 @@ def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
     z_g_mock = hisim.z_g_mock
     assert ((z_g_mock - hisim.z_ch.min()) >= 0).mean() == 1
     assert ((z_g_mock - hisim.z_ch.max()) <= 0).mean() == 1
-    hisim.get_hifluxdensity_ch(cache=True)
-    hisim.get_hi_map(cache=True)
+    hisim.get_hifluxdensity_ch()
+    hisim.get_hi_map()
 
 
 def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
@@ -304,6 +304,21 @@ def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_r
                 test_wproj,
                 kaiser_rsd=True,
             )
+
+
+def test_rsd_error(test_wproj, test_W, test_nu, test_GAMA_range):
+    num_g = 1
+    with pytest.raises(ValueError):
+        _ = gen_clustering_gal_pos(
+            test_nu,
+            Planck18,
+            test_wproj,
+            num_g,
+            test_W,
+            ra_range=test_GAMA_range[0],
+            dec_range=test_GAMA_range[1],
+            kaiser_rsd=True,
+        )
 
 
 @pytest.mark.parametrize("test_mock_func", [(run_poisson_mock), (run_lognormal_mock)])

@@ -105,6 +105,8 @@ def test_rebin_spectrum():
     assert test_rebin.size == 503 // 3
     test_rebin = rebin_spectrum(test_spectrum, rebin_width=3, mode="sum")
     assert test_rebin.sum() == 1
+    test_rebin = rebin_spectrum(test_spectrum, rebin_width=13, mode="sum")
+    assert test_rebin.sum() == 1
 
 
 def test_find_rotation_matrix():

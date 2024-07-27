@@ -41,8 +41,8 @@ def plot_map(
     map_in,
     wproj,
     W=None,
-    title=None,
-    cbar_label=None,
+    title="",
+    cbar_label="",
     cbarshrink=1,
     ZeroCentre=False,
     vmin=None,
@@ -85,10 +85,7 @@ def plot_map(
     if vmax is not None or vmin is not None:
         plt.clim(vmin, vmax)
     cbar = plt.colorbar(orientation="horizontal", shrink=cbarshrink, pad=0.2)
-    if cbar_label is None:
-        cbar.set_label("mK")
-    else:
-        cbar.set_label(cbar_label)
+    cbar.set_label(cbar_label)
     ax.invert_xaxis()
     plt.xlabel("R.A [deg]")
     plt.ylabel("Dec. [deg]")
