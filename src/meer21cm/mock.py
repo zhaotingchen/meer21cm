@@ -24,13 +24,14 @@ from .stack import stack
 from .util import (
     check_unit_equiv,
     get_wcs_coor,
-    plot_map,
     radec_to_indx,
     get_default_args,
     find_rotation_matrix,
     minimum_enclosing_box_of_lightcone,
     hod_obuljen18,
+    freq_to_redshift,
 )
+from .plot import plot_map
 import healpy as hp
 
 python_ver = sys.version_info[0] + sys.version_info[1] / 10
@@ -54,7 +55,7 @@ class HISimulation:
     ):
         self.cache = False
         self.nu = nu
-        self.z_ch = f_21 / self.nu / 1e6 - 1
+        self.z_ch = freq_to_redshift(nu)
         self.wproj = wproj
         self.num_g_tot = num_g
         self.num_g = num_g
@@ -85,8 +86,8 @@ class HISimulation:
         # in deg^2
         self.pix_area = proj_plane_pixel_area(wproj)
         self.pix_resol = np.sqrt(self.pix_area)
-        self.zmin = f_21 / nu[-1] / 1e6 - 1
-        self.zmax = f_21 / nu[0] / 1e6 - 1
+        self.zmin = np.min(self.z_ch)
+        self.zmax = np.max(self.z_ch)
         self.ra_range = np.array(self.ra_range)
         self.ra_range[self.ra_range > 180] -= 360
         dvdf = (constants.c / nu).to("km/s").value.mean()
@@ -189,7 +190,7 @@ class HISimulation:
                 _, _, z_g, _, _, _ = self.get_gal_pos(cache=cache)
             else:
                 z_g = self.z_g_mock
-        gal_freq = f_21 / (1 + z_g) / 1e6
+        gal_freq = f_21 / (1 + z_g)
         # which channel the galaxies belong to
         gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - self.nu[:, None]), axis=0)
         if cache:
@@ -261,7 +262,7 @@ def gen_clustering_gal_pos(
         fraction_area = 1
     xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
     ra_map, dec_map = get_wcs_coor(wproj, xx, yy)
-    z_ch = f_21 / nu / 1e6 - 1
+    z_ch = freq_to_redshift(nu)
     ra_pix = ra_map[W_HI[:, :, 0] > 0]
     dec_pix = dec_map[W_HI[:, :, 0] > 0]
     # obtain cuboid dimensions
@@ -273,7 +274,7 @@ def gen_clustering_gal_pos(
         L_y,
         L_z,
         rot_back,
-    ) = minimum_enclosing_box_of_lightcone(ra_pix, dec_pix, nu * 1e6, cosmo=cosmo)
+    ) = minimum_enclosing_box_of_lightcone(ra_pix, dec_pix, nu, cosmo=cosmo)
     target_resol = np.round(
         relative_resol_to_pix
         * pix_resol
@@ -281,9 +282,9 @@ def gen_clustering_gal_pos(
         / 180
         * cosmo.comoving_distance(z_ch).value.min()
     )
-    L_x = (np.floor(L_x.value // target_resol) + 1) * target_resol
-    L_y = (np.floor(L_y.value // target_resol) + 1) * target_resol
-    L_z = (np.floor(L_z.value // target_resol) + 1) * target_resol
+    L_x = (np.floor(L_x // target_resol) + 1) * target_resol
+    L_y = (np.floor(L_y // target_resol) + 1) * target_resol
+    L_z = (np.floor(L_z // target_resol) + 1) * target_resol
     L_box = np.array([L_x, L_y, L_z])
     N_box = (L_box / target_resol).astype("int")
     # powerbox bug: only even N works
@@ -355,9 +356,9 @@ def gen_clustering_gal_pos(
         indx_z[indx_z == (len(z_edges) - 1)] = -1
         velocity_halo_para = velocity_z[indx_x, indx_y, indx_z]
 
-    halo_pos[:, 0] += x_start.value
-    halo_pos[:, 1] += y_start.value
-    halo_pos[:, 2] += z_start.value
+    halo_pos[:, 0] += x_start
+    halo_pos[:, 1] += y_start
+    halo_pos[:, 2] += z_start
     halo_pos_on_sky = np.einsum("ij,aj->ai", rot_back, halo_pos)
     halo_comov_dist = np.sqrt(np.sum(halo_pos_on_sky**2, axis=-1))
     z_interp = np.linspace(z_ch.min() - 0.2, z_ch.max() + 0.2, 1001)
@@ -570,7 +571,7 @@ def generate_hi_flux(
         hiprofile_g / (np.sum(hiprofile_g, axis=0))[None, :] * hiintflux_g[None, :]
     )
 
-    gal_freq = f_21 / (1 + z_g_mock) / 1e6
+    gal_freq = f_21 / (1 + z_g_mock)
     # which channel the galaxies belong to
     gal_which_ch = np.argmin(np.abs(gal_freq[None, :] - nu[:, None]), axis=0)
     # obtain the emission line profile for each galaxy
@@ -731,7 +732,7 @@ def flux_to_sky_map(
 
     # convert to temp if needed
     if check_unit_equiv(map_unit, units.K):
-        z_ch = f_21 / nu / 1e6 - 1
+        z_ch = freq_to_redshift(nu)
         sky_map = (
             (
                 sky_map
@@ -946,7 +947,7 @@ def run_poisson_mock(
     z_g_mock = rand_z
     hifluxd_ch, himass_g = hisim.get_hifluxdensity_ch(cache=True)
     num_ch_vel = len(hifluxd_ch - 1) // 2
-    gal_freq = f_21 / (1 + rand_z) / 1e6
+    gal_freq = f_21 / (1 + rand_z)
     # which channel the galaxies belong to
     gal_which_ch = hisim.gal_ch_id()
 

@@ -10,7 +10,7 @@ authors = [
 ]
 description = "A package for 21cm intensity mapping data analysis with MeerKLASS"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -24,10 +24,8 @@ dependencies = [
     "healpy",
     "matplotlib",
     "astropy",
-    # Conditional
-    'backports.cached_property; python_version < "3.8"',
-    'hmf; python_version >= "3.9"',
-    'halomod; python_version >= "3.9"',
+    'hmf',
+    'halomod',
     'powerbox@git+https://github.com/zhaotingchen/powerbox ; python_version >= "3.9"',
 ]
 

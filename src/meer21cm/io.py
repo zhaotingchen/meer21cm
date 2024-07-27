@@ -95,10 +95,10 @@ def filter_incomplete_los(
     map_pix_counts *= full_sample_los[:, :, None]
 
     # back to original shape
-    map_intensity = np.transpose(map_intensity, axes=axes)
-    map_has_sampling = np.transpose(map_has_sampling, axes=axes)
-    map_weight = np.transpose(map_weight, axes=axes)
-    map_pix_counts = np.transpose(map_pix_counts, axes=axes)
+    map_intensity = np.transpose(map_intensity, axes=np.argsort(axes))
+    map_has_sampling = np.transpose(map_has_sampling, axes=np.argsort(axes))
+    map_weight = np.transpose(map_weight, axes=np.argsort(axes))
+    map_pix_counts = np.transpose(map_pix_counts, axes=np.argsort(axes))
     return (
         map_intensity,
         map_has_sampling,
@@ -170,9 +170,13 @@ def read_map(
     else:
         counts = map_has_sampling
     wproj = WCS(map_file).dropaxis(los_axis)
+    if los_axis < 0:
+        los_axis += 3
+    axes = [0, 1, 2]
+    axes.remove(los_axis)
     xx, yy = np.meshgrid(
-        np.arange(map_data.shape[0]),
-        np.arange(map_data.shape[1]),
+        np.arange(map_data.shape[axes[0]]),
+        np.arange(map_data.shape[axes[1]]),
         indexing="ij",
     )
     ra, dec = get_wcs_coor(wproj, xx, yy)

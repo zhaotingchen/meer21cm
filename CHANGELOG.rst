@@ -1,6 +1,28 @@
 Releases
 ========
 
+dev
+---
+
+
+v0.2.0
+------
+
+Features
+++++++++
+* MeerKLASS map i/o functionalities consistent with meerpower
+* Basic cosmological calculator
+* plot functionalities as a separate module
+* telescope-related functions including beam size and convolution
+
+Enhancements
+++++++++++++
+* consistent mean and covariance calculation in PCA
+
+Bugfixes
+++++++++
+* Fixed a los-axis tranpose back issue
+
 v0.1.1
 ------
 

@@ -15,6 +15,36 @@ if python_ver >= 3.9:
     from powerbox import PowerBox
 
 
+def freq_to_redshift(freq):
+    """
+    Convert frequency of 21cm emission to redshift
+
+    Parameters
+    ----------
+    freq: float
+
+    Returns
+    -------
+    redshift: float
+    """
+    return f_21 / freq - 1
+
+
+def redshift_to_freq(redshift):
+    """
+    Convert redshift to frequency
+
+    Parameters
+    ----------
+    redshift: float
+
+    Returns
+    -------
+    freq: float
+    """
+    return f_21 / (1 + redshift)
+
+
 def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     """
     Calculate the angle between two points on the sphere.
@@ -39,7 +69,7 @@ def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     vec1 = hp.ang2vec(ra1, dec1, lonlat=True)
     vec2 = hp.ang2vec(ra2, dec2, lonlat=True)
     result = (np.arccos((vec1 * vec2).sum(axis=-1)) * units.rad).to(unit).value
-    return result
+    return result.T
 
 
 def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
@@ -97,7 +127,7 @@ def read_healpix_fits(file):
     return hp_map, hp_nside, map_unit, map_freq
 
 
-def get_wcs_coor(wcs, xx, yy):
+def get_wcs_coor(wcs, xx, yy, ang_unit="deg"):
     """
     Retrieve RA and Dec coordinates of pixels in the WCS.
 
@@ -119,25 +149,24 @@ def get_wcs_coor(wcs, xx, yy):
     """
     assert wcs.naxis == 2, "input wcs must be 2-dimensional."
     coor = wcs.pixel_to_world(xx, yy)
-    ra = coor.ra.deg
-    dec = coor.dec.deg
+    ra = getattr(coor.ra, ang_unit)
+    dec = getattr(coor.dec, ang_unit)
     return ra, dec
 
 
 def pcaclean(
-    M,
+    signal,
     N_fg,
-    w=None,
-    W=None,
-    returnAnalysis=False,
-    MeanCentre=False,
+    weights=None,
+    return_analysis=False,
+    mean_centre=False,
     los_axis=-1,
     return_A=False,
 ):
     """
     Performs PCA cleaning of the map data.
     """
-    assert len(M.shape) == 3, "map must be 3D."
+    assert len(signal.shape) == 3, "map must be 3D."
     if los_axis < 0:
         # change -1 to 2
         los_axis = 3 + los_axis
@@ -148,42 +177,35 @@ def pcaclean(
         los_axis,
     ] + axes
     # transpose map data
-    M = np.transpose(M, axes=axes)
-    nz, nx, ny = M.shape
-    M = M.reshape((len(M), -1))
-    if W is not None:
-        W = np.transpose(W, axes=axes)
-        W = W.reshape((len(M), -1))
-    if w is not None:
-        w = np.transpose(w, axes=axes)
-        w = W.reshape((len(M), -1))
-    # this is weird. Why are there two weights?
-    if MeanCentre:
-        if W is None:
-            M = M - np.mean(M, 1)[:, None]  # Mean centre data
-        else:
-            M = M - np.sum(M * W, 1)[:, None] / np.sum(W, 1)[:, None]
+    signal = np.transpose(signal, axes=axes)
+    nz, nx, ny = signal.shape
+    signal = signal.reshape((nz, -1))
+    if weights is not None:
+        weights = np.transpose(weights, axes=axes)
+        weights = weights.reshape((nz, -1))
+    else:
+        weights = np.ones_like(signal)
+    if mean_centre:
+        signal = (
+            signal - np.sum(signal * weights, 1)[:, None] / np.sum(weights, 1)[:, None]
+        )
     ### Covariance calculation:
-    if w is None:
-        w = 1.0
-    C = np.cov(w * M)  # include weight in frequency covariance estimate
-    if returnAnalysis == True:
-        eigenval = np.linalg.eigh(C)[0]
-        eignumb = np.linspace(1, len(eigenval), len(eigenval))
-        eigenval = eigenval[::-1]  # Put largest eigenvals first
-        V = np.linalg.eigh(C)[1][
-            :, ::-1
-        ]  # Eigenvectors from covariance matrix with most dominant first
-        return C, eignumb, eigenval, V
-    ### Remove dominant modes:
-    V = np.linalg.eigh(C)[1][
+    covariance = (
+        np.einsum("ia,ja->ij", signal * weights, signal * weights)
+    ) / np.einsum("ia,ja->ij", weights, weights)
+    V = np.linalg.eigh(covariance)[1][
         :, ::-1
     ]  # Eigenvectors from covariance matrix with most dominant first
+    if return_analysis:
+        eigenval = np.linalg.eigh(covariance)[0]
+        eignumb = np.linspace(1, len(eigenval), len(eigenval))
+        eigenval = eigenval[::-1]  # Put largest eigenvals first
+        return covariance, eignumb, eigenval, V
     A = V[:, :N_fg]  # Mixing matrix, first N_fg most dominant modes of eigenvectors
     S = np.dot(
-        A.T, M
+        A.T, signal
     )  # not including weights in mode subtraction (as per Yi-Chao's approach)
-    Residual = M - np.dot(A, S)
+    Residual = signal - np.dot(A, S)
     Residual = np.reshape(Residual, (nz, nx, ny))
     Residual = np.transpose(Residual, axes=np.argsort(axes))
     if return_A:
@@ -191,66 +213,8 @@ def pcaclean(
     return Residual
 
 
-def plot_map(
-    map_in,
-    wproj,
-    W=None,
-    title=None,
-    cbar_label=None,
-    cbarshrink=1,
-    ZeroCentre=False,
-    vmin=None,
-    vmax=None,
-    cmap="magma",
-):
-    """
-    Stolen from meerpower
-    """
-    plt.figure()
-    plt.subplot(projection=wproj)
-    ax = plt.gca()
-    lon = ax.coords[0]
-    lat = ax.coords[1]
-    lon.set_major_formatter("d")
-    lon.set_ticks_position("b")
-    lat.set_ticks_position("l")
-    plt.grid(True, color="grey", ls="solid", lw=0.5)
-    if len(np.shape(map_in)) == 3:
-        map_in = np.mean(
-            map_in, 2
-        )  # Average along 3rd dimention (LoS) as default if 3D map given
-        if W is not None:
-            W = np.mean(W, 2)
-    if vmax is not None:
-        map_in[map_in > vmax] = vmax
-    if vmin is not None:
-        map_in[map_in < vmin] = vmin
-    if ZeroCentre == True:
-        divnorm = colors.TwoSlopeNorm(
-            vmin=np.min(map_in), vcenter=0, vmax=np.max(map_in)
-        )
-        cmap = copy.copy(matplotlib.cm.get_cmap("seismic"))
-        cmap.set_bad(color="grey")
-    else:
-        divnorm = None
-    if W is not None:
-        map_in[W == 0] = np.nan
-    plt.imshow(map_in.T, cmap=cmap, norm=divnorm)
-    if vmax is not None or vmin is not None:
-        plt.clim(vmin, vmax)
-    cbar = plt.colorbar(orientation="horizontal", shrink=cbarshrink, pad=0.2)
-    if cbar_label is None:
-        cbar.set_label("mK")
-    else:
-        cbar.set_label(cbar_label)
-    ax.invert_xaxis()
-    plt.xlabel("R.A [deg]")
-    plt.ylabel("Dec. [deg]")
-    plt.title(title, fontsize=18)
-
-
-def radec_to_indx(ra_arr, dec_arr, wproj, to_int=True):
-    coor = SkyCoord(ra_arr, dec_arr, unit="deg")
+def radec_to_indx(ra_arr, dec_arr, wproj, to_int=True, ang_unit="deg"):
+    coor = SkyCoord(ra_arr, dec_arr, unit=ang_unit)
     indx_1, indx_2 = wproj.world_to_pixel(coor)
     if to_int:
         indx_1 = np.round(indx_1).astype("int")
@@ -292,8 +256,20 @@ def rebin_spectrum(spectrum, rebin_width=3, mode="avg"):
 
 
 def find_rotation_matrix(vec):
-    """
+    r"""
     find the rotation matrix to rotate the input vector to (0,0,1).
+
+    Note that in 3D space, the rotation is not unique. For simplicity, this function first finds the rotational matrix so that the vector (x,y,z) is first rotated to :math:`(\sqrt{x^2+y^2},0,z)`, and then find another matrix to rotate the vector to (0,0,1).
+
+    Parameters
+    ----------
+        vec: ``numpy`` array.
+            The input unit vector
+
+    Returns
+    -------
+        rot_mat: ``numpy`` array.
+            The rotational matrix so that ``rot_mat @ vec`` is ``np.array([0,0,1])``.
     """
     theta_rot = np.arctan2(vec[1], vec[0])
     rot_mat_1 = np.array(
@@ -315,30 +291,143 @@ def find_rotation_matrix(vec):
     return rot_mat_2 @ rot_mat_1
 
 
-def minimum_enclosing_box_of_lightcone(ra_arr, dec_arr, freq, cosmo=Planck18):
+def minimum_enclosing_box_of_lightcone(
+    ra_arr,
+    dec_arr,
+    freq,
+    cosmo=Planck18,
+    ang_unit="deg",
+    tile=True,
+    return_coord=False,
+    buffkick=0.0,
+):
     """
-    not really minimum but should be okay.
+    This functions finds a rotational axis to rotate the sky vectors of input coordinates so that the (crude) mean of the coordinates is at (0,0,1), and then finds the enclosing cuboid box for the coordinates. The box is not really minimum but should be quite optimal.
+
+    The function also returns a rotational matrix for rotating the coordinates in the cuboid back to the sky positions. For any point in the box ``pos = np.array([x,y,z])``, you can find its RA and Dec by performing the rotation
+
+    .. highlight:: python
+    .. code-block:: python
+
+        pos += np.array([x_min,y_min,z_min])
+        vec = inv_rot @ pos
+        vec /= np.sqrt(np.sum(vec**2))
+        ra_pos, dec_pos = hp.vec2ang(vec,lonlat=True)
+
+
+    Parameters
+    ----------
+        ra_arr: ``numpy`` array.
+            The RA of the coordinates
+        dec_arr: ``numpy`` array.
+            The Dec of the coordinates
+        freq: ``numpy`` array.
+            The frequencies of the coordinates.
+        cosmo: :class:`astropy.cosmology.Cosmology` object, default `astropy.cosmology.Planck18`.
+            The input cosmology for converting frequencies to los length.
+        ang_unit: str or :class:`astropy.units.Unit`
+            The unit of the input angular coordinates.
+        tile: bool, default True.
+            Whether to tile the input cooridnates so that the output is a meshgrid of input angular coordinates and frequencies.
+        return_coord: bool, default True.
+            If True, also returns the corrosponding (x,y,z) coordinate of the input coordinates.
+        buffkick: float, default 0.0.
+            The box is extended by ``buffkick`` on each end of each dimension.
+
+
+
+    Returns
+    -------
+        x_min: float.
+            The origin of the box along x-axis.
+        y_min: float.
+            The origin of the box along y-axis.
+        z_min: float.
+            The origin of the box along z-axis.
+        x_len: float.
+            The length of the box along x-axis.
+        y_len: float.
+            The length of the box along y-axis.
+        z_len: float.
+            The length of the box along z-axis.
+        inv_rot: ``numpy`` array.
+            The rotational matrix to rotate the box back to the sky positions.
+
     """
+    ra_arr = (ra_arr.ravel() * units.Unit(ang_unit)).to("deg").value
+    dec_arr = (dec_arr.ravel() * units.Unit(ang_unit)).to("deg").value
     ra_temp = ra_arr.copy()
     ra_temp[ra_temp > 180] -= 360
     ra_mean = ra_temp.mean()
     dec_mean = dec_arr.mean()
     mean_vec = hp.ang2vec(ra_mean, dec_mean, lonlat=True)
     rot_mat = find_rotation_matrix(mean_vec)
-    z_arr = f_21 / freq - 1
+    z_arr = f_21 / freq.ravel() - 1
     vec_arr = hp.ang2vec(ra_arr, dec_arr, lonlat=True)
     # rotate so that centre of field is the line-of-sight [0,0,1]
     vec_arr = np.einsum("ab,ib->ia", rot_mat, vec_arr)
-    comov_dist_arr = cosmo.comoving_distance(z_arr)
-    pos_arr = vec_arr[:, None, :] * comov_dist_arr[None, :, None]
+    comov_dist_arr = cosmo.comoving_distance(z_arr).value
+    if tile:
+        pos_arr = vec_arr[:, None, :] * comov_dist_arr[None, :, None]
+    else:
+        pos_arr = vec_arr * comov_dist_arr[:, None]
     pos_arr = pos_arr.reshape((-1, 3))
-    x_min, y_min, z_min = pos_arr.min(axis=0)
-    x_max, y_max, z_max = pos_arr.max(axis=0)
+    x_min, y_min, z_min = pos_arr.min(axis=0) - buffkick
+    x_max, y_max, z_max = pos_arr.max(axis=0) + buffkick
     inv_rot = np.linalg.inv(rot_mat)
-    return (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
+    result = (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
+    if return_coord:
+        result += (pos_arr,)
+    return result
 
 
-def hod_obuljen18(logmh, m0h=9.52, mminh=11.27, alpha=0.44, cosmo=Planck18):
-    marr = 10**logmh  # in Msun/h
+def hod_obuljen18(
+    logmh,
+    m0h=9.52,
+    mminh=11.27,
+    alpha=0.44,
+    cosmo=Planck18,
+    input_has_h=True,
+    output_has_h=False,
+):
+    r"""
+    HI-halo mass relation reported in Obuljen et al. (2018) [1].
+    The default settings assume the mass is in M_sun/h, and returns mass **without** h unit.
+    Note that, if you want input without h unit, you must change the ``m0h`` and ``mminh`` manually as well.
+    The HI-halo mass relation follows
+
+    .. math::
+        M_{\rm HI} (M_h) = M_0 (M_h/M_{\rm min})^\alpha \, {\rm exp}[-M_{\rm min}/M_h],
+
+
+
+    Parameters
+    ----------
+        logmh: float.
+            input halo mass in log10
+        m0h: optional, default 9.52.
+            The :math:`M_0` parameter in the HOD in log10
+        mminh: optional, default 11.27.
+            The :math:`M_{min}` parameter in the HOD in log10
+        alpha: optional, default 0.44.
+            The :math:`\alpha` parameter in the HOD.
+        cosmo: optional, default Planck18.
+            The default cosmology, used only for h unit.
+        input_has_h: optional, default True.
+            Whether the input mass has h unit.
+        output_has_h: optional, default False.
+            Whether the output mass has h unit.
+
+    Returns
+    -------
+        The HI mass for the input halo mass.
+
+    References
+    ----------
+    .. [1] Obuljen, A. et al., "The H I content of dark matter haloes at z ≈ 0 from ALFALFA ", https://ui.adsabs.harvard.edu/abs/2019MNRAS.486.5124O.
+    """
+    input_h_unit = 1.0 if input_has_h else cosmo.h
+    output_h_unit = 1.0 if output_has_h else 1 / cosmo.h
+    marr = 10**logmh * input_h_unit  # in Msun/h
     himass = 10 ** (m0h) * (marr / 10**mminh) ** alpha * np.exp(-(10**mminh) / marr)
-    return himass / cosmo.h
+    return himass * output_h_unit

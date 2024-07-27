@@ -13,8 +13,6 @@ from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
 
-python_ver = sys.version_info
-
 
 def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
     num_g = 10000
@@ -49,8 +47,8 @@ def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
     z_g_mock = hisim.z_g_mock
     assert ((z_g_mock - hisim.z_ch.min()) >= 0).mean() == 1
     assert ((z_g_mock - hisim.z_ch.max()) <= 0).mean() == 1
-    hisim.get_hifluxdensity_ch(cache=True)
-    hisim.get_hi_map(cache=True)
+    hisim.get_hifluxdensity_ch()
+    hisim.get_hi_map()
 
 
 def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
@@ -72,11 +70,7 @@ def test_import_error(test_wproj, test_nu, test_W, test_GAMA_range):
         seed=42,
         himf_pars=himf_pars_jones18(Planck18.h / 0.7),
     )
-    if python_ver < (3, 9):
-        with pytest.raises(ImportError):
-            hisim.get_gal_pos()
-    else:
-        hisim.get_gal_pos()
+    hisim.get_gal_pos()
     with pytest.raises(ValueError):
         hisim = HISimulation(
             nu=test_nu,
@@ -112,8 +106,6 @@ def test_gen_random_gal_pos(
         assert len(inside_range) == num_g
         assert (inside_range).mean() == 1.0
     elif i == 1:
-        if python_ver < (3, 9):
-            return 1
         ra_g, dec_g, z_g_mock, inside_range, mmin_halo = test_gal_func(
             test_nu, Planck18, test_wproj, num_g, test_W
         )
@@ -172,8 +164,6 @@ def test_gen_random_gal_pos(
 def test_gal_pos_in_mock(
     i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range
 ):
-    if i == 1 and python_ver < (3, 9):
-        return 1
     num_g = 10000
     (
         himap_g,
@@ -212,8 +202,8 @@ def test_gal_pos_in_mock(
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
     # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
-    assert (f_21 / 1e6 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
-    assert (f_21 / 1e6 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
+    assert (f_21 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
+    assert (f_21 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
     # ra,dec mapping to index should be tested in util
     # when no velocity, the flux should be one channel
     assert len(hifluxd_in) == 1
@@ -249,10 +239,10 @@ def test_gal_pos_in_mock(
             y_dim=test_W.shape[1],
             ignore_double_counting=False,
             return_indx_and_weight=False,
-            fix_z=f_21 / 1e6 / test_nu.mean() - 1,
+            fix_z=f_21 / test_nu.mean() - 1,
             fix_ra_dec=(350, -30),
         )
-        assert z_g == f_21 / 1e6 / test_nu.mean() - 1
+        assert z_g == f_21 / test_nu.mean() - 1
         assert ra_g == 350
         assert dec_g == -30
         assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
@@ -267,8 +257,6 @@ def test_gal_pos_in_mock(
 )
 def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
     num_g = 1
-    if i == 1 and python_ver < (3, 9):
-        return 1
     with pytest.raises(ValueError):
         test_mock_func(
             test_nu,
@@ -318,10 +306,23 @@ def test_raise_error(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_r
             )
 
 
+def test_rsd_error(test_wproj, test_W, test_nu, test_GAMA_range):
+    num_g = 1
+    with pytest.raises(ValueError):
+        _ = gen_clustering_gal_pos(
+            test_nu,
+            Planck18,
+            test_wproj,
+            num_g,
+            test_W,
+            ra_range=test_GAMA_range[0],
+            dec_range=test_GAMA_range[1],
+            kaiser_rsd=True,
+        )
+
+
 @pytest.mark.parametrize("test_mock_func", [(run_poisson_mock), (run_lognormal_mock)])
 def test_plt(test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
-    if test_mock_func is run_lognormal_mock and python_ver < (3, 9):
-        return 1
     plt.switch_backend("Agg")
     num_g = 100
     test_mock_func(
@@ -341,7 +342,7 @@ def test_plt(test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
         y_dim=test_W.shape[1],
         ignore_double_counting=False,
         return_indx_and_weight=False,
-        fix_z=np.ones(num_g) * f_21 / 1e6 / test_nu.mean() - 1,
+        fix_z=np.ones(num_g) * f_21 / test_nu.mean() - 1,
         fix_ra_dec=(np.ones(num_g) * 350, np.ones(num_g) * (-30.0)),
     )
     plt.close("all")
@@ -389,8 +390,8 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
     # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
-    assert (f_21 / 1e6 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
-    assert (f_21 / 1e6 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
+    assert (f_21 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
+    assert (f_21 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
     # ra,dec mapping to index should be tested in util
     # when no velocity, the flux should be one channel
     assert len(hifluxd_in) == 1
@@ -426,7 +427,7 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
         y_dim=test_W.shape[1],
         ignore_double_counting=False,
         return_indx_and_weight=False,
-        fix_z=f_21 / 1e6 / nu.mean() - 1,
+        fix_z=f_21 / nu.mean() - 1,
         fast_ang_pos=False,
     )
     assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
@@ -440,8 +441,6 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     "i, test_mock_func", [(0, run_poisson_mock), (1, run_lognormal_mock)]
 )
 def test_invoke_stack(i, test_mock_func, test_wproj, test_W, test_nu, test_GAMA_range):
-    if python_ver < (3, 9):
-        return 1
     plt.switch_backend("Agg")
     # generate only one galaxy
     num_g = 100

@@ -11,6 +11,7 @@ You should always use Git for making changes to the code. To enforce a unified c
 - create a new branch based off main, either using a GUI for git in your IDE of choice or through CLI `git checkout -b new_branch_name` (make sure you are at main by running `git checkout main`)
 - make your changes
 - run the tests to make sure nothing breaks (see below).
+- Give a brief description of the changes in the CHANGELOG under dev version.
 - stage the changes (GUI or `git add files_you_changed`). If you are using CLI and get lost, try `git status` to see what's going on.
 - run `pre-commit`, or just `git commit "message you want to insert"`, or commit from GUI. `pre-commit` will run checks and files will be changed to conform to the *Black* code style if needed.
 - If changes have been made, stage these changes and run `git commit -m "message you want to insert"` again.

@@ -4,7 +4,7 @@ from meer21cm.io import *
 
 
 def test_cal_freq(test_nu):
-    assert np.diff(test_nu).mean() * 1e6 == meerkat_4k_delta_nu
+    assert np.diff(test_nu).mean() == meerkat_4k_delta_nu
     assert cal_freq(0) == meerkat_L_band_nu_min
     assert cal_freq(4096) == meerkat_L_band_nu_max
 
