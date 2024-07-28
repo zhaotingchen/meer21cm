@@ -27,11 +27,9 @@ dependencies = [
     'hmf',
     'halomod',
     'powerbox@git+https://github.com/zhaotingchen/powerbox',
-    "cython < 0.29.26",
+    "cython < 3.0",
     "mpi4py",
-    "mpsort",
-    "pfft-python",
-    "pmesh@git+https://github.com/rainwoodman/pmesh",
+    "pmesh",
 ]
 
 

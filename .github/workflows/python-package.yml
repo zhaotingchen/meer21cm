@@ -32,9 +32,7 @@ jobs:
         brew install mpi4py
         pip install --upgrade "pip<24.1"
         python -m pip install "Cython<3.0"
-        cython --version
         python -m pip install "numpy<2.0"
-        python -m pip install pfft-python
         python -m pip install ".[full]"
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8
