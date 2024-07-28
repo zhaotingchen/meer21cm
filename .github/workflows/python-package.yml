@@ -38,6 +38,8 @@ jobs:
         source activate ${ENV_NAME}
     - name: Install dependencies
       run: |
+        export PATH="$HOME/miniconda/bin:$PATH"
+        source activate ${ENV_NAME}
         brew install mpi4py
         pip install --upgrade "pip<24.1"
         conda install -c anaconda 'cython<3.0'
@@ -54,6 +56,8 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
+        export PATH="$HOME/miniconda/bin:$PATH"
+        source activate ${ENV_NAME}
         pytest --cov=meer21cm tests/
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4.0.1
