@@ -27,14 +27,23 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Get Miniconda MacOSX
+      run: |
+        wget https://repo.continuum.io/miniconda/Miniconda3-latest-MacOSX-x86_64.sh -O $HOME/miniconda.sh;
+        bash $HOME/miniconda.sh -b -p $HOME/miniconda
+    - name: Setup Environment
+      run: |
+        export PATH="$HOME/miniconda/bin:$PATH"
+        conda create --name=${ENV_NAME}  python=$PYTHON --quiet
+        source activate ${ENV_NAME}
     - name: Install dependencies
       run: |
         brew install mpi4py
         pip install --upgrade "pip<24.1"
-        python -m pip install "Cython<3.0"
-        python -m pip install "numpy<2.0"
+        pip install "Cython<3.0"
+        pip install "numpy<2.0"
         python -c "from Cython.Build import cythonize; print('success')"
-        python -m pip install ".[full]"
+        pip install ".[full]"
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8
       run: |
