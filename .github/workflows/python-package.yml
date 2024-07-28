@@ -40,7 +40,7 @@ jobs:
       run: |
         export PATH="$HOME/miniconda/bin:$PATH"
         source activate ${ENV_NAME}
-        sudo apt install openmpi
+        sudo apt install mpich
         pip install --upgrade "pip<24.1"
         conda install -c anaconda 'cython<3.0'
         pip install "numpy<2.0"
