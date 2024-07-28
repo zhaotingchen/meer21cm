@@ -15,7 +15,7 @@ jobs:
       ENV_NAME: tests
       PYTHON: ${{ matrix.python-version }}
       OS: ${{ matrix.os }}
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -27,9 +27,9 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Get Miniconda MacOSX
+    - name: Get Miniconda Linux
       run: |
-        wget https://repo.continuum.io/miniconda/Miniconda3-latest-MacOSX-arm64.sh -O $HOME/miniconda.sh;
+        wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh;
         bash $HOME/miniconda.sh -b -p $HOME/miniconda
     - name: Setup Environment
       run: |
@@ -40,7 +40,7 @@ jobs:
       run: |
         export PATH="$HOME/miniconda/bin:$PATH"
         source activate ${ENV_NAME}
-        brew install mpi4py
+        sudo apt install openmpi
         pip install --upgrade "pip<24.1"
         conda install -c anaconda 'cython<3.0'
         pip install "numpy<2.0"
