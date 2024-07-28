@@ -246,7 +246,7 @@ def test_gal_pos_in_mock(
         assert ra_g == 350
         assert dec_g == -30
         assert (himap_g > 0).sum() == len(hifluxd_in[hifluxd_in > 0])
-        assert (himap_g[himap_g > 0]).sum() == hifluxd_in.sum()
+        assert np.allclose((himap_g[himap_g > 0]).sum(), hifluxd_in.sum())
         assert himap_g[indx_1_g, indx_2_g, gal_which_ch] > 0
         # hiflux should have larger width than velocity so some empty channel
         assert (hifluxd_in == 0).sum() > 0

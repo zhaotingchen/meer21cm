@@ -17,5 +17,7 @@ pip install -e .
 
 It uses [hiimtool](https://github.com/zhaotingchen/hiimtool) for some functionalities.
 
+For more detailed instruction check [installation guide](INSTALLATION.md).
+
 ## Development
 If you want to contribute to the developing of `meer21cm`, make sure you check [the workflow](DEVELOPING.md).
