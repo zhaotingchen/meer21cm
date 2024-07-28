@@ -33,6 +33,7 @@ jobs:
         pip install --upgrade "pip<24.1"
         python -m pip install "Cython<3.0"
         python -m pip install "numpy<2.0"
+        python -c "from Cython.Build import cythonize; print('success')"
         python -m pip install ".[full]"
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8
