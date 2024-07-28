@@ -40,7 +40,7 @@ jobs:
       run: |
         brew install mpi4py
         pip install --upgrade "pip<24.1"
-        pip install "Cython<3.0"
+        conda install -c anaconda 'cython<3.0'
         pip install "numpy<2.0"
         python -c "from Cython.Build import cythonize; print('success')"
         pip install git+https://github.com/rainwoodman/pfft-python.git
