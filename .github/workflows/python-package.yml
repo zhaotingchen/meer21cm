@@ -11,7 +11,10 @@ on:
 
 jobs:
   build:
-
+    env:
+      ENV_NAME: tests
+      PYTHON: ${{ matrix.python-version }}
+      OS: ${{ matrix.os }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -24,6 +27,15 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Get Miniconda Linux
+      run: |
+        wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh;
+        bash $HOME/miniconda.sh -b -p $HOME/miniconda
+    - name: Setup Environment
+      run: |
+        export PATH="$HOME/miniconda/bin:$PATH"
+        conda create --name=${ENV_NAME}  python=$PYTHON --quiet
+        source activate ${ENV_NAME}
     - name: Install dependencies
       run: |
         sudo apt install mpich
