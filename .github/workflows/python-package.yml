@@ -31,7 +31,7 @@ jobs:
       run: |
         sudo apt install mpich
         pip install --upgrade "pip<24.1"
-        sudo apt-get install cython3
+        pip install Cython --install-option="--no-cython-compile"
         cython --version
         python -m pip install mpi4py
         python -m pip install "numpy<2.0"
