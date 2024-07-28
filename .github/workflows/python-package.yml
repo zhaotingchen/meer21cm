@@ -45,7 +45,9 @@ jobs:
         pip install "numpy<2.0"
         sudo apt install mpich
         OUTPUT=$(which mpicc)
-        env MPICC="${OUTPUT}" pip install mpi4py
+        echo "${OUTPUT}"
+        sudo apt install libopenmpi-dev
+        pip install mpi4py
         python -c "from Cython.Build import cythonize; print('success')"
         pip install git+https://github.com/rainwoodman/pfft-python.git
         pip install ".[full]"
