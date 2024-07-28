@@ -45,6 +45,7 @@ jobs:
         pip install "numpy<2.0"
         sudo apt install libopenmpi-dev
         conda install conda-forge::openmpi
+        conda install openmpi-mpicc
         OUTPUT=$(which mpicc)
         echo "${OUTPUT}"
         pip install mpi4py
