@@ -12,6 +12,7 @@
    :maxdepth: 2
    :caption: Contents:
 
+   installation
    develop
    contributors
    changelog

@@ -26,7 +26,10 @@ dependencies = [
     "astropy",
     'hmf',
     'halomod',
-    'powerbox@git+https://github.com/zhaotingchen/powerbox ; python_version >= "3.9"',
+    'powerbox@git+https://github.com/zhaotingchen/powerbox',
+    "cython < 3.0",
+    "mpi4py",
+    "pmesh",
 ]
 
 
