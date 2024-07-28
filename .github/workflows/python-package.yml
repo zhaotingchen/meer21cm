@@ -27,20 +27,11 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Get Miniconda Linux
-      run: |
-        wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh;
-        bash $HOME/miniconda.sh -b -p $HOME/miniconda
-    - name: Setup Environment
-      run: |
-        export PATH="$HOME/miniconda/bin:$PATH"
-        conda create --name=${ENV_NAME}  python=$PYTHON --quiet
-        source activate ${ENV_NAME}
     - name: Install dependencies
       run: |
         sudo apt install mpich
         pip install --upgrade "pip<24.1"
-        conda install conda-forge::cython
+        sudo apt-get install cython3
         cython --version
         python -m pip install mpi4py
         python -m pip install "numpy<2.0"
