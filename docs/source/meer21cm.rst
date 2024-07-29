@@ -17,6 +17,14 @@ meer21cm.fg module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.grid module
+------------------
+
+.. automodule:: meer21cm.grid
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.io module
 ------------------
 

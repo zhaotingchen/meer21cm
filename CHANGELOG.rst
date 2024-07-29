@@ -3,6 +3,9 @@ Releases
 
 dev
 ---
+Features
+++++++++
+* Gridding functionalities to grid sky map to regular grids
 
 
 v0.2.0
