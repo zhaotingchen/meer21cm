@@ -21,6 +21,17 @@ def test_uniform_grids(window):
     assert np.allclose(test_map, np.ones_like(test_map))
     assert np.allclose(test_weights, np.ones_like(test_map))
     assert np.allclose(test_counts, np.ones_like(test_map))
+    test_map, test_weights, test_counts = project_particle_to_regular_grid(
+        pos_arr,
+        box_len,
+        ndim_rg,
+        compensate=True,
+        window=window,
+        particle_value=np.ones(10**3),
+        particle_weights=np.random.uniform(1, 2, size=10**3),
+    )
+    assert np.allclose(test_map, np.ones_like(test_map))
+    assert np.allclose(test_counts, np.ones_like(test_map))
 
 
 def test_find_rotation_matrix():
