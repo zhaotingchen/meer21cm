@@ -9,7 +9,6 @@ from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
 from astropy.cosmology import Planck18
 import inspect
 import sys
-from .grid import minimum_enclosing_box_of_lightcone, find_rotation_matrix
 from powerbox import PowerBox
 
 
