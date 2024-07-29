@@ -18,7 +18,7 @@ pip install mpi4py
 ```
 again.
 
-For Linux, depending on your system you should be able to install `openmpi` or `mpich`. For `ubuntu`, the most secure way in our tests seems to be
+For Linux PC, depending on your system you should be able to install `openmpi` or `mpich`. For `ubuntu`, the most secure way in our tests seems to be
 
 ```
 sudo apt install libopenmpi-dev
@@ -27,7 +27,7 @@ conda install openmpi-mpicc
 pip install mpi4py
 ```
 
-Note that technically only `openmpi-mpicc` is really needed, but there is always a possibility of compiling issues, so all these are just trying to avoid problems as much as possible.
+Note that technically only `openmpi-mpicc` is really needed. Try only installing `openmpi-mpicc` and then `mpi4py` first. There is always a possibility of compiling issues, so the extra steps are just trying to avoid problems as much as possible.
 
 If you are on a cluster, most likely you already have some MPI implementation available. You can check its availability by
 ```

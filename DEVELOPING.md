@@ -56,6 +56,6 @@ make html
 
 
 ## Caution
-- Avoid even tracking a large file. **Never commit** a change where **a large file** (>50MB) is added to the repo. If you have done so, you need to rewind back to the commit before that and start over. No, deleting it in a later commit will not fix it.
+- Avoid even tracking a large file. **Never commit** a change where **a large file** (>50MB) is added to the repo. This should be prohibited by `pre-commit` anyway, but just in case it is not set up properly you should be aware as well. If you have done so, you need to rewind back to the commit before that and start over. No, deleting it in a later commit will not fix it.
 - **Never merge into `main` locally**. The only way `main` can be changed is through pull request and pull from remote.
 - Try not to break API, although it will happen since we are at early stages. For example, if the original code has a function `def func1(arg1=None)` and you changed it to `def func1(arg_1=None)`, it breaks API. That is because scripts using older versions of the code will stop working since `func1(arg1=something)` will return an error. `def func1(arg1=None,arg2=None)` is not breaking API for example.
