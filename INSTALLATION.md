@@ -38,7 +38,7 @@ Find the MPI you want to use and then do
 ```
 module load MPI_MODULE
 ```
-and replace `MPI_MODULE` above with whatever you find in `module avail`, for example `module avail openmpi`. Then simply `pip install mpi4py`.
+and replace `MPI_MODULE` above with whatever you find in `module avail`, for example `module load openmpi`. Then simply `pip install mpi4py`.
 
 If `pip install mpi4py` still failed with an MPI issue, it may be fixed by specifying `mpicc` path. Try to find your `mpicc` path by entering
 ```

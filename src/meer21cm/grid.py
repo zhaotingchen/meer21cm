@@ -225,9 +225,13 @@ def project_particle_to_regular_grid(
     particle_value=None,
     particle_weights=None,
     compensate=False,
+    shift=0.0,
 ):
     """
     Project particles into 3D regular grids with a certain assignment scheme.
+    This function allows mass assignment scheme compensation and interlacing for
+    more accurate estimation of power spectrum. The details of the techniques
+    can be found in Cunnington & Wolz 2024 [1].
 
     Parameters
     ----------
@@ -247,6 +251,8 @@ def project_particle_to_regular_grid(
         compensate: bool, default False.
             Whether to apply the correction to deconvolve the
             sampling window function.
+        shift: float, default 0.0.
+            The shift of the field when performing Fourier transform, in the unit of cell size.
 
     Returns
     -------
@@ -256,6 +262,10 @@ def project_particle_to_regular_grid(
             The projected weights.
         particle_counts: :class:`pmesh.pm.RealField`
             The number counts of particles in each grid.
+
+    References
+    ----------
+    .. [1] Cunnington S. and Wolz L., "Accurate Fourier-space statistics for line intensity mapping: Cartesian grid sampling without aliased power", https://ui.adsabs.harvard.edu/abs/2024MNRAS.528.5586C
     """
     particle_pos = particle_pos.reshape((-1, 3))
     if particle_value is None:
@@ -263,7 +273,8 @@ def project_particle_to_regular_grid(
     if particle_weights is None:
         particle_weights = np.ones(len(particle_pos))
     pm = pmesh.pm.ParticleMesh(BoxSize=box_size, Nmesh=num_mesh)
-    particle_counts = pm.paint(particle_pos).value
+    shifted = pm.affine.shift(shift)
+    particle_counts = pm.paint(particle_pos, transform=shifted)
     projected_map = pm.paint(
         particle_pos,
         mass=(particle_value * particle_weights).ravel(),
@@ -284,3 +295,37 @@ def project_particle_to_regular_grid(
             window=window,
         )
     return projected_map, projected_weights, particle_counts
+
+
+def interlace_two_fields(
+    real_field_1,
+    real_field_2,
+    shift,
+    box_resol,
+):
+    """
+    Interlacing two fields, where one is the shifted version of the other.
+
+    Parameters
+    ----------
+        real_field_1: :class:`pmesh.pm.RealField`
+            The first field for interlacing
+        real_field_2: :class:`pmesh.pm.RealField`
+            The second field for interlacing, which should be a shifted version of the first.
+        shift: float.
+            The shift of the field when performing Fourier transform, in the unit of cell size.
+        box_resol: list of float.
+            The length of the cell along each direction.
+
+    Returns
+    -------
+        interlaced_field: :class:`pmesh.pm.RealField`
+            The interlaced field.
+    """
+    c1 = real_field_1.r2c()
+    c2 = real_field_2.r2c()
+    for k, s1, s2 in zip(c1.slabs.x, c1.slabs, c2.slabs):
+        kH = sum(k[i] * box_resol[i] for i in range(3))
+        s1[...] = s1[...] * 0.5 + s2[...] * 0.5 * np.exp(0.5 * 1j * kH)
+    interlaced_field = c1.c2r()
+    return interlaced_field

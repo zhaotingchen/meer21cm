@@ -3,6 +3,52 @@ from meer21cm.grid import *
 import pytest
 
 
+def W_mas(dims, window="nnb", FullPk=False):
+    """
+    Hockney Eastwood mass assignment corrections
+
+    taken from meerpower
+    """
+    if window == "nnb" or "ngp":
+        p = 1
+    if window == "cic":
+        p = 2
+    if window == "tsc":
+        p = 3
+    if window == "pcs":
+        p = 4
+    lx, ly, lz, nx, ny, nz = dims[:6]
+    nyqx, nyqy, nyqz = nx * np.pi / lx, ny * np.pi / ly, nz * np.pi / lz
+    kx = 2 * np.pi * np.fft.fftfreq(nx, d=lx / nx)[:, np.newaxis, np.newaxis]
+    ky = 2 * np.pi * np.fft.fftfreq(ny, d=ly / ny)[np.newaxis, :, np.newaxis]
+    if FullPk == False:
+        kz = (
+            2
+            * np.pi
+            * np.fft.fftfreq(nz, d=lz / nz)[: int(nz / 2) + 1][
+                np.newaxis, np.newaxis, :
+            ]
+        )
+    if FullPk == True:
+        kz = 2 * np.pi * np.fft.fftfreq(nz, d=lz / nz)[np.newaxis, np.newaxis, :]
+    qx, qy, qz = (
+        (np.pi * kx) / (2 * nyqx),
+        (np.pi * ky) / (2 * nyqy),
+        (np.pi * kz) / (2 * nyqz),
+    )
+    wx = np.divide(np.sin(qx), qx, out=np.ones_like(qx), where=qx != 0.0)
+    wy = np.divide(np.sin(qy), qy, out=np.ones_like(qy), where=qy != 0.0)
+    wz = np.divide(np.sin(qz), qz, out=np.ones_like(qz), where=qz != 0.0)
+    return (wx * wy * wz) ** p
+
+
+@pytest.mark.parametrize("window", list(allowed_window_scheme))
+def test_fourier_window_for_assignment(window):
+    test_1 = fourier_window_for_assignment([10, 10, 10], window=window)
+    test_2 = W_mas([1, 1, 1, 10, 10, 10], window=window, FullPk=True)
+    assert np.allclose(test_1, test_2)
+
+
 @pytest.mark.parametrize("window", list(allowed_window_scheme))
 def test_uniform_grids(window):
     box_len = np.array([10, 10, 10])
@@ -21,7 +67,7 @@ def test_uniform_grids(window):
     assert np.allclose(test_map, np.ones_like(test_map))
     assert np.allclose(test_weights, np.ones_like(test_map))
     assert np.allclose(test_counts, np.ones_like(test_map))
-    test_map, test_weights, test_counts = project_particle_to_regular_grid(
+    test_map_1, test_weights, test_counts = project_particle_to_regular_grid(
         pos_arr,
         box_len,
         ndim_rg,
@@ -30,8 +76,24 @@ def test_uniform_grids(window):
         particle_value=np.ones(10**3),
         particle_weights=np.random.uniform(1, 2, size=10**3),
     )
-    assert np.allclose(test_map, np.ones_like(test_map))
-    assert np.allclose(test_counts, np.ones_like(test_map))
+    test_map_2, test_weights_2, test_counts_2 = project_particle_to_regular_grid(
+        pos_arr,
+        box_len,
+        ndim_rg,
+        compensate=True,
+        window=window,
+        particle_value=np.ones(10**3),
+        particle_weights=np.random.uniform(1, 2, size=10**3),
+        shift=0.5,
+    )
+    field_interlaced = interlace_two_fields(
+        test_map_1, test_map_1, 0.0, [1.0, 1.0, 1, 0]
+    )
+    assert np.allclose(field_interlaced, np.ones_like(test_map))
+    field_interlaced = interlace_two_fields(
+        test_map_1, test_map_2, 0.5, [1.0, 1.0, 1, 0]
+    )
+    assert np.allclose(field_interlaced, np.ones_like(test_map))
 
 
 def test_find_rotation_matrix():
