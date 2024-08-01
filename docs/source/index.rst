@@ -14,6 +14,7 @@
 
    installation
    develop
+   examples
    contributors
    changelog
    meer21cm
