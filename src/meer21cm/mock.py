@@ -26,12 +26,14 @@ from .util import (
     get_wcs_coor,
     radec_to_indx,
     get_default_args,
-    find_rotation_matrix,
-    minimum_enclosing_box_of_lightcone,
     hod_obuljen18,
     freq_to_redshift,
 )
 from .plot import plot_map
+from .grid import (
+    find_rotation_matrix,
+    minimum_enclosing_box_of_lightcone,
+)
 import healpy as hp
 
 python_ver = sys.version_info[0] + sys.version_info[1] / 10

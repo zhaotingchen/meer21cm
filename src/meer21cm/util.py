@@ -9,10 +9,7 @@ from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
 from astropy.cosmology import Planck18
 import inspect
 import sys
-
-python_ver = sys.version_info[0] + sys.version_info[1] / 10
-if python_ver >= 3.9:
-    from powerbox import PowerBox
+from powerbox import PowerBox
 
 
 def freq_to_redshift(freq):
@@ -93,18 +90,17 @@ def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
         rand_arr: float array.
             The random noise.
     """
-    rand_arr = None
-    if python_ver >= 3.9:
-        pb = PowerBox(
-            x_size,
-            power_k_func,
-            dim=1,
-            boxlength=x_len,
-            a=0.0,
-            b=2 * np.pi,
-            seed=None,
-        )
-        rand_arr = pb.delta_x()
+
+    pb = PowerBox(
+        x_size,
+        power_k_func,
+        dim=1,
+        boxlength=x_len,
+        a=0.0,
+        b=2 * np.pi,
+        seed=None,
+    )
+    rand_arr = pb.delta_x()
     return rand_arr
 
 
@@ -253,132 +249,6 @@ def rebin_spectrum(spectrum, rebin_width=3, mode="avg"):
     if mode == "sum":
         spectrum_rebin *= rebin_width
     return spectrum_rebin
-
-
-def find_rotation_matrix(vec):
-    r"""
-    find the rotation matrix to rotate the input vector to (0,0,1).
-
-    Note that in 3D space, the rotation is not unique. For simplicity, this function first finds the rotational matrix so that the vector (x,y,z) is first rotated to :math:`(\sqrt{x^2+y^2},0,z)`, and then find another matrix to rotate the vector to (0,0,1).
-
-    Parameters
-    ----------
-        vec: ``numpy`` array.
-            The input unit vector
-
-    Returns
-    -------
-        rot_mat: ``numpy`` array.
-            The rotational matrix so that ``rot_mat @ vec`` is ``np.array([0,0,1])``.
-    """
-    theta_rot = np.arctan2(vec[1], vec[0])
-    rot_mat_1 = np.array(
-        [
-            [np.cos(-theta_rot), -np.sin(-theta_rot), 0],
-            [np.sin(-theta_rot), np.cos(-theta_rot), 0],
-            [0, 0, 1],
-        ]
-    )
-    inter_vec = rot_mat_1 @ vec
-    phi_rot = -np.arctan2(inter_vec[0], inter_vec[2])
-    rot_mat_2 = np.array(
-        [
-            [np.cos(-phi_rot), 0, -np.sin(-phi_rot)],
-            [0, 1, 0],
-            [np.sin(-phi_rot), 0, np.cos(-phi_rot)],
-        ]
-    )
-    return rot_mat_2 @ rot_mat_1
-
-
-def minimum_enclosing_box_of_lightcone(
-    ra_arr,
-    dec_arr,
-    freq,
-    cosmo=Planck18,
-    ang_unit="deg",
-    tile=True,
-    return_coord=False,
-    buffkick=0.0,
-):
-    """
-    This functions finds a rotational axis to rotate the sky vectors of input coordinates so that the (crude) mean of the coordinates is at (0,0,1), and then finds the enclosing cuboid box for the coordinates. The box is not really minimum but should be quite optimal.
-
-    The function also returns a rotational matrix for rotating the coordinates in the cuboid back to the sky positions. For any point in the box ``pos = np.array([x,y,z])``, you can find its RA and Dec by performing the rotation
-
-    .. highlight:: python
-    .. code-block:: python
-
-        pos += np.array([x_min,y_min,z_min])
-        vec = inv_rot @ pos
-        vec /= np.sqrt(np.sum(vec**2))
-        ra_pos, dec_pos = hp.vec2ang(vec,lonlat=True)
-
-
-    Parameters
-    ----------
-        ra_arr: ``numpy`` array.
-            The RA of the coordinates
-        dec_arr: ``numpy`` array.
-            The Dec of the coordinates
-        freq: ``numpy`` array.
-            The frequencies of the coordinates.
-        cosmo: :class:`astropy.cosmology.Cosmology` object, default `astropy.cosmology.Planck18`.
-            The input cosmology for converting frequencies to los length.
-        ang_unit: str or :class:`astropy.units.Unit`
-            The unit of the input angular coordinates.
-        tile: bool, default True.
-            Whether to tile the input cooridnates so that the output is a meshgrid of input angular coordinates and frequencies.
-        return_coord: bool, default True.
-            If True, also returns the corrosponding (x,y,z) coordinate of the input coordinates.
-        buffkick: float, default 0.0.
-            The box is extended by ``buffkick`` on each end of each dimension.
-
-
-
-    Returns
-    -------
-        x_min: float.
-            The origin of the box along x-axis.
-        y_min: float.
-            The origin of the box along y-axis.
-        z_min: float.
-            The origin of the box along z-axis.
-        x_len: float.
-            The length of the box along x-axis.
-        y_len: float.
-            The length of the box along y-axis.
-        z_len: float.
-            The length of the box along z-axis.
-        inv_rot: ``numpy`` array.
-            The rotational matrix to rotate the box back to the sky positions.
-
-    """
-    ra_arr = (ra_arr.ravel() * units.Unit(ang_unit)).to("deg").value
-    dec_arr = (dec_arr.ravel() * units.Unit(ang_unit)).to("deg").value
-    ra_temp = ra_arr.copy()
-    ra_temp[ra_temp > 180] -= 360
-    ra_mean = ra_temp.mean()
-    dec_mean = dec_arr.mean()
-    mean_vec = hp.ang2vec(ra_mean, dec_mean, lonlat=True)
-    rot_mat = find_rotation_matrix(mean_vec)
-    z_arr = f_21 / freq.ravel() - 1
-    vec_arr = hp.ang2vec(ra_arr, dec_arr, lonlat=True)
-    # rotate so that centre of field is the line-of-sight [0,0,1]
-    vec_arr = np.einsum("ab,ib->ia", rot_mat, vec_arr)
-    comov_dist_arr = cosmo.comoving_distance(z_arr).value
-    if tile:
-        pos_arr = vec_arr[:, None, :] * comov_dist_arr[None, :, None]
-    else:
-        pos_arr = vec_arr * comov_dist_arr[:, None]
-    pos_arr = pos_arr.reshape((-1, 3))
-    x_min, y_min, z_min = pos_arr.min(axis=0) - buffkick
-    x_max, y_max, z_max = pos_arr.max(axis=0) + buffkick
-    inv_rot = np.linalg.inv(rot_mat)
-    result = (x_min, y_min, z_min, x_max - x_min, y_max - y_min, z_max - z_min, inv_rot)
-    if return_coord:
-        result += (pos_arr,)
-    return result
 
 
 def hod_obuljen18(

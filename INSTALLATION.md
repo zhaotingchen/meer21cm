@@ -18,7 +18,7 @@ pip install mpi4py
 ```
 again.
 
-For Linux, depending on your system you should be able to install `openmpi` or `mpich`. For `ubuntu`, the most secure way in our tests seems to be
+For Linux PC, depending on your system you should be able to install `openmpi` or `mpich`. For `ubuntu`, the most secure way in our tests seems to be
 
 ```
 sudo apt install libopenmpi-dev
@@ -27,7 +27,7 @@ conda install openmpi-mpicc
 pip install mpi4py
 ```
 
-Note that technically only `openmpi-mpicc` is really needed, but there is always a possibility of compiling issues, so all these are just trying to avoid problems as much as possible.
+Note that technically only `openmpi-mpicc` is really needed. Try only installing `openmpi-mpicc` and then `mpi4py` first. There is always a possibility of compiling issues, so the extra steps are just trying to avoid problems as much as possible.
 
 If you are on a cluster, most likely you already have some MPI implementation available. You can check its availability by
 ```
@@ -38,7 +38,7 @@ Find the MPI you want to use and then do
 ```
 module load MPI_MODULE
 ```
-and replace `MPI_MODULE` above with whatever you find in `module avail`, for example `module avail openmpi`. Then simply `pip install mpi4py`.
+and replace `MPI_MODULE` above with whatever you find in `module avail`, for example `module load openmpi`. Then simply `pip install mpi4py`.
 
 If `pip install mpi4py` still failed with an MPI issue, it may be fixed by specifying `mpicc` path. Try to find your `mpicc` path by entering
 ```
@@ -50,9 +50,16 @@ env MPICC=path/to/mpicc pip install mpi4py
 ```
 instead.
 
+Sometimes you already have a version of `cython` installed that causes a compilation error. In that case you can override the `cython` in your conda environment by installing it again
+```
+conda install "cython<3.0"
+```
+
+
 ## Manual installation of `pfft-python` dependencies
 <a name="pfft"></a>
-Sadly this can not just a `pip install`. First, make sure `cython` is installed with an older version instead of "cython3"
+Sadly this can not just a `pip install`. First, make sure `cython` is installed with an older version instead of "cython3" (skip if you already did it using `conda`)
+
 ```
 pip install 'cython<3.0'
 ```

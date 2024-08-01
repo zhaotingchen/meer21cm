@@ -3,7 +3,13 @@ Releases
 
 dev
 ---
+Features
+++++++++
+* Gridding functionalities to grid sky map to regular grids
 
+Enhancements
+++++++++++++
+* find enclosing box functions migrated to grid module
 
 v0.2.0
 ------

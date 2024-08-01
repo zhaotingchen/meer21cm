@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "meerstack"
+project = "meer21cm"
 copyright = "2024, Zhaoting Chen"
 author = "Zhaoting Chen"
 
@@ -31,7 +31,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.autosectionlabel",
     "numpydoc",
-    # "nbsphinx",
+    "nbsphinx",
     "IPython.sphinxext.ipython_console_highlighting",
     "myst_parser",
 ]
