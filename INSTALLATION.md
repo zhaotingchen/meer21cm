@@ -50,9 +50,16 @@ env MPICC=path/to/mpicc pip install mpi4py
 ```
 instead.
 
+Sometimes you already have a version of `cython` installed that causes a compilation error. In that case you can override the `cython` in your conda environment by installing it again
+```
+conda install "cython<3.0"
+```
+
+
 ## Manual installation of `pfft-python` dependencies
 <a name="pfft"></a>
-Sadly this can not just a `pip install`. First, make sure `cython` is installed with an older version instead of "cython3"
+Sadly this can not just a `pip install`. First, make sure `cython` is installed with an older version instead of "cython3" (skip if you already did it using `conda`)
+
 ```
 pip install 'cython<3.0'
 ```
