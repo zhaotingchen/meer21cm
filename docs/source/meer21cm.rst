@@ -41,6 +41,14 @@ meer21cm.mock module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.power module
+---------------------
+
+.. automodule:: meer21cm.power
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.stack module
 ---------------------
 
