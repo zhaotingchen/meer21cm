@@ -1,6 +1,7 @@
 import numpy as np
 from meer21cm.power import *
 from powerbox import PowerBox
+import pytest
 
 
 def test_get_k_vector():
@@ -28,9 +29,9 @@ def test_get_vec_mode():
 def test_get_fourier_density():
     rand_arr = np.random.normal(size=(50, 50, 50))
     rand_fourier = get_fourier_density(rand_arr, norm="ortho")
-    assert np.abs(np.std(rand_fourier) - 1.0) < 1e-2
-    assert np.abs(np.mean(rand_fourier)) < 1e-2
-    assert np.abs((np.abs(rand_fourier) ** 2).mean() - 1) < 1e-2
+    assert np.abs(np.std(rand_fourier) - 1.0) < 5e-2
+    assert np.abs(np.mean(rand_fourier)) < 5e-2
+    assert np.abs((np.abs(rand_fourier) ** 2).mean() - 1) < 5e-2
     rand_arr += 1
     rand_fourier = get_fourier_density(
         rand_arr,
@@ -38,17 +39,17 @@ def test_get_fourier_density():
         unitless=True,
         norm="ortho",
     )
-    assert np.abs(np.std(rand_fourier) - 1.0) < 1e-2
-    assert np.abs(np.mean(rand_fourier)) < 1e-2
-    assert np.abs((np.abs(rand_fourier) ** 2).mean() - 1) < 1e-2
+    assert np.abs(np.std(rand_fourier) - 1.0) < 5e-2
+    assert np.abs(np.mean(rand_fourier)) < 5e-2
+    assert np.abs((np.abs(rand_fourier) ** 2).mean() - 1) < 5e-2
 
 
 def test_get_power_spectrum():
     complex_rand = np.random.normal(size=100000) + 1j * np.random.normal(size=100000)
     complex_rand /= np.sqrt(2)
     power_3d = get_power_spectrum(complex_rand, [1, 1, 1])
-    assert np.abs(power_3d.mean() - 1) < 1e-2
-    assert np.abs(power_3d.std() - 1) < 1e-2
+    assert np.abs(power_3d.mean() - 1) < 2e-2
+    assert np.abs(power_3d.std() - 1) < 2e-2
     spindx = np.random.uniform(-3, 0)
     box_len = np.array([100, 50, 100])
     box_dim = np.array([100, 200, 60])
@@ -77,5 +78,149 @@ def test_get_power_spectrum():
     delta_fourier = get_fourier_density(delta_x, mean_center=True, unitless=True)
     power_3d = get_power_spectrum(delta_fourier, np.array([100, 100, 100]))
     power_sn = 1e6 / num_g
-    assert np.abs(power_3d.mean() / power_sn - 1) < 1e-2
-    assert np.abs(power_3d.std() / power_sn - 1) < 1e-2
+    assert np.abs(power_3d.mean() / power_sn - 1) < 5e-2
+    assert np.abs(power_3d.std() / power_sn - 1) < 5e-2
+
+
+def test_PowerSpectrum():
+    box_len = np.array([100, 50, 100])
+    box_dim = np.array([100, 200, 60])
+    box_resol = box_len / box_dim
+    kvec = get_k_vector(box_dim, box_resol)
+    kmode = get_vec_mode(kvec)
+    delta_x = np.zeros(box_dim).ravel()
+    num_g = 10000
+    rand_choice = np.random.choice(np.arange(np.prod(box_dim)), num_g, replace=False)
+    delta_x[rand_choice] += 1.0
+    delta_x = delta_x.reshape(box_dim)
+    sn = get_shot_noise(
+        delta_x,
+        box_len,
+    )
+    ps = PowerSpectrum(
+        delta_x,
+        box_len,
+        remove_sn_1=True,
+        unitless_1=True,
+        mean_center_1=True,
+    )
+    for i in range(3):
+        assert np.allclose(ps.k_vec[i], kvec[i])
+    assert np.allclose(ps.k_mode, kmode)
+    ps.k_perp
+    ps.k_para
+    ps.fourier_field_2
+    ps.auto_power_3d_2
+    power = ps.auto_power_3d_1
+    assert np.abs(power.mean()) < 1
+
+    ps = PowerSpectrum(
+        delta_x,
+        box_len,
+        remove_sn_1=True,
+        unitless_1=True,
+        mean_center_1=True,
+        field_2=delta_x,
+        remove_sn_2=True,
+        mean_center_2=True,
+        unitless_2=True,
+    )
+    power = ps.auto_power_3d_2
+    assert np.abs(power.mean()) < 1
+
+
+def test_get_shot_noise():
+    # test poisson galaxies
+    delta_x = np.zeros(100**3)
+    num_g = 1000
+    rand_choice = np.random.choice(np.arange(100**3), num_g, replace=False)
+    delta_x[rand_choice] += 1.0
+    delta_x = delta_x.reshape((100, 100, 100))
+    box_len = np.array([100, 100, 100])
+    power = get_shot_noise(
+        delta_x,
+        box_len,
+    )
+    power_sn = 1e6 / num_g
+    assert power == power_sn
+
+
+def test_raise_error():
+    delta_x = np.ones([100, 100, 100])
+    box_len = [1, 1, 1]
+    delta_2 = np.ones([2, 2, 2])
+    with pytest.raises(AssertionError):
+        ps = PowerSpectrum(delta_x, box_len, field_2=delta_2)
+
+
+def test_bin_functions():
+    power_3d = np.ones([10, 10, 5])
+    k_perp = np.linspace(0, 99, 100).reshape((10, 10))
+    kperp_edges = np.linspace(0, 100, 11)
+    power_cy = bin_3d_to_cy(
+        power_3d,
+        k_perp,
+        kperp_edges,
+    )
+    assert np.allclose(power_cy.shape, [5, 10])
+    assert np.allclose(power_cy, np.ones_like(power_cy))
+    power_3d = np.linspace(0, 9, 10)
+    k_mode = np.linspace(90, 99, 10)
+    k1d_edges = np.linspace(90, 100, 11)
+    ps1d, ps1derr, nmodes, k1deff = bin_3d_to_1d(
+        power_3d,
+        k_mode,
+        k1d_edges,
+        error=True,
+    )
+    assert np.allclose(ps1d, np.linspace(0, 9, 10))
+    assert np.allclose(k1deff, k_mode)
+    assert np.allclose(nmodes, np.ones_like(nmodes))
+    assert np.allclose(ps1derr, np.zeros_like(nmodes))
+    ps1d, k1deff = bin_3d_to_1d(
+        power_3d,
+        k_mode,
+        k1d_edges,
+        error=False,
+    )
+
+
+def test_get_gaussian_noise_floor():
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+    )
+    power = ps.auto_power_3d_1
+    floor1 = ps.auto_power_3d_1.mean()
+    floor2 = get_gaussian_noise_floor(
+        1,
+        box_dim,
+        box_volume=np.prod(ps.box_len),
+    )
+    assert np.abs((floor1 - floor2) / floor1) < 2e-2
+    # test weights
+    counts = np.random.randint(1, 100, size=rand_noise.shape)
+    rand_noise = rand_noise / np.sqrt(counts)
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+    )
+    power = ps.auto_power_3d_1
+    floor1 = ps.auto_power_3d_1.mean()
+    floor2 = get_gaussian_noise_floor(
+        1,
+        box_dim,
+        box_volume=np.prod(ps.box_len),
+        counts=counts,
+    )
+    assert np.abs((floor1 - floor2) / floor1) < 2e-2

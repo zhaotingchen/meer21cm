@@ -3,9 +3,13 @@ Releases
 
 dev
 ---
+
+v0.3.0
+------
 Features
 ++++++++
 * Gridding functionalities to grid sky map to regular grids
+* Basic power spectrum estimation functionalities
 
 Enhancements
 ++++++++++++
