@@ -285,3 +285,42 @@ def bin_3d_to_cy(
     weights = indx[:, None, :] * weights[:, :, None]
     pscy = np.sum(ps3d[:, :, None] * weights, 0) / np.sum(weights, 0)
     return pscy
+
+
+def get_independent_fourier_modes(box_dim):
+    r"""
+    Return a boolean array on whether the k-mode is independent.
+    For real-valued signal, a specific k-mode :math:`\vec{k}` and it's opposite
+    :math:`-\vec{k}` are conjugate to each other. This functions finds all the
+    pairs and only assign one of them with ``True``.
+
+    The indexing of the output array is consistent with the ``np.fft.fftfreq``
+    convention.
+
+    Parameters
+    ----------
+    box_dim: array.
+        The shape of the signal.
+
+    Returns
+    -------
+    unique: boolean array.
+        Whether the k-mode is indendent.
+
+    """
+    kvec = get_k_vector(box_dim, np.ones(len(box_dim)))
+    kvecmin = [(np.abs(kvec[i])[kvec[i] != 0]).min() for i in range(len(box_dim))]
+    kvec = [kvec[i] / kvecmin[i] for i in range(len(box_dim))]
+    kvecmax = [(np.abs(kvec[i])).max() for i in range(len(box_dim))]
+    kvecmax = np.max(kvecmax)
+    base = int(np.log10(kvecmax)) + 1
+    kvec = [kvec[i] * 10 ** (base * i) for i in range(len(box_dim))]
+    k_indx = np.sum(
+        (np.meshgrid(*([(vec) for vec in kvec]), indexing="ij")),
+        0,
+    )
+    _, indx = np.unique(np.abs(k_indx), return_index=True)
+    unique = np.zeros(np.prod(box_dim))
+    unique[indx] += 1
+    unique = unique.reshape(box_dim) > 0
+    return unique

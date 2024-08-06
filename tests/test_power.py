@@ -224,3 +224,13 @@ def test_get_gaussian_noise_floor():
         counts=counts,
     )
     assert np.abs((floor1 - floor2) / floor1) < 2e-2
+
+
+def test_get_independent_fourier_modes():
+    rand_int = np.random.randint(2, 50)
+    box_dim = np.array([2 * rand_int, 2 * rand_int, 2 * rand_int])
+    indep_modes = get_independent_fourier_modes(box_dim)
+    assert indep_modes.sum() == np.prod(box_dim) - (np.prod(box_dim - 1) // 2)
+    box_dim += 1
+    indep_modes = get_independent_fourier_modes(box_dim)
+    assert indep_modes.sum() == np.prod(box_dim) // 2 + 1
