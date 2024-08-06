@@ -158,9 +158,77 @@ def pcaclean(
     mean_centre=False,
     los_axis=-1,
     return_A=False,
+    mean_centre_weights=None,
 ):
-    """
-    Performs PCA cleaning of the map data.
+    r"""
+    Performs PCA cleaning of the map data. If ``mean_centre`` is set to ``True``,
+    then the input signal is first mean-centered so that
+
+    .. math::
+        \vec{d}^{\rm mc} = \vec{d} - \langle  \vec{d} \rangle,
+
+    where the mean of the data vector at a specific channel i is
+
+    .. math::
+        \langle \vec{d} \rangle_i = \frac{\sum_a w_{ia} d_{ia}}{\sum_a w_{ia}},
+
+    where a loops over each sampling in channel i and :math:`w` is the weight of each element.
+
+    A covariance matrix is then calculated on the mean-centered data
+
+    .. math::
+        C_{ij} = \frac{\sum_{a,b }w_{ia} d^{\rm mc}_{ia}
+             w_{jb} d^{\rm mc}_{jb}}{\sum_{a,b }w_{ia}w_{jb}},
+
+    over which the eigenvalue decomposition is performed.
+    See Section 4.3. of MeerKLASS Collaboration 2024 [1] for more details.
+
+    Note that, in the rigorous definition, the data vector should be zero-meaned,
+    and the weights used to calculate the mean and the covariance should be the same.
+    However, in practice, many people don't remove the mean of the data.
+    Some use one type of weights (often just binary masks) for mean calculation, and then
+    use different weights for covariance calculation. While it is not encouraged, that flexibility
+    is allowed in the function, by setting a different weight ``mean_centre_weights``.
+
+    Parameters
+    ----------
+        signal: array
+            The input signal to be cleaned.
+        N_fg: int.
+            Number of modes to be removed.
+        weights: array, default None
+            The weights of each element in the signal.
+            Default will set uniform weights for each element.
+        return_analysis: bool, default False
+            If True, instead of residual maps the function will return eigenanalysis quantities.
+        mean_centre: bool, default False
+            Whether to mean-center the input data vector
+        los_axis: int, default -1.
+            Which axis is the line-of-sight, i.e. spectral axis.
+        return_A: bool, default False.
+            Whether to return the mixing matrix A.
+        mean_centre_weights: array, default None.
+            The weights of each element for mean calculation.
+            Default follows the ``weights`` argument.
+
+    Returns
+    -------
+        residual: array.
+            The residual after PCA cleaning.
+        A: array, if ``return_A=True``.
+            The mixing matrix.
+        covariance: array, if ``return_analysis=True``.
+            The covariance matrix of the input signal.
+        eignumb: array, if ``return_analysis=True``.
+            The number indexing of the eigenvalues starting from 1.
+        eigenval: array, if ``return_analysis=True``.
+            The eigenvalues of the covariance matrix.
+        V: array, if ``return_analysis=True``.
+            The eigenvectors of the covariance matrix.
+
+    References
+    ----------
+    .. [1] MeerKLASS collab, "MeerKLASS L-band deep-field intensity maps: entering the HI dominated regime", https://arxiv.org/abs/2407.21626.
     """
     assert len(signal.shape) == 3, "map must be 3D."
     if los_axis < 0:
@@ -181,10 +249,22 @@ def pcaclean(
         weights = weights.reshape((nz, -1))
     else:
         weights = np.ones_like(signal)
+
+    if mean_centre_weights is not None:
+        mean_centre_weights = np.transpose(mean_centre_weights, axes=axes)
+        mean_centre_weights = mean_centre_weights.reshape((nz, -1))
     if mean_centre:
-        signal = (
-            signal - np.sum(signal * weights, 1)[:, None] / np.sum(weights, 1)[:, None]
-        )
+        if mean_centre_weights is None:
+            signal = (
+                signal
+                - np.sum(signal * weights, 1)[:, None] / np.sum(weights, 1)[:, None]
+            )
+        else:
+            signal = (
+                signal
+                - np.sum(signal * mean_centre_weights, 1)[:, None]
+                / np.sum(mean_centre_weights, 1)[:, None]
+            )
     ### Covariance calculation:
     covariance = (
         np.einsum("ia,ja->ij", signal * weights, signal * weights)
@@ -201,12 +281,12 @@ def pcaclean(
     S = np.dot(
         A.T, signal
     )  # not including weights in mode subtraction (as per Yi-Chao's approach)
-    Residual = signal - np.dot(A, S)
-    Residual = np.reshape(Residual, (nz, nx, ny))
-    Residual = np.transpose(Residual, axes=np.argsort(axes))
+    residual = signal - np.dot(A, S)
+    residual = np.reshape(residual, (nz, nx, ny))
+    residual = np.transpose(residual, axes=np.argsort(axes))
     if return_A:
-        return Residual, A
-    return Residual
+        return residual, A
+    return residual
 
 
 def radec_to_indx(ra_arr, dec_arr, wproj, to_int=True, ang_unit="deg"):

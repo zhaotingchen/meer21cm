@@ -4,6 +4,10 @@ Releases
 dev
 ---
 
+Enhancements
+++++++++++++
+* allows more flexibility in PCA
+
 v0.3.0
 ------
 Features

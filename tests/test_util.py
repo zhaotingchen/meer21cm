@@ -88,6 +88,17 @@ def test_pcaclean():
         mean_centre=True,
         return_A=True,
     )
+    res_arr = pcaclean(
+        test_arr,
+        1,
+        return_analysis=False,
+        los_axis=0,
+        weights=2 * np.ones_like(test_arr),
+        mean_centre=True,
+        mean_centre_weights=np.ones_like(test_arr),
+    )
+    assert res_arr.shape == test_arr.shape
+    assert np.abs((res_arr).mean()) < 1e-3
 
 
 def test_radec_to_indx(test_wproj):
