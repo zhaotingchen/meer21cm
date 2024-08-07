@@ -12,7 +12,6 @@ from meer21cm.util import healpix_to_wcs
 from astropy import constants, units
 from astropy.io import fits
 
-from functools import cached_property
 from collections.abc import Iterable
 from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
 
@@ -29,10 +28,18 @@ class ForegroundSimulation:
         sync_indx_file=None,
         sync_uni_indx=-2.55,
         do_point_souce=False,
+        wproj=None,
+        num_pix_x=None,
+        num_pix_y=None,
+        sigma_beam_ch=None,
     ):
         self.hp_nside = hp_nside
         self.verbose = verbose
         self.map_unit = map_unit
+        self.wproj = wproj
+        self.num_pix_x = num_pix_x
+        self.num_pix_y = num_pix_y
+        self.sigma_beam_ch = sigma_beam_ch
         if not check_unit_equiv(map_unit, units.K):
             if not check_unit_equiv(map_unit, units.Jy):
                 raise (
@@ -51,7 +58,7 @@ class ForegroundSimulation:
         self.sync_uni_indx = sync_uni_indx
         self.do_point_souce = do_point_souce
 
-    @cached_property
+    @property
     def sync_map(self):
         file = self.sync_map_file
         if file is None:
@@ -66,7 +73,7 @@ class ForegroundSimulation:
             sync_map = convert_hpmap_in_jy_to_temp(sync_map, self.sync_freq)
         return sync_map
 
-    @cached_property
+    @property
     def sync_spindx(self):
         sync_indx_file = self.sync_indx_file
         if sync_indx_file is None:
@@ -103,11 +110,11 @@ class ForegroundSimulation:
         self,
         freq,
         source_type="sync",
-        wproj=None,
-        xdim=None,
-        ydim=None,
-        sigma_beam_ch=None,
     ):
+        wproj = self.wproj
+        xdim = self.num_pix_x
+        ydim = self.num_pix_y
+        sigma_beam_ch = self.sigma_beam_ch
         if source_type == "sync":
             in_map = self.sync_map
             spindx = self.sync_spindx
