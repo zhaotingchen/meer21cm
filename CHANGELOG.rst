@@ -3,9 +3,17 @@ Releases
 
 dev
 ---
+
+Enhancements
+++++++++++++
+* allows more flexibility in PCA
+
+v0.3.0
+------
 Features
 ++++++++
 * Gridding functionalities to grid sky map to regular grids
+* Basic power spectrum estimation functionalities
 
 Enhancements
 ++++++++++++

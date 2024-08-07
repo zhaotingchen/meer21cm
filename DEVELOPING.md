@@ -1,10 +1,10 @@
 ## Installtion
-In order to run the tests, you need to create your own fork, clone the repo and install the optional dependencies
+Clone the repo and install the full dependencies
 ```
 pip install -e ".[full]"
 ```
 
-A clean conda environment is recommended for this.
+A clean conda environment is recommended for this. See [installation guide](INSTALLATION.md) for more details.
 
 ## Git workflow
 You should always use Git for making changes to the code. To enforce a unified code style automatically, `pre-commit` is used. A typical workflow should look something like this:
@@ -15,7 +15,7 @@ You should always use Git for making changes to the code. To enforce a unified c
 - stage the changes (GUI or `git add files_you_changed`). If you are using CLI and get lost, try `git status` to see what's going on.
 - run `pre-commit`, or just `git commit "message you want to insert"`, or commit from GUI. `pre-commit` will run checks and files will be changed to conform to the *Black* code style if needed.
 - If changes have been made, stage these changes and run `git commit -m "message you want to insert"` again.
-- push to remote by running `git push -u origin new_branch_name`. If you have already pushed it before then ignore `-u`.
+- push to remote by running `git push -u origin new_branch_name`. If you have already pushed it before then simply `git push`.
 - Go to the github repo and create a pull request. **MAKE SURE** you ask for a review and have it approved with all tests passed. Branch protection rules may not be in place and in no circumstance should you merge into main without asking.
 - After pull request is approved and merged, delete the branch on github.
 - In your local repo, switch to main and then run `git pull`. Delete your local repo if you want.
