@@ -21,7 +21,7 @@ default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 class ForegroundSimulation:
     def __init__(
         self,
-        hp_nside,
+        hp_nside=512,
         verbose=False,
         map_unit=units.K,
         sync_map_file=None,
@@ -32,6 +32,7 @@ class ForegroundSimulation:
         num_pix_x=None,
         num_pix_y=None,
         sigma_beam_ch=None,
+        **fg_params,
     ):
         self.hp_nside = hp_nside
         self.verbose = verbose
@@ -57,6 +58,7 @@ class ForegroundSimulation:
         self.sync_freq = None
         self.sync_uni_indx = sync_uni_indx
         self.do_point_souce = do_point_souce
+        self.__dict__.update(fg_params)
 
     @property
     def sync_map(self):
