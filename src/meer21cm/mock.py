@@ -53,15 +53,18 @@ class HISimulation:
         num_pix_x=1,
         num_pix_y=1,
         density="poisson",
+        himf_pars=himf_pars_jones18(Planck18.h),
         **sim_parameters,
     ):
         self.cache = False
         self.nu = nu
+        self.freq_resol = np.diff(nu).mean()
         self.z_ch = freq_to_redshift(nu)
         self.wproj = wproj
         self.num_g_tot = num_g
         self.num_g = num_g
         self.density = density.lower()
+        self.himf_pars = himf_pars
         if (
             self.density != "poisson"
             and self.density != "lognormal"
@@ -93,10 +96,39 @@ class HISimulation:
         self.ra_range = np.array(self.ra_range)
         self.ra_range[self.ra_range > 180] -= 360
         dvdf = (constants.c / nu).to("km/s").value.mean()
-        self.vel_resol = dvdf * np.diff(nu).mean()
+        self.vel_resol
+        self.dvdf
         xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
         # the coordinates of each pixel in the map
         self.ra_map, self.dec_map = get_wcs_coor(wproj, xx, yy)
+
+    @property
+    def dvdf_ch(self):
+        """
+        in km/s/Hz
+        """
+        return (constants.c / self.nu).to("km/s").value
+
+    @property
+    def vel_resol_ch(self):
+        """
+        in km/s
+        """
+        return self.dvdf_ch * self.freq_resol
+
+    @property
+    def dvdf(self):
+        """
+        in km/s/Hz
+        """
+        return self.dvdf_ch.mean()
+
+    @property
+    def vel_resol(self):
+        """
+        in km/s
+        """
+        return self.vel_resol_ch.mean()
 
     def get_gal_pos(self, cache=None):
         if cache is None:
