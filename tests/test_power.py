@@ -111,6 +111,7 @@ def test_PowerSpectrum():
     ps.k_para
     ps.fourier_field_2
     ps.auto_power_3d_2
+    ps.cross_power_3d
     power = ps.auto_power_3d_1
     assert np.abs(power.mean()) < 1
 
@@ -127,6 +128,8 @@ def test_PowerSpectrum():
     )
     power = ps.auto_power_3d_2
     assert np.abs(power.mean()) < 1
+    power = ps.cross_power_3d
+    assert np.abs((power.mean() - sn) / sn) < 2e-2
 
 
 def test_get_shot_noise():

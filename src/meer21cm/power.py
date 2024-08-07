@@ -20,6 +20,7 @@ class PowerSpectrum:
         remove_sn_2=False,
         corrtype=None,
         fullpk=False,
+        k1dbins=None,
     ):
         self.fullpk = fullpk
         self.field_1 = field_1
@@ -110,6 +111,19 @@ class PowerSpectrum:
                 self.box_len,
                 weights=self.weights_2,
             )
+        return power_spectrum
+
+    @property
+    def cross_power_3d(self):
+        if self.field_2 is None:
+            return None
+        power_spectrum = get_power_spectrum(
+            self.fourier_field_1,
+            self.box_len,
+            weights=self.weights_1,
+            field_2=self.fourier_field_2,
+            weights_2=self.weights_2,
+        )
         return power_spectrum
 
 
