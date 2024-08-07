@@ -1,6 +1,8 @@
 from meer21cm.telescope import *
 import numpy as np
 from astropy import constants, units
+from astropy.cosmology import Planck18
+from meer21cm.util import f_21
 
 
 def test_weighted_convolution(test_wproj, test_W):
@@ -45,3 +47,26 @@ def test_dish_beam_sigma():
         (constants.c / (nu * units.Hz * dish_size * units.m)).to("").value * 180 / np.pi
     )
     assert np.allclose(beam_sigma * 2 * np.sqrt(2 * np.log(2)), fwhm)
+
+
+def test_cmb_temperature():
+    zarr = np.linspace(0, 2, 101)
+    nuarr = f_21 / (1 + zarr)
+    temp1 = Planck18.Tcmb(zarr).value
+    temp2 = cmb_temperature(nuarr)
+    assert np.allclose(temp1, temp2)
+
+
+def test_receiver_temperature_meerkat():
+    nu = 0.75 * 1e9
+    assert receiver_temperature_meerkat(nu) == 7.5
+    nu = 0.85 * 1e9
+    assert receiver_temperature_meerkat(nu) == 7.6
+
+
+def test_galaxy_temperature():
+    nu = np.linspace(0.5, 1, 11) * 1e9
+    tgal = galaxy_temperature(nu, tgal_408MHz=0)
+    assert np.allclose(tgal, np.zeros_like(tgal))
+    tgal = galaxy_temperature(nu, sp_indx=-1)
+    assert np.allclose(tgal, 25 * (408 * 1e6 / nu))
