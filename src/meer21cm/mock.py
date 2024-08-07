@@ -49,9 +49,9 @@ class HISimulation:
         self,
         nu,
         wproj,
-        num_g,
-        num_pix_x,
-        num_pix_y,
+        num_g=1,
+        num_pix_x=1,
+        num_pix_y=1,
         density="poisson",
         **sim_parameters,
     ):
