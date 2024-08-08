@@ -74,3 +74,7 @@ def test_fg_cube(
     out_map = fgsim.fg_cube(
         9e8,
     )
+    fgsim.sync_cube
+    fgsim.nu = 9e8
+    fgsim.cache = True
+    fgsim.sync_cube

@@ -8,7 +8,7 @@ import meer21cm
 from meer21cm.util import read_healpix_fits
 from meer21cm.util import convert_hpmap_in_jy_to_temp
 from meer21cm.util import healpix_to_wcs
-
+from functools import cached_property
 from astropy import constants, units
 from astropy.io import fits
 
@@ -32,8 +32,11 @@ class ForegroundSimulation:
         num_pix_x=None,
         num_pix_y=None,
         sigma_beam_ch=None,
+        nu=None,
+        cache=False,
         **fg_params,
     ):
+        self.cache = cache
         self.hp_nside = hp_nside
         self.verbose = verbose
         self.map_unit = map_unit
@@ -41,6 +44,7 @@ class ForegroundSimulation:
         self.num_pix_x = num_pix_x
         self.num_pix_y = num_pix_y
         self.sigma_beam_ch = sigma_beam_ch
+        self.nu = nu
         if not check_unit_equiv(map_unit, units.K):
             if not check_unit_equiv(map_unit, units.Jy):
                 raise (
@@ -107,6 +111,15 @@ class ForegroundSimulation:
         else:
             sp_indx = np.ones(hp.nside2npix(self.sync_nside)) * uni_indx
         return sp_indx
+
+    @property
+    def sync_cube(self):
+        if self.nu is None:
+            return None
+        sync_cube = self.fg_cube(self.nu, source_type="sync")
+        if self.cache:
+            self.sync_cache = sync_cube
+        return sync_cube
 
     def fg_cube(
         self,
