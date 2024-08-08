@@ -7,11 +7,39 @@ from meer21cm.mock import (
     run_lognormal_mock,
     gen_clustering_gal_pos,
 )
+from meer21cm.util import hod_obuljen18
 from astropy.cosmology import Planck18
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
+
+
+def test_auto_mmin(test_wproj, test_nu, test_W, test_GAMA_range):
+    num_g = 10000
+    hisim = HISimulation(
+        nu=test_nu,
+        wproj=test_wproj,
+        num_g=num_g,
+        num_pix_x=test_W.shape[0],
+        num_pix_y=test_W.shape[1],
+        density="lognormal",
+        verbose=False,
+        do_stack=False,
+        x_dim=test_W.shape[0],
+        y_dim=test_W.shape[1],
+        ignore_double_counting=False,
+        return_indx_and_weight=False,
+        seed=42,
+        himf_pars=himf_pars_jones18(Planck18.h / 0.7),
+    )
+    hisim.get_gal_pos()
+    mmin_1 = hisim.mmin
+    mmin_halo = hisim.mmin_halo
+    hisim.auto_mmin = hod_obuljen18
+    hisim.get_gal_pos()
+    mmin_2 = hisim.mmin
+    assert mmin_1 != mmin_2
 
 
 def test_hisim_class(test_wproj, test_nu, test_W, test_GAMA_range):
