@@ -27,5 +27,14 @@ def test_unit_convert(test_nu, test_wproj):
 
 
 def test_noise_sigma(test_nu, test_wproj):
-    mockobs = MockObservation(test_nu, test_wproj, seed=42, time_resol=2)
+    mockobs = MockObservation(
+        test_nu,
+        test_wproj,
+        seed=42,
+        time_resol=2,
+        num_pix_x=1,
+        num_pix_y=1,
+        pix_counts=np.ones_like(test_nu)[None, None, :],
+    )
     sigma_n = mockobs.thermal_noise_sigma()
+    mockobs.get_noise_map()

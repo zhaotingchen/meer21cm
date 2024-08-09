@@ -4,6 +4,7 @@ from .cosmology import CosmologyCalculator
 from .mock import HISimulation
 from .fg import ForegroundSimulation
 from .telescope import cmb_temperature, galaxy_temperature, receiver_temperature_meerkat
+from numpy.random import default_rng
 
 
 class MockObservation(HISimulation, ForegroundSimulation, CosmologyCalculator):
@@ -45,3 +46,10 @@ class MockObservation(HISimulation, ForegroundSimulation, CosmologyCalculator):
         )
         sigma_n = sys_temp / np.sqrt(2 * self.freq_resol * self.time_resol)
         return sigma_n
+
+    def get_noise_map(self):
+        rng = default_rng(self.seed)
+        noise_map = rng.normal(size=(self.num_pix_x, self.num_pix_y, len(self.nu)))
+        noise_map *= self.thermal_noise_sigma()[None, None, :] * self.W_HI
+        noise_map[self.pix_counts > 0] /= np.sqrt(self.pix_counts[self.pix_counts > 0])
+        return noise_map
