@@ -61,18 +61,20 @@ def test_fg_cube(
     )
     out_map = fgsim.fg_cube(9e8).ravel()
     assert hp.get_nside(out_map) == 128
+    fgsim.wproj = test_wproj
+    fgsim.num_pix_x = test_W.shape[0]
+    fgsim.num_pix_y = test_W.shape[1]
+
     out_map = fgsim.fg_cube(
         9e8,
-        wproj=test_wproj,
-        xdim=test_W.shape[0],
-        ydim=test_W.shape[1],
     )
     assert out_map.shape[0] == test_W.shape[0]
     assert out_map.shape[1] == test_W.shape[1]
+    fgsim.sigma_beam_ch = [1]
     out_map = fgsim.fg_cube(
         9e8,
-        wproj=test_wproj,
-        xdim=test_W.shape[0],
-        ydim=test_W.shape[1],
-        sigma_beam_ch=[1],
     )
+    fgsim.sync_cube
+    fgsim.nu = 9e8
+    fgsim.cache = True
+    fgsim.sync_cube

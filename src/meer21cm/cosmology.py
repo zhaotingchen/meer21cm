@@ -15,17 +15,28 @@ class CosmologyCalculator:
 
     def __init__(
         self,
-        cosmo="Planck18",
+        cosmo_model="Planck18",
         z=0,
+        **hi_params,
     ):
-        if isinstance(cosmo, str):
-            cosmo = getattr(astropy.cosmology, cosmo)
-        self.cosmo = cosmo
+        self._cosmo = None
+        self.cosmo = cosmo_model
+        self.__dict__.update(hi_params)
+        self.z = z
+
+    @property
+    def cosmo(self):
+        return self._cosmo
+
+    @cosmo.setter
+    def cosmo(self, value):
+        if isinstance(value, str):
+            cosmo = getattr(astropy.cosmology, value)
+        self._cosmo = cosmo
         self.ns = cosmo.meta["n"]
         self.sigma8 = cosmo.meta["sigma8"]
         self.tau = cosmo.meta["tau"]
         self.Oc0 = cosmo.meta["Oc0"]
-        self.z = z
         # there is probably a more elegant way of doing this, but I dont know how
         # maybe just inheriting astropy cosmology class?
         for key in cosmo.__dir__():

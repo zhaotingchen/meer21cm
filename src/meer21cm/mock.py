@@ -49,19 +49,24 @@ class HISimulation:
         self,
         nu,
         wproj,
-        num_g,
-        num_pix_x,
-        num_pix_y,
+        num_g=1,
+        num_pix_x=1,
+        num_pix_y=1,
         density="poisson",
+        himf_pars=himf_pars_jones18(Planck18.h / 0.7),
+        auto_mmin=None,
         **sim_parameters,
     ):
         self.cache = False
         self.nu = nu
+        self.freq_resol = np.diff(nu).mean()
         self.z_ch = freq_to_redshift(nu)
         self.wproj = wproj
         self.num_g_tot = num_g
         self.num_g = num_g
         self.density = density.lower()
+        self.himf_pars = himf_pars
+        self.auto_mmin = auto_mmin
         if (
             self.density != "poisson"
             and self.density != "lognormal"
@@ -93,53 +98,88 @@ class HISimulation:
         self.ra_range = np.array(self.ra_range)
         self.ra_range[self.ra_range > 180] -= 360
         dvdf = (constants.c / nu).to("km/s").value.mean()
-        self.vel_resol = dvdf * np.diff(nu).mean()
+        self.vel_resol
+        self.dvdf
         xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
         # the coordinates of each pixel in the map
         self.ra_map, self.dec_map = get_wcs_coor(wproj, xx, yy)
 
+    @property
+    def dvdf_ch(self):
+        """
+        in km/s/Hz
+        """
+        return (constants.c / self.nu).to("km/s").value
+
+    @property
+    def vel_resol_ch(self):
+        """
+        in km/s
+        """
+        return self.dvdf_ch * self.freq_resol
+
+    @property
+    def dvdf(self):
+        """
+        in km/s/Hz
+        """
+        return self.dvdf_ch.mean()
+
+    @property
+    def vel_resol(self):
+        """
+        in km/s
+        """
+        return self.vel_resol_ch.mean()
+
+    def sim_gal_pos_poisson(self):
+        ra_g_mock, dec_g_mock, inside_range = gen_random_gal_pos(
+            self.wproj,
+            self.W_HI[:, :, 0],
+            self.num_g,
+            ra_range=self.ra_range,
+            dec_range=self.dec_range,
+            seed=self.seed,
+        )
+        # update number of galaxies to include outside range
+        self.num_g_tot = ra_g_mock.size
+        z_g_mock = sample_from_dist(
+            self.dndz, self.zmin, self.zmax, size=self.num_g_tot, seed=self.seed
+        )
+        return ra_g_mock, dec_g_mock, z_g_mock, inside_range
+
+    def sim_gal_pos_lognormal(self):
+        (
+            ra_g_mock,
+            dec_g_mock,
+            z_g_mock,
+            inside_range,
+            mmin_halo,
+        ) = gen_clustering_gal_pos(
+            self.nu,
+            self.cosmo,
+            self.wproj,
+            self.num_g,
+            self.W_HI,
+            relative_resol_to_pix=self.relative_resol_to_pix,
+            ra_range=self.ra_range,
+            dec_range=self.dec_range,
+            seed=self.seed,
+            target_relative_to_num_g=self.target_relative_to_num_g,
+            kaiser_rsd=self.kaiser_rsd,
+        )
+        self.num_g_tot = ra_g_mock.size
+        self.mmin_halo = mmin_halo
+        if self.auto_mmin is not None:
+            self.mmin = self.get_mmin(mmin_halo)
+        return ra_g_mock, dec_g_mock, z_g_mock, inside_range
+
     def get_gal_pos(self, cache=None):
         if cache is None:
             cache = self.cache
-        if self.density == "poisson":
-            ra_g_mock, dec_g_mock, inside_range = gen_random_gal_pos(
-                self.wproj,
-                self.W_HI[:, :, 0],
-                self.num_g,
-                ra_range=self.ra_range,
-                dec_range=self.dec_range,
-                seed=self.seed,
-            )
-            # update number of galaxies to include outside range
-            self.num_g_tot = ra_g_mock.size
-            z_g_mock = sample_from_dist(
-                self.dndz, self.zmin, self.zmax, size=self.num_g_tot, seed=self.seed
-            )
-        elif self.density == "lognormal":
-            if python_ver < 3.9:
-                raise ImportError(
-                    "Lognormal simulation for Python < 3.9 is unsupported."
-                )
-            (
-                ra_g_mock,
-                dec_g_mock,
-                z_g_mock,
-                inside_range,
-                mmin_halo,
-            ) = gen_clustering_gal_pos(
-                self.nu,
-                self.cosmo,
-                self.wproj,
-                self.num_g,
-                self.W_HI,
-                relative_resol_to_pix=self.relative_resol_to_pix,
-                ra_range=self.ra_range,
-                dec_range=self.dec_range,
-                seed=self.seed,
-                target_relative_to_num_g=self.target_relative_to_num_g,
-                kaiser_rsd=self.kaiser_rsd,
-            )
-            self.num_g_tot = ra_g_mock.size
+        ra_g_mock, dec_g_mock, z_g_mock, inside_range = getattr(
+            self, "sim_gal_pos_" + self.density
+        )()
         indx_1_g, indx_2_g = radec_to_indx(ra_g_mock, dec_g_mock, self.wproj)
 
         if cache:
@@ -149,9 +189,12 @@ class HISimulation:
             self.indx_1_g = indx_1_g
             self.indx_2_g = indx_2_g
             self.z_g_mock = z_g_mock
-            if self.density == "lognormal":
-                self.mmin_halo = mmin_halo
         return ra_g_mock, dec_g_mock, z_g_mock, inside_range, indx_1_g, indx_2_g
+
+    def get_mmin(self, mmin_halo):
+        if self.auto_mmin is None:
+            return None
+        return np.log10(self.auto_mmin(mmin_halo))
 
     def get_hifluxdensity_ch(self, cache=None):
         if cache is None:

@@ -1,8 +1,9 @@
 import numpy as np
-from .util import get_wcs_coor, get_ang_between_coord
+from .util import get_wcs_coor, get_ang_between_coord, freq_to_redshift
 from astropy import units, constants
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.signal import convolve
+from astropy.cosmology import Planck18
 
 
 def weighted_convolution(
@@ -181,3 +182,60 @@ def dish_beam_sigma(dish_diameter, nu, gamma=1.0, ang_unit=units.deg):
     ).to(ang_unit).value * gamma
     beam_sigma = beam_fwhm / (2 * np.sqrt(2 * np.log(2)))
     return beam_sigma
+
+
+def cmb_temperature(nu, tcmb0=Planck18.Tcmb0.value):
+    """
+    Calculate the background CMB temperature at given frequencies.
+
+    Parameters
+    ----------
+        nu: float.
+            The observing frequency in Hz.
+        tcmb0: float, default ``Planck18.Tcmb0.value``.
+            The background CMB temperature at z=0.
+    Returns
+    -------
+        tcmb: float.
+            The CMB temperature at given frequencies in Kelvin.
+    """
+    redshift = freq_to_redshift(nu)
+    return tcmb0 * (1 + redshift)
+
+
+def receiver_temperature_meerkat(nu):
+    """
+    The receiver temperature of MeerKAT.
+
+    Parameters
+    ----------
+        nu: float.
+            The observing frequency in Hz.
+    Returns
+    -------
+        Trx: float.
+            The receiver temperature at given frequencies in Kelvin.
+    """
+    Trx = 7.5 + 10 * (nu / 1e9 - 0.75) ** 2
+    return Trx
+
+
+def galaxy_temperature(nu, tgal_408MHz=25, sp_indx=-2.75):
+    """
+    The temperature template of the Milky Way.
+
+    Parameters
+    ----------
+        nu: float.
+            The observing frequency in Hz.
+        tgal_408MHz: float.
+            The average galaxy temperature at 408MHz in Kelvin.
+        sp_indx: float.
+            The spectral index to extrapolate it to input frequencies.
+    Returns
+    -------
+        Tgal: float.
+            The galaxy temperature at given frequencies in Kelvin.
+    """
+    Tgal = tgal_408MHz * (nu / 408 / 1e6) ** sp_indx
+    return Tgal

@@ -8,11 +8,10 @@ import meer21cm
 from meer21cm.util import read_healpix_fits
 from meer21cm.util import convert_hpmap_in_jy_to_temp
 from meer21cm.util import healpix_to_wcs
-
+from functools import cached_property
 from astropy import constants, units
 from astropy.io import fits
 
-from functools import cached_property
 from collections.abc import Iterable
 from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
 
@@ -22,17 +21,30 @@ default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 class ForegroundSimulation:
     def __init__(
         self,
-        hp_nside,
+        hp_nside=512,
         verbose=False,
         map_unit=units.K,
         sync_map_file=None,
         sync_indx_file=None,
         sync_uni_indx=-2.55,
         do_point_souce=False,
+        wproj=None,
+        num_pix_x=None,
+        num_pix_y=None,
+        sigma_beam_ch=None,
+        nu=None,
+        cache=False,
+        **fg_params,
     ):
+        self.cache = cache
         self.hp_nside = hp_nside
         self.verbose = verbose
         self.map_unit = map_unit
+        self.wproj = wproj
+        self.num_pix_x = num_pix_x
+        self.num_pix_y = num_pix_y
+        self.sigma_beam_ch = sigma_beam_ch
+        self.nu = nu
         if not check_unit_equiv(map_unit, units.K):
             if not check_unit_equiv(map_unit, units.Jy):
                 raise (
@@ -50,8 +62,9 @@ class ForegroundSimulation:
         self.sync_freq = None
         self.sync_uni_indx = sync_uni_indx
         self.do_point_souce = do_point_souce
+        self.__dict__.update(fg_params)
 
-    @cached_property
+    @property
     def sync_map(self):
         file = self.sync_map_file
         if file is None:
@@ -66,7 +79,7 @@ class ForegroundSimulation:
             sync_map = convert_hpmap_in_jy_to_temp(sync_map, self.sync_freq)
         return sync_map
 
-    @cached_property
+    @property
     def sync_spindx(self):
         sync_indx_file = self.sync_indx_file
         if sync_indx_file is None:
@@ -99,15 +112,24 @@ class ForegroundSimulation:
             sp_indx = np.ones(hp.nside2npix(self.sync_nside)) * uni_indx
         return sp_indx
 
+    @property
+    def sync_cube(self):
+        if self.nu is None:
+            return None
+        sync_cube = self.fg_cube(self.nu, source_type="sync")
+        if self.cache:
+            self.sync_cache = sync_cube
+        return sync_cube
+
     def fg_cube(
         self,
         freq,
         source_type="sync",
-        wproj=None,
-        xdim=None,
-        ydim=None,
-        sigma_beam_ch=None,
     ):
+        wproj = self.wproj
+        xdim = self.num_pix_x
+        ydim = self.num_pix_y
+        sigma_beam_ch = self.sigma_beam_ch
         if source_type == "sync":
             in_map = self.sync_map
             spindx = self.sync_spindx
