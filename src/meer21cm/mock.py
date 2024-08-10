@@ -320,7 +320,7 @@ def gen_clustering_gal_pos(
         L_z,
         rot_back,
     ) = minimum_enclosing_box_of_lightcone(ra_pix, dec_pix, nu, cosmo=cosmo)
-    target_resol = np.round(
+    target_resol = (
         relative_resol_to_pix
         * pix_resol
         * np.pi
