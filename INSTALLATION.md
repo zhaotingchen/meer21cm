@@ -1,6 +1,6 @@
 # Installation
 
-Unfortunately, `meer21cm` uses [`pmesh`](https://github.com/rainwoodman/pmesh) for dependencies. This has caused severe difficulty in testing and enabling a simple `pip` installation, as `pmesh` is not actively maintained and needs to be installed in a painstaking way. The installation is tested locally on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10. Here is some hopefully useful guide to installing `pfft-python` which `pmesh` uses as dependency.
+The installation is tested locally on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10. Here is some hopefully useful guide to installing `pfft-python` which `pmesh` uses as dependency.
 
 If you have a working installation of `mpi4py` on your system you may skip the first part and go straight to [`pfft-python`](#pfft). If you are on ilifu jump straight to [`Installing on ilifu`](#ilifu).
 
@@ -82,7 +82,7 @@ This prepares the environment so `setup.py` for `pfft-python` and `pmesh` will n
 ## Install `meer21cm`
 Finally, clone the repo for `meer21cm`
 ```
-git clone https://github.com/zhaotingchen/meer21cm
+git clone git@github.com:zhaotingchen/meer21cm.git
 ```
 
 Go to the directory

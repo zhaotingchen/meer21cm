@@ -6,7 +6,7 @@
 ## Installation
 Clone this repo:
 ```
-git clone https://github.com/zhaotingchen/meer21cm
+git clone git@github.com:zhaotingchen/meer21cm.git
 ```
 
 And run
