@@ -77,6 +77,9 @@ class CosmologyCalculator(Specification):
 
     @property
     def matter_power_spectrum_fnc(self):
+        """
+        Interpolation function for the real-space isotropic matter power spectrum.
+        """
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):

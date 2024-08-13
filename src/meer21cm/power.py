@@ -8,11 +8,16 @@ from meer21cm.cosmology import CosmologyCalculator
 class ModelPowerSpectrum(CosmologyCalculator):
     def __init__(
         self,
+        kmode=None,
+        mumode=None,
         tracer_bias_1=1.0,
         sigma_v_1=0.0,
         tracer_bias_2=None,
-        sigma_v_2=None,
+        sigma_v_2=0.0,
         matter_only_rsd=False,
+        include_beam=True,
+        fog_profile="lorentz",
+        cross_coeff=1.0,
         **params,
     ):
         super().__init__(**params)
@@ -21,6 +26,115 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.tracer_bias_2 = tracer_bias_2
         self.sigma_v_2 = sigma_v_2
         self.matter_only_rsd = matter_only_rsd
+        if kmode is None:
+            self.kmode = np.geomspace(self.kmin, self.kmax, 100)
+        if mumode is None:
+            self.mumode = np.zeros_like(self.kmode)
+        self.include_beam = include_beam
+        if self.sigma_beam_ch is None and self.include_beam:
+            print("no input beam found, setting include_beam to False")
+            self.include_beam = False
+        self.fog_profile = fog_profile
+        self.cross_coeff = cross_coeff
+        self._auto_power_matter = None
+        self._auto_power_tracer_1 = None
+        self._auto_power_tracer_2 = None
+        self._cross_power_tracer = None
+
+    def fog_lorentz(self, sigma_v):
+        """
+        sqrt(1/(1+(sigma_v k_parallel /H_0)^2))
+        """
+        H_0 = self.H0.to("km s^-1 Mpc^-1").value
+        k_parallel = self.kmode * self.mumode
+        fog = np.sqrt(1 / (1 + (sigma_v * k_parallel / H_0) ** 2))
+        return fog
+
+    def fog_term(self, sigma_v):
+        return getattr(self, "fog_" + self.fog_profile)(sigma_v)
+
+    @property
+    def auto_power_matter(self):
+        return self._auto_power_matter
+
+    @property
+    def auto_power_tracer_1(self):
+        return self._auto_power_tracer_1
+
+    @property
+    def auto_power_tracer_2(self):
+        return self._auto_power_tracer_2
+
+    @property
+    def cross_power_tracer(self):
+        return self._cross_power_tracer
+
+    def cal_rsd_power(
+        self,
+        power_in_real_space,
+        beta1,
+        sigmav_1,
+        beta2=None,
+        sigmav_2=None,
+        r=1.0,
+    ):
+        if beta2 is None:
+            beta2 = beta1
+        if sigmav_2 is None:
+            sigmav_2 = sigmav_1
+        power_in_redshift_space = (
+            power_in_real_space
+            * (
+                r
+                + (beta1 + beta2) * self.mumode**2
+                + beta1 * beta2 * self.mumode**4
+            )
+            * self.fog_term(sigmav_1)
+            * self.fog_term(sigmav_2)
+        )
+        return power_in_redshift_space
+
+    def get_model_power(self):
+        if self.matter_power_spectrum_fnc is None:
+            self.get_matter_power_spectrum()
+        pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
+        beta_m = self.f_growth
+        self._auto_power_matter = self.cal_rsd_power(
+            pk3d_mm_r,
+            beta_m,
+            0.0,
+        )
+        pk3d_tt_r = self.tracer_bias_1**2 * pk3d_mm_r
+        if self.matter_only_rsd:
+            beta_1 = self.f_growth
+        else:
+            beta_1 = self.f_growth / self.tracer_bias_1
+        self._auto_power_tracer_1 = self.cal_rsd_power(
+            pk3d_tt_r,
+            beta_1,
+            self.sigma_v_1,
+        )
+        if self.tracer_bias_2 is not None:
+            if self.matter_only_rsd:
+                beta_2 = self.f_growth
+            else:
+                beta_2 = self.f_growth / self.tracer_bias_2
+            pk3d_tt_r = self.tracer_bias_2**2 * pk3d_mm_r
+            self._auto_power_tracer_2 = self.cal_rsd_power(
+                pk3d_tt_r,
+                beta_2,
+                self.sigma_v_2,
+            )
+            # cross power
+            pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
+            self._cross_power_tracer = self.cal_rsd_power(
+                pk3d_tt_r,
+                beta1=beta_1,
+                sigmav_1=self.sigma_v_1,
+                beta2=beta_2,
+                sigmav_2=self.sigma_v_2,
+                r=self.cross_coeff,
+            )
 
 
 class MapPowerSpectrum:
@@ -346,8 +460,8 @@ def get_independent_fourier_modes(box_dim):
     kvec = [kvec[i] / kvecmin[i] for i in range(len(box_dim))]
     kvecmax = [(np.abs(kvec[i])).max() for i in range(len(box_dim))]
     kvecmax = np.max(kvecmax)
-    base = int(np.log10(kvecmax)) + 1
-    kvec = [kvec[i] * 10 ** (base * i) for i in range(len(box_dim))]
+    base = 2 * kvecmax + 1
+    kvec = [kvec[i] * (base**i) for i in range(len(box_dim))]
     k_indx = np.sum(
         (np.meshgrid(*([(vec) for vec in kvec]), indexing="ij")),
         0,

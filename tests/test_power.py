@@ -240,4 +240,77 @@ def test_get_independent_fourier_modes():
 
 
 def test_ModelPowerSpectrum():
-    mps = ModelPowerSpectrum()
+    # test fog
+    model = ModelPowerSpectrum()
+    assert np.allclose(model.fog_term(1e7), np.ones(len(model.kmode)))
+    model.mumode = np.ones_like(model.kmode)
+    assert np.allclose(model.fog_term(np.inf), np.zeros(len(model.kmode)))
+
+    # test matter power with no rsd
+    model = ModelPowerSpectrum()
+    model.get_model_power()
+    matter_ps_real = model.matter_power_spectrum_fnc(model.kmode)
+    assert np.allclose(model.auto_power_matter, matter_ps_real)
+
+    # add rsd, test kaiser term
+    model.mumode = np.ones_like(model.kmode)
+    model.get_model_power()
+    matter_ps_rsd = model.auto_power_matter
+    assert np.allclose(matter_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2)
+
+    # test tracer with no rsd but with bias
+    model = ModelPowerSpectrum(tracer_bias_1=2.0)
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1
+    assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
+
+    # add rsd
+    model.mumode = np.ones_like(model.kmode)
+    model.matter_only_rsd = True
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1
+    assert np.allclose(tracer_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 4)
+
+    # true rsd
+    model.matter_only_rsd = False
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1
+    assert np.allclose(
+        tracer_ps_rsd / matter_ps_real, (1 + model.f_growth / 2.0) ** 2 * 4
+    )
+
+    # test 2 tracers with no rsd but with bias
+    model = ModelPowerSpectrum(
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        cross_coeff=0.5,
+    )
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1
+    assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
+    tracer_ps_rsd = model.auto_power_tracer_2
+    assert np.allclose(tracer_ps_rsd, matter_ps_real * 9)
+
+    # add rsd
+    model.mumode = np.ones_like(model.kmode)
+    model.matter_only_rsd = True
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_2
+    cross_ps_rsd = model.cross_power_tracer
+    assert np.allclose(tracer_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 9)
+    assert np.allclose(
+        cross_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 6 - 6 + 6 * 0.5
+    )
+
+    # true rsd
+    model.matter_only_rsd = False
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_2
+    cross_ps_rsd = model.cross_power_tracer
+    assert np.allclose(
+        tracer_ps_rsd / matter_ps_real, (1 + model.f_growth / 3.0) ** 2 * 9
+    )
+    assert np.allclose(
+        cross_ps_rsd / matter_ps_real,
+        (1 + model.f_growth / 2.0) * (1 + model.f_growth / 3.0) * 6 - 6 + 6 * 0.5,
+    )

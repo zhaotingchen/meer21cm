@@ -44,6 +44,7 @@ class Specification:
         self.wproj = wproj
         self.num_pix_x = num_pix_x
         self.num_pix_y = num_pix_y
+        self.sigma_beam_ch = sigma_beam_ch
         if map_has_sampling is None:
             map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
         self.map_has_sampling = map_has_sampling
