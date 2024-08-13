@@ -2,6 +2,7 @@ import numpy as np
 import camb
 import astropy
 from meer21cm import Specification
+from scipy.interpolate import interp1d
 
 
 class CosmologyCalculator(Specification):
@@ -16,12 +17,34 @@ class CosmologyCalculator(Specification):
 
     def __init__(
         self,
+        nonlinear="none",
+        kmax=2.0,
+        kmin=1e-4,
         **params,
     ):
         super().__init__(**params)
+        self.nonlinear = nonlinear
+        self.kmax = kmax
+        self.kmin = kmin
+        self._matter_power_spectrum_fnc = None
 
-    @property
-    def camb_pars(self):
+    @Specification.cosmo.setter
+    def cosmo(self, value):
+        if isinstance(value, str):
+            cosmo = getattr(astropy.cosmology, value)
+        self._cosmo = cosmo
+        self.ns = cosmo.meta["n"]
+        self.sigma8 = cosmo.meta["sigma8"]
+        self.tau = cosmo.meta["tau"]
+        self.Oc0 = cosmo.meta["Oc0"]
+        # there is probably a more elegant way of doing this, but I dont know how
+        # maybe just inheriting astropy cosmology class?
+        for key in cosmo.__dir__():
+            if key[0] != "_":
+                self.__dict__.update({key: getattr(cosmo, key)})
+        self.camb_pars = self.get_camb_pars()
+
+    def get_camb_pars(self):
         """
         The associated :class:`camb.model.CAMBparams` set by the input cosmology.
         """
@@ -51,3 +74,25 @@ class CosmologyCalculator(Specification):
         results = camb.get_results(pars)
         self.f_growth = results.get_fsigma8()[0] / results.get_sigma8()[0]
         return pars
+
+    @property
+    def matter_power_spectrum_fnc(self):
+        return self._matter_power_spectrum_fnc
+
+    def get_matter_power_spectrum(self):
+        pars = self.camb_pars
+        pars.set_matter_power(
+            redshifts=np.unique(np.array([0.0, self.z])).tolist(),
+            kmax=self.kmax / self.h,
+        )
+        pars.NonLinear = getattr(camb.model, "NonLinear_" + self.nonlinear)
+        results = camb.get_results(pars)
+        kh, z, pk = results.get_matter_power_spectrum(
+            minkh=self.kmin / self.h, maxkh=self.kmax / self.h, npoints=200
+        )
+        karr = kh * self.h
+        pkarr = pk[-1] / self.h**3
+        matter_power_func = interp1d(
+            karr, pkarr, bounds_error=False, fill_value="extrapolate"
+        )
+        self._matter_power_spectrum_fnc = matter_power_func

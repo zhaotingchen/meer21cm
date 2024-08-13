@@ -1,4 +1,4 @@
-from meer21cm.cosmology import CosmologyCalculator
+from meer21cm import CosmologyCalculator
 from astropy.cosmology import Planck18, Planck15
 import numpy as np
 
@@ -14,9 +14,9 @@ def test_cosmo():
 def test_update_pars():
     coscal = CosmologyCalculator()
     coscal.camb_pars
+    As = coscal.As
     coscal.cosmo = "Planck15"
     coscal.cosmo
-    As = coscal.As
     coscal.camb_pars
     assert coscal.h == Planck15.h
     assert coscal.As != As

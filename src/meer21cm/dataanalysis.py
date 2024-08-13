@@ -30,7 +30,6 @@ class Specification:
         **kwparams,
     ):
         self._cosmo = None
-        self.cosmo = cosmo
         if nu is None:
             nu = cal_freq(
                 np.arange(4096) + 1,
@@ -63,6 +62,7 @@ class Specification:
         # the coordinates of each pixel in the map
         self.ra_map, self.dec_map = get_wcs_coor(wproj, xx, yy)
         self.__dict__.update(kwparams)
+        self.cosmo = cosmo
 
     @property
     def z_ch(self):
