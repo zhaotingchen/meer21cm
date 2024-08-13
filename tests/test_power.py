@@ -82,7 +82,7 @@ def test_get_power_spectrum():
     assert np.abs(power_3d.std() / power_sn - 1) < 5e-2
 
 
-def test_PowerSpectrum():
+def test_MapPowerSpectrum():
     box_len = np.array([100, 50, 100])
     box_dim = np.array([100, 200, 60])
     box_resol = box_len / box_dim
@@ -97,7 +97,7 @@ def test_PowerSpectrum():
         delta_x,
         box_len,
     )
-    ps = PowerSpectrum(
+    ps = MapPowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -115,7 +115,7 @@ def test_PowerSpectrum():
     power = ps.auto_power_3d_1
     assert np.abs(power.mean()) < 1
 
-    ps = PowerSpectrum(
+    ps = MapPowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -153,7 +153,7 @@ def test_raise_error():
     box_len = [1, 1, 1]
     delta_2 = np.ones([2, 2, 2])
     with pytest.raises(AssertionError):
-        ps = PowerSpectrum(delta_x, box_len, field_2=delta_2)
+        ps = MapPowerSpectrum(delta_x, box_len, field_2=delta_2)
 
 
 def test_bin_functions():
@@ -193,7 +193,7 @@ def test_get_gaussian_noise_floor():
     box_dim = np.array([100, 200, 41])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
-    ps = PowerSpectrum(
+    ps = MapPowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -211,7 +211,7 @@ def test_get_gaussian_noise_floor():
     # test weights
     counts = np.random.randint(1, 100, size=rand_noise.shape)
     rand_noise = rand_noise / np.sqrt(counts)
-    ps = PowerSpectrum(
+    ps = MapPowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,

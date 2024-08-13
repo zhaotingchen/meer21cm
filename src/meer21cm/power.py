@@ -4,7 +4,7 @@ This power handles computation of power spectrum from gridded fields.
 import numpy as np
 
 
-class PowerSpectrum:
+class MapPowerSpectrum:
     def __init__(
         self,
         field_1,
