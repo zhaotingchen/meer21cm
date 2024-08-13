@@ -5,11 +5,13 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import healpy as hp
 from astropy.io import fits
-from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
+from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
 from astropy.cosmology import Planck18
 import inspect
 import sys
 from powerbox import PowerBox
+
+f_21 = 1420405751.7667  # in Hz
 
 
 def freq_to_redshift(freq):

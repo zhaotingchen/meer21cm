@@ -1,9 +1,10 @@
 import numpy as np
 import camb
 import astropy
+from meer21cm import Specification
 
 
-class CosmologyCalculator:
+class CosmologyCalculator(Specification):
     """
     The class for storing the cosmological model used for calculation.
 
@@ -15,33 +16,9 @@ class CosmologyCalculator:
 
     def __init__(
         self,
-        cosmo_model="Planck18",
-        z=0,
-        **hi_params,
+        **params,
     ):
-        self._cosmo = None
-        self.cosmo = cosmo_model
-        self.__dict__.update(hi_params)
-        self.z = z
-
-    @property
-    def cosmo(self):
-        return self._cosmo
-
-    @cosmo.setter
-    def cosmo(self, value):
-        if isinstance(value, str):
-            cosmo = getattr(astropy.cosmology, value)
-        self._cosmo = cosmo
-        self.ns = cosmo.meta["n"]
-        self.sigma8 = cosmo.meta["sigma8"]
-        self.tau = cosmo.meta["tau"]
-        self.Oc0 = cosmo.meta["Oc0"]
-        # there is probably a more elegant way of doing this, but I dont know how
-        # maybe just inheriting astropy cosmology class?
-        for key in cosmo.__dir__():
-            if key[0] != "_":
-                self.__dict__.update({key: getattr(cosmo, key)})
+        super().__init__(**params)
 
     @property
     def camb_pars(self):
