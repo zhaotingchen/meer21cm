@@ -2,6 +2,25 @@
 This power handles computation of power spectrum from gridded fields.
 """
 import numpy as np
+from meer21cm.cosmology import CosmologyCalculator
+
+
+class ModelPowerSpectrum(CosmologyCalculator):
+    def __init__(
+        self,
+        tracer_bias_1=1.0,
+        sigma_v_1=0.0,
+        tracer_bias_2=None,
+        sigma_v_2=None,
+        matter_only_rsd=False,
+        **params,
+    ):
+        super().__init__(**params)
+        self.tracer_bias_1 = tracer_bias_1
+        self.sigma_v_1 = sigma_v_1
+        self.tracer_bias_2 = tracer_bias_2
+        self.sigma_v_2 = sigma_v_2
+        self.matter_only_rsd = matter_only_rsd
 
 
 class MapPowerSpectrum:

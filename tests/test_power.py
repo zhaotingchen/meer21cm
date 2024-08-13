@@ -237,3 +237,7 @@ def test_get_independent_fourier_modes():
     box_dim += 1
     indep_modes = get_independent_fourier_modes(box_dim)
     assert indep_modes.sum() == np.prod(box_dim) // 2 + 1
+
+
+def test_ModelPowerSpectrum():
+    mps = ModelPowerSpectrum()

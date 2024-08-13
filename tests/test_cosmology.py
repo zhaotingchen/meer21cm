@@ -1,6 +1,7 @@
 from meer21cm import CosmologyCalculator
 from astropy.cosmology import Planck18, Planck15
 import numpy as np
+import camb
 
 
 def test_cosmo():
@@ -20,3 +21,22 @@ def test_update_pars():
     coscal.camb_pars
     assert coscal.h == Planck15.h
     assert coscal.As != As
+
+
+def test_matter_power():
+    coscal = CosmologyCalculator(nonlinear="both")
+    pars = coscal.camb_pars
+    pars.set_matter_power(
+        redshifts=np.unique(np.array([0.0, coscal.z])).tolist(), kmax=2.0
+    )
+    pars.NonLinear = getattr(camb.model, "NonLinear_" + coscal.nonlinear)
+    results = camb.get_results(pars)
+    k_test, z, pk_test = results.get_nonlinear_matter_power_spectrum(
+        hubble_units=False, k_hunit=False
+    )
+    ksel = (k_test > coscal.kmin) * (k_test < coscal.kmax)
+    k_test = k_test[ksel]
+    pk_test = pk_test[-1, ksel]
+    coscal.get_matter_power_spectrum()
+    pk_interp = coscal.matter_power_spectrum_fnc(k_test)
+    assert np.abs((pk_test - pk_interp) / pk_test).max() < 5e-3
