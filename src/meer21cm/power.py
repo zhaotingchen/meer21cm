@@ -266,12 +266,17 @@ class FieldPowerSpectrum:
             self.get_fourier_field_1()
         if self._fourier_field_2 is None:
             self.get_fourier_field_2()
+        weights_2 = self.weights_2
+        # if none, the default for get_power_spectrum is
+        # to use weights_1, here we want separate weights_2
+        if weights_2 is None:
+            weights_2 = np.ones(self.fourier_field_2.shape)
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,
             weights=self.weights_1,
             field_2=self.fourier_field_2,
-            weights_2=self.weights_2,
+            weights_2=weights_2,
         )
         return power_spectrum
 
@@ -353,6 +358,49 @@ def get_shot_noise(
     return shot_noise
 
 
+def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
+    """
+    Convolve a model power spectrum with real-space weights.
+    """
+    weights_fourier = np.fft.fftn(weights1_in_real)
+    if weights2 is None:
+        weights_fourier = np.abs(weights_fourier) ** 2
+    else:
+        weights_fourier *= np.conj(np.fft.fftn(weights2))
+    weights_fourier = np.real(weights_fourier)
+    power_conv = (
+        np.fft.ifftn(np.fft.fftn(psmod * weights_fourier)) / weights1_in_real.size
+    )
+    if renorm:
+        weights_renorm = power_weights_renorm(weights1_in_real, weights2=weights2)
+        power_conv *= weights_renorm
+    return power_conv
+
+
+def power_weights_renorm(weights1_in_real, weights2=None):
+    """
+    Calculate the renormalization coefficient based on the weights
+    on the density field when calculating power spectrum
+
+    Parameters
+    ----------
+        weights1_in_real: array.
+            The weights of the density field in real space.
+            Must be in the shape of the regular grid field.
+        weights2: array, None.
+            If cross-correlation, the weights for the second field.
+
+    Returns
+    -------
+        weights_norm: float.
+           The renormalization coefficient.
+    """
+    if weights2 is None:
+        weights2 = weights1_in_real
+    weights_norm = weights1_in_real.size / np.sum(weights1_in_real * weights2)
+    return weights_norm
+
+
 def get_power_spectrum(
     fourier_field,
     box_len,
@@ -367,11 +415,7 @@ def get_power_spectrum(
     field_2 = np.array(field_2)
     if weights is None:
         weights = np.ones(fourier_field.shape)
-    if weights_2 is None:
-        weights_2 = np.ones(fourier_field.shape)
-    weights = np.array(weights)
-    weights_2 = np.array(weights_2)
-    weights_norm = fourier_field.size / np.sum(weights * weights_2)
+    weights_norm = power_weights_renorm(weights, weights_2)
     power = np.real(fourier_field * np.conj(field_2)) * weights_norm
     box_volume = np.prod(box_len)
     return power * box_volume

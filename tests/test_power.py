@@ -2,6 +2,7 @@ import numpy as np
 from meer21cm.power import *
 from powerbox import PowerBox
 import pytest
+from scipy.signal import windows
 
 
 def test_get_k_vector():
@@ -201,6 +202,68 @@ def test_bin_functions():
         k1d_edges,
         error=False,
     )
+
+
+def test_power_weights_renorm():
+    # uniform weights should give 1
+    weights = np.ones([10, 10, 10])
+    assert np.allclose(power_weights_renorm(weights), 1)
+    # try a typical taper with uniform power
+    power1 = np.ones([100, 100, 100])
+    taper = windows.blackmanharris(100)[None, None, :] * np.ones_like(power1)
+    assert np.allclose(
+        get_modelpk_conv(
+            np.ones_like(power1),
+            taper,
+        ).mean(),
+        1,
+    )
+    assert np.allclose(get_modelpk_conv(np.ones_like(power1), taper, taper).mean(), 1)
+    # try a random thermal noise
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = FieldPowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+    )
+    # without taper
+    power1 = ps.auto_power_3d_1
+    floor1 = power1.mean()
+    # with taper
+    taper = windows.blackmanharris(box_dim[1])
+    taper = taper[None, :, None] * np.ones(box_dim)
+    ps = FieldPowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        weights_1=taper,
+    )
+    power2 = ps.auto_power_3d_1
+    floor2 = power2.mean()
+    assert np.abs((floor2 - floor1) / floor1) < 1e-2
+    # test with one weight and no second weight
+    ps = FieldPowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        weights_1=taper,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+    )
+    power3 = ps.cross_power_3d
+    floor3 = power3.mean()
+    assert np.abs((floor3 - floor1) / floor1) < 1e-2
 
 
 def test_get_gaussian_noise_floor():
