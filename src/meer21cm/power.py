@@ -137,7 +137,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             )
 
 
-class MapPowerSpectrum:
+class FieldPowerSpectrum:
     def __init__(
         self,
         field_1,
@@ -172,6 +172,8 @@ class MapPowerSpectrum:
         if field_2 is not None:
             error_message = "field_1 and field_2 must have same dimensions"
             assert np.allclose(field_2.shape, field_1.shape), error_message
+        self._fourier_field_1 = None
+        self._fourier_field_2 = None
 
     @property
     def k_vec(self):
@@ -194,16 +196,22 @@ class MapPowerSpectrum:
 
     @property
     def fourier_field_1(self):
+        return self._fourier_field_1
+
+    def get_fourier_field_1(self):
         result = get_fourier_density(
             self.field_1,
             weights=self.weights_1,
             mean_center=self.mean_center_1,
             unitless=self.unitless_1,
         )
-        return result
+        self._fourier_field_1 = result
 
     @property
     def fourier_field_2(self):
+        return self._fourier_field_2
+
+    def get_fourier_field_2(self):
         if self.field_2 is None:
             return None
         result = get_fourier_density(
@@ -212,10 +220,12 @@ class MapPowerSpectrum:
             mean_center=self.mean_center_2,
             unitless=self.unitless_2,
         )
-        return result
+        self._fourier_field_2 = result
 
     @property
     def auto_power_3d_1(self):
+        if self._fourier_field_1 is None:
+            self.get_fourier_field_1()
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,
@@ -233,6 +243,8 @@ class MapPowerSpectrum:
     def auto_power_3d_2(self):
         if self.field_2 is None:
             return None
+        if self._fourier_field_2 is None:
+            self.get_fourier_field_2()
         power_spectrum = get_power_spectrum(
             self.fourier_field_2,
             self.box_len,
@@ -250,6 +262,10 @@ class MapPowerSpectrum:
     def cross_power_3d(self):
         if self.field_2 is None:
             return None
+        if self._fourier_field_1 is None:
+            self.get_fourier_field_1()
+        if self._fourier_field_2 is None:
+            self.get_fourier_field_2()
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,

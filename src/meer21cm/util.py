@@ -68,8 +68,8 @@ def omega_hi_to_average_temp(omega_hi, z=0, cosmo=Planck18):
 
     Returns
     -------
-    C_HI: quantity.
-        The coefficient
+    t_bar: float.
+        The average HI temperature in Kelvin
     """
     c_hi = coeff_hi_density_to_temp(z=z, cosmo=cosmo)
     t_bar = (c_hi * cosmo.critical_density0 * omega_hi).to("K").value

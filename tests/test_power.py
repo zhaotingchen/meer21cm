@@ -82,7 +82,7 @@ def test_get_power_spectrum():
     assert np.abs(power_3d.std() / power_sn - 1) < 5e-2
 
 
-def test_MapPowerSpectrum():
+def test_FieldPowerSpectrum():
     box_len = np.array([100, 50, 100])
     box_dim = np.array([100, 200, 60])
     box_resol = box_len / box_dim
@@ -97,7 +97,7 @@ def test_MapPowerSpectrum():
         delta_x,
         box_len,
     )
-    ps = MapPowerSpectrum(
+    ps = FieldPowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -112,10 +112,11 @@ def test_MapPowerSpectrum():
     ps.fourier_field_2
     ps.auto_power_3d_2
     ps.cross_power_3d
+    ps.get_fourier_field_2()
     power = ps.auto_power_3d_1
     assert np.abs(power.mean()) < 1
 
-    ps = MapPowerSpectrum(
+    ps = FieldPowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -128,6 +129,20 @@ def test_MapPowerSpectrum():
     )
     power = ps.auto_power_3d_2
     assert np.abs(power.mean()) < 1
+    power = ps.cross_power_3d
+    assert np.abs((power.mean() - sn) / sn) < 2e-2
+
+    ps = FieldPowerSpectrum(
+        delta_x,
+        box_len,
+        remove_sn_1=True,
+        unitless_1=True,
+        mean_center_1=True,
+        field_2=delta_x,
+        remove_sn_2=True,
+        mean_center_2=True,
+        unitless_2=True,
+    )
     power = ps.cross_power_3d
     assert np.abs((power.mean() - sn) / sn) < 2e-2
 
@@ -153,7 +168,7 @@ def test_raise_error():
     box_len = [1, 1, 1]
     delta_2 = np.ones([2, 2, 2])
     with pytest.raises(AssertionError):
-        ps = MapPowerSpectrum(delta_x, box_len, field_2=delta_2)
+        ps = FieldPowerSpectrum(delta_x, box_len, field_2=delta_2)
 
 
 def test_bin_functions():
@@ -193,7 +208,7 @@ def test_get_gaussian_noise_floor():
     box_dim = np.array([100, 200, 41])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
-    ps = MapPowerSpectrum(
+    ps = FieldPowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -211,7 +226,7 @@ def test_get_gaussian_noise_floor():
     # test weights
     counts = np.random.randint(1, 100, size=rand_noise.shape)
     rand_noise = rand_noise / np.sqrt(counts)
-    ps = MapPowerSpectrum(
+    ps = FieldPowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
