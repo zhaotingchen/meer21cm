@@ -15,7 +15,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_bias_2=None,
         sigma_v_2=0.0,
         matter_only_rsd=False,
-        include_beam=True,
+        include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
         **params,
@@ -26,14 +26,18 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.tracer_bias_2 = tracer_bias_2
         self.sigma_v_2 = sigma_v_2
         self.matter_only_rsd = matter_only_rsd
+        self.kmode = kmode
+        self.mumode = mumode
         if kmode is None:
             self.kmode = np.geomspace(self.kmin, self.kmax, 100)
         if mumode is None:
             self.mumode = np.zeros_like(self.kmode)
         self.include_beam = include_beam
+        self.has_beam = True
         if self.sigma_beam_ch is None and self.include_beam:
             print("no input beam found, setting include_beam to False")
-            self.include_beam = False
+            self.include_beam = [False, False]
+            self.has_beam = False
         self.fog_profile = fog_profile
         self.cross_coeff = cross_coeff
         self._auto_power_matter = None
@@ -69,6 +73,17 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def cross_power_tracer(self):
         return self._cross_power_tracer
 
+    def beam_attenuation(self):
+        if not self.has_beam:
+            return 1.0
+        # in the future for asymmetric beam this way
+        # of writing may be probelmatic
+        k_perp = self.kmode * np.sqrt(1 - self.mumode**2)
+        sigma_beam_rad = (self.sigma_beam_ch.mean() * self.beam_unit).to("rad").value
+        sigma_beam_mpc = sigma_beam_rad * self.comoving_distance(self.z).to("Mpc").value
+        B_beam = gaussian_beam_attenuation(k_perp, sigma_beam_mpc)
+        return B_beam
+
     def cal_rsd_power(
         self,
         power_in_real_space,
@@ -95,6 +110,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return power_in_redshift_space
 
     def get_model_power(self):
+        B_beam = self.beam_attenuation()
+        tracer_beam_indx = np.array(self.include_beam).astype("int")
         if self.matter_power_spectrum_fnc is None:
             self.get_matter_power_spectrum()
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
@@ -114,6 +131,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             beta_1,
             self.sigma_v_1,
         )
+        self._auto_power_tracer_1 *= B_beam ** (tracer_beam_indx[0] * 2)
         if self.tracer_bias_2 is not None:
             if self.matter_only_rsd:
                 beta_2 = self.f_growth
@@ -125,6 +143,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 beta_2,
                 self.sigma_v_2,
             )
+            self._auto_power_tracer_2 *= B_beam ** (tracer_beam_indx[1] * 2)
+
             # cross power
             pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
             self._cross_power_tracer = self.cal_rsd_power(
@@ -134,6 +154,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 beta2=beta_2,
                 sigmav_2=self.sigma_v_2,
                 r=self.cross_coeff,
+            )
+            self._cross_power_tracer *= B_beam ** (
+                tracer_beam_indx[0] + tracer_beam_indx[1]
             )
 
 
@@ -531,3 +554,18 @@ def get_independent_fourier_modes(box_dim):
     unique[indx] += 1
     unique = unique.reshape(box_dim) > 0
     return unique
+
+
+def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
+    """
+    The beam attenuation term to be multiplied to model power
+    spectrum assuming a Gaussian beam.
+
+    Parameter
+    ---------
+    k_perp: float.
+        The transverse k-scale in Mpc^-1
+    beam_sigma_in_mpc: float.
+        The sigma of the Gaussian beam in Mpc.
+    """
+    return np.exp(-(k_perp**2) * beam_sigma_in_mpc**2 / 2)

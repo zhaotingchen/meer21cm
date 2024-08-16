@@ -26,6 +26,7 @@ class Specification:
         cosmo="Planck18",
         map_has_sampling=None,
         sigma_beam_ch=None,
+        beam_unit=units.deg,
         map_unit=units.K,
         **kwparams,
     ):
@@ -45,6 +46,7 @@ class Specification:
         self.num_pix_x = num_pix_x
         self.num_pix_y = num_pix_y
         self.sigma_beam_ch = sigma_beam_ch
+        self.beam_unit = beam_unit
         if map_has_sampling is None:
             map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
         self.map_has_sampling = map_has_sampling
