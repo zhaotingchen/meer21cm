@@ -464,3 +464,37 @@ def test_gaussian_beam_attenuation():
     assert np.allclose(tracer_ps_rsd_1 / tracer_ps_rsd_1_b, [4, 4])
     # tracer_2 does not have beam
     assert np.allclose(tracer_ps_rsd_c / tracer_ps_rsd_c_b, [2, 2])
+
+
+def test_set_corrtype():
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = FieldPowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+    )
+    ps.set_corr_type("gal", 1)
+    assert ps.mean_center_1 == True
+    assert ps.unitless_1 == True
+    assert ps.remove_sn_1 == True
+    ps.set_corr_type("HI", 1)
+    assert ps.mean_center_1 == False
+    assert ps.unitless_1 == False
+    assert ps.remove_sn_1 == False
+    power = ps.auto_power_3d_1
+    floor1 = ps.auto_power_3d_1.mean()
+    floor2 = get_gaussian_noise_floor(
+        1,
+        box_dim,
+        box_volume=np.prod(ps.box_len),
+    )
+    assert np.abs((floor1 - floor2) / floor1) < 2e-2
+    with pytest.raises(ValueError):
+        ps.set_corr_type("gal", 3)
+    with pytest.raises(ValueError):
+        ps.set_corr_type("something", 1)

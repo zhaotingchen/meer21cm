@@ -175,10 +175,8 @@ class FieldPowerSpectrum:
         unitless_2=False,
         remove_sn_2=False,
         corrtype=None,
-        fullpk=False,
         k1dbins=None,
     ):
-        self.fullpk = fullpk
         self.field_1 = field_1
         self.weights_1 = weights_1
         self.field_2 = field_2
@@ -197,6 +195,38 @@ class FieldPowerSpectrum:
             assert np.allclose(field_2.shape, field_1.shape), error_message
         self._fourier_field_1 = None
         self._fourier_field_2 = None
+
+    def set_corr_type(self, corr_type, tracer_indx):
+        """
+        A utility function to help decide whether a tracer field
+        needs to be mean centred, renormalised by its mean, and shot noise removed.
+        Currently only two types are supported, "Gal" and "HI" (case-insensitive).
+        If the tracer is galaxy (number counts),
+        the auto power spectrum is mean centred, renormalised, and then
+        shot noise removed. If HI, none of the above will be performed.
+
+        Parameters
+        ----------
+        corr_type: str
+            The tracer type.
+        tracer_indx: int
+            Either 1 or 2.
+        """
+        if corr_type[:3].lower() == "gal":
+            mean_center = True
+            unitless = True
+            remove_sn = True
+        elif corr_type[:2].lower() == "hi":
+            mean_center = False
+            unitless = False
+            remove_sn = False
+        else:
+            raise ValueError("unknown corr_type")
+        if not tracer_indx in [1, 2]:
+            raise ValueError("tracer_indx should be either 1 or 2")
+        setattr(self, "mean_center_" + str(tracer_indx), mean_center)
+        setattr(self, "unitless_" + str(tracer_indx), unitless)
+        setattr(self, "remove_sn_" + str(tracer_indx), remove_sn)
 
     @property
     def k_vec(self):
