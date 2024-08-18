@@ -3,6 +3,7 @@ from meer21cm.power import *
 from powerbox import PowerBox
 import pytest
 from scipy.signal import windows
+from meer21cm import PowerSpectrum
 
 
 def test_get_k_vector():
@@ -98,7 +99,7 @@ def test_FieldPowerSpectrum():
         delta_x,
         box_len,
     )
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -117,7 +118,7 @@ def test_FieldPowerSpectrum():
     power = ps.auto_power_3d_1
     assert np.abs(power.mean()) < 1
 
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -133,7 +134,7 @@ def test_FieldPowerSpectrum():
     power = ps.cross_power_3d
     assert np.abs((power.mean() - sn) / sn) < 2e-2
 
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         delta_x,
         box_len,
         remove_sn_1=True,
@@ -169,7 +170,7 @@ def test_raise_error():
     box_len = [1, 1, 1]
     delta_2 = np.ones([2, 2, 2])
     with pytest.raises(AssertionError):
-        ps = FieldPowerSpectrum(delta_x, box_len, field_2=delta_2)
+        ps = PowerSpectrum(delta_x, box_len, field_2=delta_2)
 
 
 def test_bin_functions():
@@ -186,7 +187,7 @@ def test_bin_functions():
     power_3d = np.linspace(0, 9, 10)
     k_mode = np.linspace(90, 99, 10)
     k1d_edges = np.linspace(90, 100, 11)
-    ps1d, ps1derr, nmodes, k1deff = bin_3d_to_1d(
+    ps1d, ps1derr, k1deff, nmodes = bin_3d_to_1d(
         power_3d,
         k_mode,
         k1d_edges,
@@ -196,7 +197,7 @@ def test_bin_functions():
     assert np.allclose(k1deff, k_mode)
     assert np.allclose(nmodes, np.ones_like(nmodes))
     assert np.allclose(ps1derr, np.zeros_like(nmodes))
-    ps1d, k1deff = bin_3d_to_1d(
+    ps1d, k1deff, _ = bin_3d_to_1d(
         power_3d,
         k_mode,
         k1d_edges,
@@ -224,7 +225,7 @@ def test_power_weights_renorm():
     box_dim = np.array([100, 200, 41])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -237,7 +238,7 @@ def test_power_weights_renorm():
     # with taper
     taper = windows.blackmanharris(box_dim[1])
     taper = taper[None, :, None] * np.ones(box_dim)
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -249,7 +250,7 @@ def test_power_weights_renorm():
     floor2 = power2.mean()
     assert np.abs((floor2 - floor1) / floor1) < 1e-2
     # test with one weight and no second weight
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -266,12 +267,38 @@ def test_power_weights_renorm():
     assert np.abs((floor3 - floor1) / floor1) < 1e-2
 
 
+def test_get_modelpk_conv():
+    box_dim = np.array([100, 200, 41])
+    test_ps = np.ones(box_dim)
+    # uniform weights
+    test_ps_conv = get_modelpk_conv(
+        test_ps, weights1_in_real=test_ps, weights2=None, renorm=True
+    )
+    assert np.allclose(test_ps, test_ps_conv)
+    # test a taper with ps with a spectral index
+    field = PowerSpectrum(
+        field_1=np.ones(box_dim),
+        box_len=box_dim,
+    )
+    kmode = field.k_mode
+    test_ps = np.zeros_like(kmode)
+    # ns = 2
+    test_ps[kmode != 0] = kmode[kmode != 0] ** (-2)
+    # any direction would do
+    taper = windows.blackmanharris(box_dim[0])[:, None, None] + np.zeros_like(kmode)
+    test_ps_conv = get_modelpk_conv(test_ps, weights1_in_real=taper)
+    # p * k^2 should be one
+    assert np.abs((test_ps_conv * kmode**2).mean() - 1) < 1e-3
+    # mode-mixing is small, so every k-mode should also be p * k^2 about 1, litte var
+    assert (test_ps_conv * kmode**2).std() < 1e-2
+
+
 def test_get_gaussian_noise_floor():
     box_len = np.array([80, 50, 100])
     box_dim = np.array([100, 200, 41])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -289,7 +316,7 @@ def test_get_gaussian_noise_floor():
     # test weights
     counts = np.random.randint(1, 100, size=rand_noise.shape)
     rand_noise = rand_noise / np.sqrt(counts)
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,
@@ -471,7 +498,7 @@ def test_set_corrtype():
     box_dim = np.array([100, 200, 41])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
-    ps = FieldPowerSpectrum(
+    ps = PowerSpectrum(
         rand_noise,
         box_len,
         remove_sn_1=False,

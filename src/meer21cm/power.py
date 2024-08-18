@@ -1,5 +1,5 @@
 """
-This power handles computation of power spectrum from gridded fields.
+This module handles computation of power spectrum from gridded fields.
 """
 import numpy as np
 from meer21cm.cosmology import CosmologyCalculator
@@ -182,6 +182,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 tracer_beam_indx[0] + tracer_beam_indx[1]
             )
             self._cross_power_tracer_model *= B_sampling
+            self._cross_power_tracer_model[self.kmode == 0] = 0.0
             self._cross_power_tracer_model = get_modelpk_conv(
                 self._cross_power_tracer_model,
                 weights1_in_real=self.weights_1,
@@ -204,7 +205,6 @@ class FieldPowerSpectrum:
         unitless_2=False,
         remove_sn_2=False,
         corrtype=None,
-        k1dbins=None,
     ):
         self.field_1 = field_1
         self.weights_1 = weights_1
@@ -482,7 +482,8 @@ def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
         weights_fourier *= np.conj(np.fft.fftn(weights2))
     weights_fourier = np.real(weights_fourier)
     power_conv = (
-        np.fft.ifftn(np.fft.fftn(psmod * weights_fourier)) / weights1_in_real.size
+        np.fft.ifftn(np.fft.fftn(psmod) * np.fft.fftn(weights_fourier))
+        / weights1_in_real.size**2
     )
     if renorm:
         weights_renorm = power_weights_renorm(weights1_in_real, weights2=weights2)
@@ -556,11 +557,44 @@ def bin_3d_to_1d(
     weights=None,
     error=False,
 ):
+    r"""
+    Bin a 3d distribution, e.g. power spectrum :math:`P_{3D}(\vec{k})`, into 1D average.
+
+    Note that, the distribution is unraveled to a 1D array, so essentially an array of any
+    dimension would do, as long as ``ps3d``, ``kfield``, and ``weights`` have the same size.
+
+    The mean of the 1D average is calculated as
+
+    .. math::
+        \hat{P}_{\rm 1D}^{i} = \big(\sum_j P_{\rm 3D}^{ j} w_{ j} \big)/\big(\sum_j w_{ j}\big),
+
+    where j loops over all the modess that fall into the :math:`i^{\rm th}` bin
+    and :math:`w_{ j}` is the weights.
+
+    If ``error`` is set to ``True``, a sampling error is calculated and returned so that
+
+    .. math::
+        (\Delta P_{\rm 1D}^{\rm i})^2 = \big(\sum_j (P_{\rm 3D}^{\rm j}-\hat{P}_{\rm 1D}^{\rm i})^2 w_{\rm j}^2 \big) \Big/ \big(\sum_j w_{\rm j}\big)^2.
+
+
+
+    Parameters
+    ----------
+        ps3d: array.
+            The 3D distribution to be binned
+        weights2: array, None.
+            If cross-correlation, the weights for the second field.
+
+    Returns
+    -------
+        weights_norm: float.
+           The renormalization coefficient.
+    """
     ps3d = np.ravel(ps3d)
     kfield = np.ravel(kfield)
     if weights is None:
         weights = np.ones_like(ps3d)
-    weights = np.array(weights)
+    weights = np.array(weights).ravel()
 
     indx = (kfield[:, None] >= k1dedges[None, :-1]) * (
         kfield[:, None] < k1dedges[None, 1:]
@@ -578,12 +612,12 @@ def bin_3d_to_1d(
             )
             / np.sum((indx * weights[:, None]), 0) ** 2
         )
-        nmodes = np.sum(indx * weights[:, None], 0)
+    nmodes = np.sum(indx * (weights[:, None] > 0), 0)
 
     if error is True:
-        return ps1d, ps1derr, nmodes, k1deff
+        return ps1d, ps1derr, k1deff, nmodes
     else:
-        return ps1d, k1deff
+        return ps1d, k1deff, nmodes
 
 
 def bin_3d_to_cy(
@@ -675,3 +709,68 @@ def step_window_attenuation(k_dir, step_size_in_mpc):
     """
     # note np.sinc is sin(pi x)/(pi x)
     return np.sinc(k_dir * step_size_in_mpc / np.pi / 2)
+
+
+class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
+    def __init__(
+        self,
+        field_1,
+        box_len,
+        weights_1=None,
+        mean_center_1=False,
+        unitless_1=False,
+        remove_sn_1=False,
+        field_2=None,
+        weights_2=None,
+        mean_center_2=False,
+        unitless_2=False,
+        remove_sn_2=False,
+        corrtype=None,
+        k1dbins=None,
+        tracer_bias_1=1.0,
+        sigma_v_1=0.0,
+        tracer_bias_2=None,
+        sigma_v_2=0.0,
+        matter_only_rsd=False,
+        include_beam=[True, False],
+        fog_profile="lorentz",
+        cross_coeff=1.0,
+        **params,
+    ):
+        FieldPowerSpectrum.__init__(
+            self,
+            field_1,
+            box_len,
+            weights_1=weights_1,
+            mean_center_1=mean_center_1,
+            unitless_1=unitless_1,
+            remove_sn_1=remove_sn_1,
+            field_2=field_2,
+            weights_2=weights_2,
+            mean_center_2=mean_center_2,
+            unitless_2=unitless_2,
+            remove_sn_2=remove_sn_2,
+            corrtype=corrtype,
+            **params,
+        )
+        # use field kmode to propagate into model
+        kmode = self.k_mode
+        mumode = self.k_para
+        slice_indx = (None,) * (len(field_1.shape) - 1)
+        slice_indx += (slice(None, None, None),)
+        mumode = self.k_para[slice_indx] / kmode
+        super(ModelPowerSpectrum, self).__init__(
+            kmode=kmode,
+            mumode=mumode,
+            tracer_bias_1=tracer_bias_1,
+            sigma_v_1=sigma_v_1,
+            tracer_bias_2=tracer_bias_2,
+            sigma_v_2=sigma_v_2,
+            matter_only_rsd=matter_only_rsd,
+            include_beam=include_beam,
+            fog_profile=fog_profile,
+            cross_coeff=cross_coeff,
+            weights_1=weights_1,
+            weights_2=weights_2,
+            **params,
+        )
