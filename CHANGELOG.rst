@@ -7,6 +7,7 @@ Features
 ++++++++
 * a base class for better structure
 * model power spectrum
+* power spectrum weights and convolution
 
 Enhancements
 ++++++++++++

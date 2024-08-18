@@ -328,31 +328,31 @@ def test_ModelPowerSpectrum():
     model = ModelPowerSpectrum()
     model.get_model_power()
     matter_ps_real = model.matter_power_spectrum_fnc(model.kmode)
-    assert np.allclose(model.auto_power_matter, matter_ps_real)
+    assert np.allclose(model.auto_power_matter_model, matter_ps_real)
 
     # add rsd, test kaiser term
     model.mumode = np.ones_like(model.kmode)
     model.get_model_power()
-    matter_ps_rsd = model.auto_power_matter
+    matter_ps_rsd = model.auto_power_matter_model
     assert np.allclose(matter_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2)
 
     # test tracer with no rsd but with bias
     model = ModelPowerSpectrum(tracer_bias_1=2.0)
     model.get_model_power()
-    tracer_ps_rsd = model.auto_power_tracer_1
+    tracer_ps_rsd = model.auto_power_tracer_1_model
     assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
 
     # add rsd
     model.mumode = np.ones_like(model.kmode)
     model.matter_only_rsd = True
     model.get_model_power()
-    tracer_ps_rsd = model.auto_power_tracer_1
+    tracer_ps_rsd = model.auto_power_tracer_1_model
     assert np.allclose(tracer_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 4)
 
     # true rsd
     model.matter_only_rsd = False
     model.get_model_power()
-    tracer_ps_rsd = model.auto_power_tracer_1
+    tracer_ps_rsd = model.auto_power_tracer_1_model
     assert np.allclose(
         tracer_ps_rsd / matter_ps_real, (1 + model.f_growth / 2.0) ** 2 * 4
     )
@@ -364,17 +364,17 @@ def test_ModelPowerSpectrum():
         cross_coeff=0.5,
     )
     model.get_model_power()
-    tracer_ps_rsd = model.auto_power_tracer_1
+    tracer_ps_rsd = model.auto_power_tracer_1_model
     assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
-    tracer_ps_rsd = model.auto_power_tracer_2
+    tracer_ps_rsd = model.auto_power_tracer_2_model
     assert np.allclose(tracer_ps_rsd, matter_ps_real * 9)
 
     # add rsd
     model.mumode = np.ones_like(model.kmode)
     model.matter_only_rsd = True
     model.get_model_power()
-    tracer_ps_rsd = model.auto_power_tracer_2
-    cross_ps_rsd = model.cross_power_tracer
+    tracer_ps_rsd = model.auto_power_tracer_2_model
+    cross_ps_rsd = model.cross_power_tracer_model
     assert np.allclose(tracer_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 9)
     assert np.allclose(
         cross_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 6 - 6 + 6 * 0.5
@@ -383,8 +383,8 @@ def test_ModelPowerSpectrum():
     # true rsd
     model.matter_only_rsd = False
     model.get_model_power()
-    tracer_ps_rsd = model.auto_power_tracer_2
-    cross_ps_rsd = model.cross_power_tracer
+    tracer_ps_rsd = model.auto_power_tracer_2_model
+    cross_ps_rsd = model.cross_power_tracer_model
     assert np.allclose(
         tracer_ps_rsd / matter_ps_real, (1 + model.f_growth / 3.0) ** 2 * 9
     )
@@ -413,9 +413,9 @@ def test_gaussian_beam_attenuation():
     )
     model.mumode = np.ones_like(model.kmode)
     model.get_model_power()
-    tracer_ps_rsd_1 = model.auto_power_tracer_1
-    tracer_ps_rsd_2 = model.auto_power_tracer_2
-    cross_ps_rsd = model.cross_power_tracer
+    tracer_ps_rsd_1 = model.auto_power_tracer_1_model
+    tracer_ps_rsd_2 = model.auto_power_tracer_2_model
+    cross_ps_rsd = model.cross_power_tracer_model
     # with beam
     model = ModelPowerSpectrum(
         tracer_bias_1=2.0,
@@ -425,9 +425,9 @@ def test_gaussian_beam_attenuation():
     )
     model.mumode = np.ones_like(model.kmode)
     model.get_model_power()
-    tracer_ps_rsd_1_b = model.auto_power_tracer_1
-    tracer_ps_rsd_2_b = model.auto_power_tracer_2
-    cross_ps_rsd_b = model.cross_power_tracer
+    tracer_ps_rsd_1_b = model.auto_power_tracer_1_model
+    tracer_ps_rsd_2_b = model.auto_power_tracer_2_model
+    cross_ps_rsd_b = model.cross_power_tracer_model
     assert np.allclose(tracer_ps_rsd_1_b, tracer_ps_rsd_1)
     assert np.allclose(tracer_ps_rsd_2_b, tracer_ps_rsd_2)
     assert np.allclose(cross_ps_rsd_b, cross_ps_rsd)
@@ -447,8 +447,8 @@ def test_gaussian_beam_attenuation():
         sigma_beam_ch=np.ones(100),
     )
     model.get_model_power()
-    tracer_ps_rsd_1_b = model.auto_power_tracer_1
-    tracer_ps_rsd_c_b = model.cross_power_tracer
+    tracer_ps_rsd_1_b = model.auto_power_tracer_1_model
+    tracer_ps_rsd_c_b = model.cross_power_tracer_model
     model = ModelPowerSpectrum(
         kmode=np.array([1 / fwhm_beam, 1 / fwhm_beam]),
         mumode=np.array([0, 0]),
@@ -459,8 +459,8 @@ def test_gaussian_beam_attenuation():
     )
     model.get_model_power()
 
-    tracer_ps_rsd_1 = model.auto_power_tracer_1
-    tracer_ps_rsd_c = model.cross_power_tracer
+    tracer_ps_rsd_1 = model.auto_power_tracer_1_model
+    tracer_ps_rsd_c = model.cross_power_tracer_model
     assert np.allclose(tracer_ps_rsd_1 / tracer_ps_rsd_1_b, [4, 4])
     # tracer_2 does not have beam
     assert np.allclose(tracer_ps_rsd_c / tracer_ps_rsd_c_b, [2, 2])
@@ -498,3 +498,8 @@ def test_set_corrtype():
         ps.set_corr_type("gal", 3)
     with pytest.raises(ValueError):
         ps.set_corr_type("something", 1)
+
+
+def test_step_window_attenuation():
+    assert step_window_attenuation(1, 1) == np.sinc(1 / np.pi / 2)
+    assert step_window_attenuation(0, 0) == 1.0

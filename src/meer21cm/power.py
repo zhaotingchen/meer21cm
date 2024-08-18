@@ -18,6 +18,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
+        weights_1=None,
+        weights_2=None,
         **params,
     ):
         super().__init__(**params)
@@ -34,16 +36,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.mumode = np.zeros_like(self.kmode)
         self.include_beam = include_beam
         self.has_beam = True
-        if self.sigma_beam_ch is None and self.include_beam:
+        if self.sigma_beam_ch is None and (np.array(self.include_beam).sum() > 0):
             print("no input beam found, setting include_beam to False")
             self.include_beam = [False, False]
             self.has_beam = False
         self.fog_profile = fog_profile
         self.cross_coeff = cross_coeff
-        self._auto_power_matter = None
-        self._auto_power_tracer_1 = None
-        self._auto_power_tracer_2 = None
-        self._cross_power_tracer = None
+        self._auto_power_matter_model = None
+        self._auto_power_tracer_1_model = None
+        self._auto_power_tracer_2_model = None
+        self._cross_power_tracer_model = None
+        self.weights_1 = weights_1
+        self.weights_2 = weights_2
+        self.has_resol = False
 
     def fog_lorentz(self, sigma_v):
         """
@@ -58,20 +63,24 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return getattr(self, "fog_" + self.fog_profile)(sigma_v)
 
     @property
-    def auto_power_matter(self):
-        return self._auto_power_matter
+    def auto_power_matter_model(self):
+        return self._auto_power_matter_model
 
     @property
-    def auto_power_tracer_1(self):
-        return self._auto_power_tracer_1
+    def auto_power_tracer_1_model(self):
+        return self._auto_power_tracer_1_model
 
     @property
-    def auto_power_tracer_2(self):
-        return self._auto_power_tracer_2
+    def auto_power_tracer_2_model(self):
+        return self._auto_power_tracer_2_model
 
     @property
-    def cross_power_tracer(self):
-        return self._cross_power_tracer
+    def cross_power_tracer_model(self):
+        return self._cross_power_tracer_model
+
+    def step_sampling(self):
+        if not self.has_resol:
+            return 1.0
 
     def beam_attenuation(self):
         if not self.has_beam:
@@ -111,12 +120,13 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     def get_model_power(self):
         B_beam = self.beam_attenuation()
+        B_sampling = self.step_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")
         if self.matter_power_spectrum_fnc is None:
             self.get_matter_power_spectrum()
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         beta_m = self.f_growth
-        self._auto_power_matter = self.cal_rsd_power(
+        self._auto_power_matter_model = self.cal_rsd_power(
             pk3d_mm_r,
             beta_m,
             0.0,
@@ -126,28 +136,40 @@ class ModelPowerSpectrum(CosmologyCalculator):
             beta_1 = self.f_growth
         else:
             beta_1 = self.f_growth / self.tracer_bias_1
-        self._auto_power_tracer_1 = self.cal_rsd_power(
+        self._auto_power_tracer_1_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta_1,
             self.sigma_v_1,
         )
-        self._auto_power_tracer_1 *= B_beam ** (tracer_beam_indx[0] * 2)
+        self._auto_power_tracer_1_model *= B_beam ** (tracer_beam_indx[0] * 2)
+        self._auto_power_tracer_1_model *= B_sampling
+        self._auto_power_tracer_1_model[self.kmode == 0] = 0.0
+        self._auto_power_tracer_1_model = get_modelpk_conv(
+            self._auto_power_tracer_1_model,
+            weights1_in_real=self.weights_1,
+        )
         if self.tracer_bias_2 is not None:
             if self.matter_only_rsd:
                 beta_2 = self.f_growth
             else:
                 beta_2 = self.f_growth / self.tracer_bias_2
             pk3d_tt_r = self.tracer_bias_2**2 * pk3d_mm_r
-            self._auto_power_tracer_2 = self.cal_rsd_power(
+            self._auto_power_tracer_2_model = self.cal_rsd_power(
                 pk3d_tt_r,
                 beta_2,
                 self.sigma_v_2,
             )
-            self._auto_power_tracer_2 *= B_beam ** (tracer_beam_indx[1] * 2)
+            self._auto_power_tracer_2_model[self.kmode == 0] = 0.0
+            self._auto_power_tracer_2_model *= B_beam ** (tracer_beam_indx[1] * 2)
+            self._auto_power_tracer_2_model *= B_sampling
 
+            self._auto_power_tracer_2_model = get_modelpk_conv(
+                self._auto_power_tracer_2_model,
+                weights1_in_real=self.weights_2,
+            )
             # cross power
             pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
-            self._cross_power_tracer = self.cal_rsd_power(
+            self._cross_power_tracer_model = self.cal_rsd_power(
                 pk3d_tt_r,
                 beta1=beta_1,
                 sigmav_1=self.sigma_v_1,
@@ -155,8 +177,15 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 sigmav_2=self.sigma_v_2,
                 r=self.cross_coeff,
             )
-            self._cross_power_tracer *= B_beam ** (
+            self._cross_power_tracer_model[self.kmode == 0] = 0.0
+            self._cross_power_tracer_model *= B_beam ** (
                 tracer_beam_indx[0] + tracer_beam_indx[1]
+            )
+            self._cross_power_tracer_model *= B_sampling
+            self._cross_power_tracer_model = get_modelpk_conv(
+                self._cross_power_tracer_model,
+                weights1_in_real=self.weights_1,
+                weights2=self.weights_2,
             )
 
 
@@ -285,6 +314,12 @@ class FieldPowerSpectrum:
             weights=self.weights_1,
         )
         if self.remove_sn_1:
+            field = get_renormed_field(
+                self.field_1,
+                weights=self.weights_1,
+                mean_center=self.mean_center_1,
+                unitless=self.unitless_1,
+            )
             power_spectrum -= get_shot_noise(
                 self.field_1,
                 self.box_len,
@@ -334,6 +369,30 @@ class FieldPowerSpectrum:
         return power_spectrum
 
 
+def get_renormed_field(
+    real_field,
+    weights=None,
+    mean_center=False,
+    unitless=False,
+):
+    """
+    Mean center the field and renormalise it by dividing the mean.
+    """
+    field = np.array(real_field)
+    if weights is None:
+        weights = np.ones_like(field)
+    weights = np.array(weights)
+    if mean_center or unitless:
+        field_mean = np.sum(weights * field) / np.sum(weights)
+    else:
+        return real_field
+    if mean_center:
+        field -= field_mean
+    if unitless:
+        field /= field_mean
+    return field
+
+
 def get_fourier_density(
     real_field,
     weights=None,
@@ -349,16 +408,15 @@ def get_fourier_density(
     Note that, the field is multiplied by the weights
     and then Fourier-transformed, and is **not weight normalised**.
     """
-    field = np.array(real_field)
+    field = get_renormed_field(
+        real_field,
+        weights=weights,
+        mean_center=mean_center,
+        unitless=unitless,
+    )
     if weights is None:
         weights = np.ones_like(field)
     weights = np.array(weights)
-    if mean_center or unitless:
-        field_mean = np.sum(weights * real_field) / np.sum(weights)
-    if mean_center:
-        field -= field_mean
-    if unitless:
-        field /= field_mean
     fourier_field = np.fft.fftn(field * weights, norm=norm)
     return fourier_field
 
@@ -415,6 +473,8 @@ def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
     """
     Convolve a model power spectrum with real-space weights.
     """
+    if weights1_in_real is None:
+        return psmod
     weights_fourier = np.fft.fftn(weights1_in_real)
     if weights2 is None:
         weights_fourier = np.abs(weights_fourier) ** 2
@@ -427,7 +487,7 @@ def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
     if renorm:
         weights_renorm = power_weights_renorm(weights1_in_real, weights2=weights2)
         power_conv *= weights_renorm
-    return power_conv
+    return power_conv.real
 
 
 def power_weights_renorm(weights1_in_real, weights2=None):
@@ -599,3 +659,19 @@ def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
         The sigma of the Gaussian beam in Mpc.
     """
     return np.exp(-(k_perp**2) * beam_sigma_in_mpc**2 / 2)
+
+
+def step_window_attenuation(k_dir, step_size_in_mpc):
+    """
+    The beam attenuation term to be multiplied to model power
+    spectrum assuming a Gaussian beam.
+
+    Parameter
+    ---------
+    k_perp: float.
+        The transverse k-scale in Mpc^-1
+    beam_sigma_in_mpc: float.
+        The sigma of the Gaussian beam in Mpc.
+    """
+    # note np.sinc is sin(pi x)/(pi x)
+    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2)
