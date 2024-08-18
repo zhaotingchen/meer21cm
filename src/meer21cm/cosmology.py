@@ -3,6 +3,7 @@ import camb
 import astropy
 from meer21cm import Specification
 from scipy.interpolate import interp1d
+from meer21cm.util import omega_hi_to_average_temp
 
 
 class CosmologyCalculator(Specification):
@@ -20,6 +21,7 @@ class CosmologyCalculator(Specification):
         nonlinear="none",
         kmax=2.0,
         kmin=1e-4,
+        omegahi=5e-4,
         **params,
     ):
         super().__init__(**params)
@@ -27,6 +29,15 @@ class CosmologyCalculator(Specification):
         self.kmax = kmax
         self.kmin = kmin
         self._matter_power_spectrum_fnc = None
+        self.omegahi = omegahi
+
+    @property
+    def average_hi_temp(self):
+        """
+        The average HI brightness temperature in Kelvin.
+        """
+        tbar = omega_hi_to_average_temp(self.omegahi, z=self.z, cosmo=self)
+        return tbar
 
     @Specification.cosmo.setter
     def cosmo(self, value):

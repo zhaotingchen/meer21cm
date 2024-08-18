@@ -10,6 +10,7 @@ def test_cosmo():
     # test input sigma8 resulting in consistent As with Planck18
     coscal.camb_pars
     assert np.abs(np.log(1e10 * coscal.As) - 3.047) < 1e-3
+    coscal.average_hi_temp
 
 
 def test_update_pars():
