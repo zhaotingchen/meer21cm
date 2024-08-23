@@ -540,48 +540,8 @@ def test_temp_amp():
     box_dim = np.array([100, 200, 41])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
-    ps = PowerSpectrum(
-        rand_noise,
-        box_len,
-        remove_sn_1=False,
-        unitless_1=False,
-        mean_center_1=False,
-        field_2=rand_noise,
-        remove_sn_2=False,
-        mean_center_2=False,
-        unitless_2=False,
-        mean_amp_1="average_hi_temp",
-        mean_amp_2="average_hi_temp",
-    )
-    tbar = ps.average_hi_temp
-    power = ps.auto_power_3d_1
-    floor1 = ps.auto_power_3d_1.mean() / tbar**2
-    floor2 = get_gaussian_noise_floor(
-        1,
-        box_dim,
-        box_volume=np.prod(ps.box_len),
-    )
-    assert np.abs((floor1 - floor2) / floor1) < 2e-2
-    floor1 = ps.auto_power_3d_2.mean() / tbar**2
-    assert np.abs((floor1 - floor2) / floor1) < 2e-2
-    ps = PowerSpectrum(
-        rand_noise,
-        box_len,
-        remove_sn_1=False,
-        unitless_1=False,
-        mean_center_1=False,
-        field_2=rand_noise,
-        remove_sn_2=False,
-        mean_center_2=False,
-        unitless_2=False,
-        mean_amp_1="average_hi_temp",
-        mean_amp_2="one",
-    )
-    # test a custom avg
-    ps.one = 1.0
-    floor3 = ps.cross_power_3d.mean() / tbar
-    assert np.abs((floor3 - floor2) / floor1) < 2e-2
-    # test model
+    ps = ModelPowerSpectrum()
+    assert ps.step_sampling() == 1
     ps = PowerSpectrum(
         rand_noise,
         box_len,
@@ -595,6 +555,8 @@ def test_temp_amp():
         mean_amp_1="average_hi_temp",
         mean_amp_2="one",
         tracer_bias_2=1.0,
+        sampling_resol=[0.1, 0.1, 0.1],
+        model_k_from_field=True,
     )
     # test a custom avg
     ps.one = 1.0

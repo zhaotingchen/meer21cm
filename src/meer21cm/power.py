@@ -22,6 +22,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         weights_2=None,
         mean_amp_1=1.0,
         mean_amp_2=1.0,
+        sampling_resol=None,
+        include_sampling=[True, False],
         **params,
     ):
         super().__init__(**params)
@@ -53,7 +55,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
 
-        self.has_resol = False
+        self.sampling_resol = sampling_resol
+        self.has_resol = True
+        if self.sampling_resol is None:
+            self.has_resol = False
+        self.include_sampling = include_sampling
 
     def fog_lorentz(self, sigma_v):
         """
@@ -84,8 +90,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._cross_power_tracer_model
 
     def step_sampling(self):
-        if not self.has_resol:
-            return 1.0
+        return 1.0
 
     def beam_attenuation(self):
         if not self.has_beam:
@@ -127,6 +132,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")
+        tracer_samp_indx = np.array(self.include_sampling).astype("int")
+
         if self.matter_power_spectrum_fnc is None:
             self.get_matter_power_spectrum()
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
@@ -147,7 +154,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.sigma_v_1,
         )
         self._auto_power_tracer_1_model *= B_beam ** (tracer_beam_indx[0] * 2)
-        self._auto_power_tracer_1_model *= B_sampling
+        self._auto_power_tracer_1_model *= B_sampling ** (tracer_samp_indx[0] * 2)
         self._auto_power_tracer_1_model[self.kmode == 0] = 0.0
         self._auto_power_tracer_1_model = get_modelpk_conv(
             self._auto_power_tracer_1_model,
@@ -169,7 +176,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             )
             self._auto_power_tracer_2_model[self.kmode == 0] = 0.0
             self._auto_power_tracer_2_model *= B_beam ** (tracer_beam_indx[1] * 2)
-            self._auto_power_tracer_2_model *= B_sampling
+            self._auto_power_tracer_2_model *= B_sampling ** (tracer_samp_indx[1] * 2)
 
             self._auto_power_tracer_2_model = get_modelpk_conv(
                 self._auto_power_tracer_2_model,
@@ -192,7 +199,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self._cross_power_tracer_model *= B_beam ** (
                 tracer_beam_indx[0] + tracer_beam_indx[1]
             )
-            self._cross_power_tracer_model *= B_sampling
+            self._cross_power_tracer_model *= B_sampling ** (
+                tracer_samp_indx[0] + tracer_samp_indx[1]
+            )
             self._cross_power_tracer_model[self.kmode == 0] = 0.0
             self._cross_power_tracer_model = get_modelpk_conv(
                 self._cross_power_tracer_model,
@@ -341,9 +350,7 @@ class FieldPowerSpectrum:
                 self.box_len,
                 weights=self.weights_1,
             )
-        if isinstance(self.mean_amp_1, str):
-            self.mean_amp_1 = getattr(self, self.mean_amp_1)
-        return power_spectrum * self.mean_amp_1**2
+        return power_spectrum
 
     @property
     def auto_power_3d_2(self):
@@ -362,9 +369,7 @@ class FieldPowerSpectrum:
                 self.box_len,
                 weights=self.weights_2,
             )
-        if isinstance(self.mean_amp_2, str):
-            self.mean_amp_2 = getattr(self, self.mean_amp_2)
-        return power_spectrum * self.mean_amp_2**2
+        return power_spectrum
 
     @property
     def cross_power_3d(self):
@@ -386,11 +391,7 @@ class FieldPowerSpectrum:
             field_2=self.fourier_field_2,
             weights_2=weights_2,
         )
-        if isinstance(self.mean_amp_2, str):
-            self.mean_amp_2 = getattr(self, self.mean_amp_2)
-        if isinstance(self.mean_amp_1, str):
-            self.mean_amp_1 = getattr(self, self.mean_amp_1)
-        return power_spectrum * self.mean_amp_1 * self.mean_amp_2
+        return power_spectrum
 
 
 def get_renormed_field(
@@ -764,6 +765,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         model_k_from_field=False,
         mean_amp_1=1.0,
         mean_amp_2=1.0,
+        sampling_resol=None,
+        include_sampling=[True, False],
         **params,
     ):
         if field_1 is None:
@@ -784,8 +787,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             unitless_2=unitless_2,
             remove_sn_2=remove_sn_2,
             corrtype=corrtype,
-            mean_amp_1=mean_amp_1,
-            mean_amp_2=mean_amp_2,
         )
         if model_k_from_field:
             # use field kmode to propagate into model
@@ -810,6 +811,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             weights_2=weights_2,
             mean_amp_1=mean_amp_1,
             mean_amp_2=mean_amp_2,
+            sampling_resol=sampling_resol,
+            include_sampling=include_sampling,
             **params,
         )
         self.k1dbins = k1dbins
@@ -836,3 +839,17 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             weights=indep_modes * k1dweights,
         )
         return power1d, k1deff, nmodes
+
+    def step_sampling(self):
+        if not self.has_resol:
+            return 1.0
+        k_x = self.k_vec[0][:, None, None]
+        k_y = self.k_vec[1][None, :, None]
+        k_para = self.k_mode * self.mumode
+        sampling_resol = self.sampling_resol
+        B_sampling = np.nan_to_num(
+            step_window_attenuation(k_x, sampling_resol[0])
+            * step_window_attenuation(k_y, sampling_resol[1])
+            * step_window_attenuation(k_para, sampling_resol[2])
+        )
+        return B_sampling
