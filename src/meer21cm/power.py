@@ -20,6 +20,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         cross_coeff=1.0,
         weights_1=None,
         weights_2=None,
+        mean_amp_1=1.0,
+        mean_amp_2=1.0,
         **params,
     ):
         super().__init__(**params)
@@ -48,6 +50,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._cross_power_tracer_model = None
         self.weights_1 = weights_1
         self.weights_2 = weights_2
+        self.mean_amp_1 = mean_amp_1
+        self.mean_amp_2 = mean_amp_2
 
         self.has_resol = False
 
@@ -149,6 +153,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self._auto_power_tracer_1_model,
             weights1_in_real=self.weights_1,
         )
+        if isinstance(self.mean_amp_1, str):
+            self.mean_amp_1 = getattr(self, self.mean_amp_1)
+        self._auto_power_tracer_1_model *= self.mean_amp_1**2
         if self.tracer_bias_2 is not None:
             if self.matter_only_rsd:
                 beta_2 = self.f_growth
@@ -168,6 +175,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 self._auto_power_tracer_2_model,
                 weights1_in_real=self.weights_2,
             )
+            if isinstance(self.mean_amp_2, str):
+                self.mean_amp_2 = getattr(self, self.mean_amp_2)
+            self._auto_power_tracer_2_model *= self.mean_amp_2**2
             # cross power
             pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
             self._cross_power_tracer_model = self.cal_rsd_power(
@@ -189,6 +199,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 weights1_in_real=self.weights_1,
                 weights2=self.weights_2,
             )
+            self._cross_power_tracer_model *= self.mean_amp_2 * self.mean_amp_1
 
 
 class FieldPowerSpectrum:
@@ -751,6 +762,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         fog_profile="lorentz",
         cross_coeff=1.0,
         model_k_from_field=False,
+        mean_amp_1=1.0,
+        mean_amp_2=1.0,
         **params,
     ):
         if field_1 is None:
@@ -771,6 +784,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             unitless_2=unitless_2,
             remove_sn_2=remove_sn_2,
             corrtype=corrtype,
+            mean_amp_1=mean_amp_1,
+            mean_amp_2=mean_amp_2,
         )
         if model_k_from_field:
             # use field kmode to propagate into model
@@ -793,6 +808,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             cross_coeff=cross_coeff,
             weights_1=weights_1,
             weights_2=weights_2,
+            mean_amp_1=mean_amp_1,
+            mean_amp_2=mean_amp_2,
             **params,
         )
         self.k1dbins = k1dbins

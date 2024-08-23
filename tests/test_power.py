@@ -581,3 +581,21 @@ def test_temp_amp():
     ps.one = 1.0
     floor3 = ps.cross_power_3d.mean() / tbar
     assert np.abs((floor3 - floor2) / floor1) < 2e-2
+    # test model
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+        mean_amp_1="average_hi_temp",
+        mean_amp_2="one",
+        tracer_bias_2=1.0,
+    )
+    # test a custom avg
+    ps.one = 1.0
+    ps.get_model_power()
