@@ -48,6 +48,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._cross_power_tracer_model = None
         self.weights_1 = weights_1
         self.weights_2 = weights_2
+
         self.has_resol = False
 
     def fog_lorentz(self, sigma_v):
@@ -205,6 +206,8 @@ class FieldPowerSpectrum:
         unitless_2=False,
         remove_sn_2=False,
         corrtype=None,
+        mean_amp_1=1.0,
+        mean_amp_2=1.0,
     ):
         self.field_1 = field_1
         self.weights_1 = weights_1
@@ -224,6 +227,8 @@ class FieldPowerSpectrum:
             assert np.allclose(field_2.shape, field_1.shape), error_message
         self._fourier_field_1 = None
         self._fourier_field_2 = None
+        self.mean_amp_1 = mean_amp_1
+        self.mean_amp_2 = mean_amp_2
 
     def set_corr_type(self, corr_type, tracer_indx):
         """
@@ -325,7 +330,9 @@ class FieldPowerSpectrum:
                 self.box_len,
                 weights=self.weights_1,
             )
-        return power_spectrum
+        if isinstance(self.mean_amp_1, str):
+            self.mean_amp_1 = getattr(self, self.mean_amp_1)
+        return power_spectrum * self.mean_amp_1**2
 
     @property
     def auto_power_3d_2(self):
@@ -344,7 +351,9 @@ class FieldPowerSpectrum:
                 self.box_len,
                 weights=self.weights_2,
             )
-        return power_spectrum
+        if isinstance(self.mean_amp_2, str):
+            self.mean_amp_2 = getattr(self, self.mean_amp_2)
+        return power_spectrum * self.mean_amp_2**2
 
     @property
     def cross_power_3d(self):
@@ -366,7 +375,11 @@ class FieldPowerSpectrum:
             field_2=self.fourier_field_2,
             weights_2=weights_2,
         )
-        return power_spectrum
+        if isinstance(self.mean_amp_2, str):
+            self.mean_amp_2 = getattr(self, self.mean_amp_2)
+        if isinstance(self.mean_amp_1, str):
+            self.mean_amp_1 = getattr(self, self.mean_amp_1)
+        return power_spectrum * self.mean_amp_1 * self.mean_amp_2
 
 
 def get_renormed_field(
@@ -714,8 +727,8 @@ def step_window_attenuation(k_dir, step_size_in_mpc):
 class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     def __init__(
         self,
-        field_1,
-        box_len,
+        field_1=None,
+        box_len=None,
         weights_1=None,
         mean_center_1=False,
         unitless_1=False,
@@ -727,6 +740,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         remove_sn_2=False,
         corrtype=None,
         k1dbins=None,
+        kmode=None,
+        mumode=None,
         tracer_bias_1=1.0,
         sigma_v_1=0.0,
         tracer_bias_2=None,
@@ -735,8 +750,13 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
+        model_k_from_field=False,
         **params,
     ):
+        if field_1 is None:
+            field_1 = np.ones([10, 10, 10])
+        if box_len is None:
+            box_len = np.array([10, 10, 10])
         FieldPowerSpectrum.__init__(
             self,
             field_1,
@@ -751,15 +771,16 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             unitless_2=unitless_2,
             remove_sn_2=remove_sn_2,
             corrtype=corrtype,
-            **params,
         )
-        # use field kmode to propagate into model
-        kmode = self.k_mode
-        mumode = self.k_para
-        slice_indx = (None,) * (len(field_1.shape) - 1)
-        slice_indx += (slice(None, None, None),)
-        mumode = self.k_para[slice_indx] / kmode
-        super(ModelPowerSpectrum, self).__init__(
+        if model_k_from_field:
+            # use field kmode to propagate into model
+            kmode = self.k_mode
+            mumode = self.k_para
+            slice_indx = (None,) * (len(field_1.shape) - 1)
+            slice_indx += (slice(None, None, None),)
+            mumode = self.k_para[slice_indx] / kmode
+        ModelPowerSpectrum.__init__(
+            self,
             kmode=kmode,
             mumode=mumode,
             tracer_bias_1=tracer_bias_1,
@@ -774,3 +795,27 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             weights_2=weights_2,
             **params,
         )
+        self.k1dbins = k1dbins
+
+    def get_1d_power(
+        self,
+        power3d,
+        k1dbins=None,
+        k1dweights=None,
+        filter_dependent_k=True,
+    ):
+        if k1dbins is None:
+            k1dbins = self.k1dbins
+        if k1dweights is None:
+            k1dweights = np.ones_like(self.field_1)
+        if isinstance(power3d, str):
+            power3d = getattr(self, power3d)
+        if filter_dependent_k:
+            indep_modes = get_independent_fourier_modes(self.box_ndim)
+        power1d, k1deff, nmodes = bin_3d_to_1d(
+            power3d,
+            self.k_mode,
+            k1dbins,
+            weights=indep_modes * k1dweights,
+        )
+        return power1d, k1deff, nmodes

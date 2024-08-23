@@ -137,6 +137,7 @@ def test_FieldPowerSpectrum():
     ps = PowerSpectrum(
         delta_x,
         box_len,
+        model_k_from_field=True,
         remove_sn_1=True,
         unitless_1=True,
         mean_center_1=True,
@@ -144,9 +145,11 @@ def test_FieldPowerSpectrum():
         remove_sn_2=True,
         mean_center_2=True,
         unitless_2=True,
+        k1dbins=np.linspace(0.1, 0.5, 5),
     )
     power = ps.cross_power_3d
     assert np.abs((power.mean() - sn) / sn) < 2e-2
+    p1d, k1d, nmodes = ps.get_1d_power("cross_power_3d")
 
 
 def test_get_shot_noise():
@@ -346,13 +349,13 @@ def test_get_independent_fourier_modes():
 
 def test_ModelPowerSpectrum():
     # test fog
-    model = ModelPowerSpectrum()
+    model = PowerSpectrum()
     assert np.allclose(model.fog_term(1e7), np.ones(len(model.kmode)))
     model.mumode = np.ones_like(model.kmode)
     assert np.allclose(model.fog_term(np.inf), np.zeros(len(model.kmode)))
 
     # test matter power with no rsd
-    model = ModelPowerSpectrum()
+    model = PowerSpectrum()
     model.get_model_power()
     matter_ps_real = model.matter_power_spectrum_fnc(model.kmode)
     assert np.allclose(model.auto_power_matter_model, matter_ps_real)
@@ -364,7 +367,7 @@ def test_ModelPowerSpectrum():
     assert np.allclose(matter_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2)
 
     # test tracer with no rsd but with bias
-    model = ModelPowerSpectrum(tracer_bias_1=2.0)
+    model = PowerSpectrum(tracer_bias_1=2.0)
     model.get_model_power()
     tracer_ps_rsd = model.auto_power_tracer_1_model
     assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
@@ -385,7 +388,7 @@ def test_ModelPowerSpectrum():
     )
 
     # test 2 tracers with no rsd but with bias
-    model = ModelPowerSpectrum(
+    model = PowerSpectrum(
         tracer_bias_1=2.0,
         tracer_bias_2=3.0,
         cross_coeff=0.5,
@@ -432,7 +435,7 @@ def test_gaussian_beam_attenuation():
     Bbeam_test = gaussian_beam_attenuation(np.sqrt(2 * np.log(2)), 1)
     assert np.allclose(Bbeam_test, 0.5)
     # without beam
-    model = ModelPowerSpectrum(
+    model = PowerSpectrum(
         tracer_bias_1=2.0,
         tracer_bias_2=3.0,
         cross_coeff=0.5,
@@ -444,7 +447,7 @@ def test_gaussian_beam_attenuation():
     tracer_ps_rsd_2 = model.auto_power_tracer_2_model
     cross_ps_rsd = model.cross_power_tracer_model
     # with beam
-    model = ModelPowerSpectrum(
+    model = PowerSpectrum(
         tracer_bias_1=2.0,
         tracer_bias_2=3.0,
         cross_coeff=0.5,
@@ -465,7 +468,7 @@ def test_gaussian_beam_attenuation():
         / 180
     )
     fwhm_beam = sigma_beam / (np.sqrt(2 * np.log(2)))
-    model = ModelPowerSpectrum(
+    model = PowerSpectrum(
         kmode=np.array([1 / fwhm_beam, 1 / fwhm_beam]),
         mumode=np.array([0, 0]),
         tracer_bias_1=2.0,
@@ -476,7 +479,7 @@ def test_gaussian_beam_attenuation():
     model.get_model_power()
     tracer_ps_rsd_1_b = model.auto_power_tracer_1_model
     tracer_ps_rsd_c_b = model.cross_power_tracer_model
-    model = ModelPowerSpectrum(
+    model = PowerSpectrum(
         kmode=np.array([1 / fwhm_beam, 1 / fwhm_beam]),
         mumode=np.array([0, 0]),
         tracer_bias_1=2.0,
@@ -530,3 +533,51 @@ def test_set_corrtype():
 def test_step_window_attenuation():
     assert step_window_attenuation(1, 1) == np.sinc(1 / np.pi / 2)
     assert step_window_attenuation(0, 0) == 1.0
+
+
+def test_temp_amp():
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+        mean_amp_1="average_hi_temp",
+        mean_amp_2="average_hi_temp",
+    )
+    tbar = ps.average_hi_temp
+    power = ps.auto_power_3d_1
+    floor1 = ps.auto_power_3d_1.mean() / tbar**2
+    floor2 = get_gaussian_noise_floor(
+        1,
+        box_dim,
+        box_volume=np.prod(ps.box_len),
+    )
+    assert np.abs((floor1 - floor2) / floor1) < 2e-2
+    floor1 = ps.auto_power_3d_2.mean() / tbar**2
+    assert np.abs((floor1 - floor2) / floor1) < 2e-2
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+        mean_amp_1="average_hi_temp",
+        mean_amp_2="one",
+    )
+    # test a custom avg
+    ps.one = 1.0
+    floor3 = ps.cross_power_3d.mean() / tbar
+    assert np.abs((floor3 - floor2) / floor1) < 2e-2
