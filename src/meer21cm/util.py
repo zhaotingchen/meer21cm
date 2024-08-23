@@ -13,6 +13,7 @@ from powerbox import PowerBox
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
+lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
 def coeff_hi_density_to_temp(z=0, cosmo=Planck18):

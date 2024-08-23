@@ -17,7 +17,7 @@ from hiimtool.basic_util import (
     tully_fisher,
 )
 from astropy import constants, units
-from hiimtool.basic_util import f_21, centre_to_edges
+from hiimtool.basic_util import centre_to_edges
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
 from .stack import stack
@@ -28,6 +28,8 @@ from .util import (
     get_default_args,
     hod_obuljen18,
     freq_to_redshift,
+    lamb_21,
+    f_21,
 )
 from .plot import plot_map
 from .grid import (
@@ -41,7 +43,6 @@ if python_ver >= 3.9:
     from powerbox import LogNormalPowerBox
     from halomod import TracerHaloModel as THM
     from powerbox import dft
-lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
 class HISimulation:
