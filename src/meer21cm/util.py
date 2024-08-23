@@ -5,11 +5,76 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import healpy as hp
 from astropy.io import fits
-from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin, f_21
+from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
 from astropy.cosmology import Planck18
 import inspect
 import sys
 from powerbox import PowerBox
+
+f_21 = 1420405751.7667  # in Hz
+A_10 = 2.85 * 1e-15 / units.s
+lamb_21 = (constants.c / f_21 * units.s).to("m")
+
+
+def coeff_hi_density_to_temp(z=0, cosmo=Planck18):
+    r"""
+    The conversion coefficient :math:`C_{\rm HI}` so that
+
+    .. math::
+        \bar{T}_{\rm HI} = C_{\rm HI} \rho_{\rm HI}
+
+    Parameters
+    ----------
+    z: float, defulat 0.0.
+        The redshift
+
+    cosmo: cosmology, default Planck18.
+        The cosmology used
+
+    Returns
+    -------
+    C_HI: quantity.
+        The coefficient
+    """
+    C_HI = (
+        3
+        * A_10
+        * constants.h
+        * constants.c**3
+        * (1 + z) ** 2
+        / 32
+        / np.pi
+        / (constants.m_e + constants.m_p)
+        / constants.k_B
+        / (f_21 * units.Hz) ** 2
+        / cosmo.H(z)
+    ).to(units.K / units.M_sun * units.Mpc**3)
+    return C_HI
+
+
+def omega_hi_to_average_temp(omega_hi, z=0, cosmo=Planck18):
+    """
+    The average HI brightness temperature from given HI density.
+
+    Parameters
+    ----------
+    omega_hi:float
+        The HI density relative to the z=0 critical density.
+
+    z: float, defulat 0.0.
+        The redshift
+
+    cosmo: cosmology, default Planck18.
+        The cosmology used
+
+    Returns
+    -------
+    t_bar: float.
+        The average HI temperature in Kelvin
+    """
+    c_hi = coeff_hi_density_to_temp(z=z, cosmo=cosmo)
+    t_bar = (c_hi * cosmo.critical_density0 * omega_hi).to("K").value
+    return t_bar
 
 
 def freq_to_redshift(freq):

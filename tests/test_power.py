@@ -2,6 +2,8 @@ import numpy as np
 from meer21cm.power import *
 from powerbox import PowerBox
 import pytest
+from scipy.signal import windows
+from meer21cm import PowerSpectrum
 
 
 def test_get_k_vector():
@@ -82,7 +84,7 @@ def test_get_power_spectrum():
     assert np.abs(power_3d.std() / power_sn - 1) < 5e-2
 
 
-def test_PowerSpectrum():
+def test_FieldPowerSpectrum():
     box_len = np.array([100, 50, 100])
     box_dim = np.array([100, 200, 60])
     box_resol = box_len / box_dim
@@ -112,6 +114,7 @@ def test_PowerSpectrum():
     ps.fourier_field_2
     ps.auto_power_3d_2
     ps.cross_power_3d
+    ps.get_fourier_field_2()
     power = ps.auto_power_3d_1
     assert np.abs(power.mean()) < 1
 
@@ -130,6 +133,23 @@ def test_PowerSpectrum():
     assert np.abs(power.mean()) < 1
     power = ps.cross_power_3d
     assert np.abs((power.mean() - sn) / sn) < 2e-2
+
+    ps = PowerSpectrum(
+        delta_x,
+        box_len,
+        model_k_from_field=True,
+        remove_sn_1=True,
+        unitless_1=True,
+        mean_center_1=True,
+        field_2=delta_x,
+        remove_sn_2=True,
+        mean_center_2=True,
+        unitless_2=True,
+        k1dbins=np.linspace(0.1, 0.5, 5),
+    )
+    power = ps.cross_power_3d
+    assert np.abs((power.mean() - sn) / sn) < 2e-2
+    p1d, k1d, nmodes = ps.get_1d_power("cross_power_3d")
 
 
 def test_get_shot_noise():
@@ -170,7 +190,7 @@ def test_bin_functions():
     power_3d = np.linspace(0, 9, 10)
     k_mode = np.linspace(90, 99, 10)
     k1d_edges = np.linspace(90, 100, 11)
-    ps1d, ps1derr, nmodes, k1deff = bin_3d_to_1d(
+    ps1d, ps1derr, k1deff, nmodes = bin_3d_to_1d(
         power_3d,
         k_mode,
         k1d_edges,
@@ -180,12 +200,100 @@ def test_bin_functions():
     assert np.allclose(k1deff, k_mode)
     assert np.allclose(nmodes, np.ones_like(nmodes))
     assert np.allclose(ps1derr, np.zeros_like(nmodes))
-    ps1d, k1deff = bin_3d_to_1d(
+    ps1d, k1deff, _ = bin_3d_to_1d(
         power_3d,
         k_mode,
         k1d_edges,
         error=False,
     )
+
+
+def test_power_weights_renorm():
+    # uniform weights should give 1
+    weights = np.ones([10, 10, 10])
+    assert np.allclose(power_weights_renorm(weights), 1)
+    # try a typical taper with uniform power
+    power1 = np.ones([100, 100, 100])
+    taper = windows.blackmanharris(100)[None, None, :] * np.ones_like(power1)
+    assert np.allclose(
+        get_modelpk_conv(
+            np.ones_like(power1),
+            taper,
+        ).mean(),
+        1,
+    )
+    assert np.allclose(get_modelpk_conv(np.ones_like(power1), taper, taper).mean(), 1)
+    # try a random thermal noise
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+    )
+    # without taper
+    power1 = ps.auto_power_3d_1
+    floor1 = power1.mean()
+    # with taper
+    taper = windows.blackmanharris(box_dim[1])
+    taper = taper[None, :, None] * np.ones(box_dim)
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        weights_1=taper,
+    )
+    power2 = ps.auto_power_3d_1
+    floor2 = power2.mean()
+    assert np.abs((floor2 - floor1) / floor1) < 1e-2
+    # test with one weight and no second weight
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        weights_1=taper,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+    )
+    power3 = ps.cross_power_3d
+    floor3 = power3.mean()
+    assert np.abs((floor3 - floor1) / floor1) < 1e-2
+
+
+def test_get_modelpk_conv():
+    box_dim = np.array([100, 200, 41])
+    test_ps = np.ones(box_dim)
+    # uniform weights
+    test_ps_conv = get_modelpk_conv(
+        test_ps, weights1_in_real=test_ps, weights2=None, renorm=True
+    )
+    assert np.allclose(test_ps, test_ps_conv)
+    # test a taper with ps with a spectral index
+    field = PowerSpectrum(
+        field_1=np.ones(box_dim),
+        box_len=box_dim,
+    )
+    kmode = field.k_mode
+    test_ps = np.zeros_like(kmode)
+    # ns = 2
+    test_ps[kmode != 0] = kmode[kmode != 0] ** (-2)
+    # any direction would do
+    taper = windows.blackmanharris(box_dim[0])[:, None, None] + np.zeros_like(kmode)
+    test_ps_conv = get_modelpk_conv(test_ps, weights1_in_real=taper)
+    # p * k^2 should be one
+    assert np.abs((test_ps_conv * kmode**2).mean() - 1) < 1e-3
+    # mode-mixing is small, so every k-mode should also be p * k^2 about 1, litte var
+    assert (test_ps_conv * kmode**2).std() < 1e-2
 
 
 def test_get_gaussian_noise_floor():
@@ -237,3 +345,219 @@ def test_get_independent_fourier_modes():
     box_dim += 1
     indep_modes = get_independent_fourier_modes(box_dim)
     assert indep_modes.sum() == np.prod(box_dim) // 2 + 1
+
+
+def test_ModelPowerSpectrum():
+    # test fog
+    model = PowerSpectrum()
+    assert np.allclose(model.fog_term(1e7), np.ones(len(model.kmode)))
+    model.mumode = np.ones_like(model.kmode)
+    assert np.allclose(model.fog_term(np.inf), np.zeros(len(model.kmode)))
+
+    # test matter power with no rsd
+    model = PowerSpectrum()
+    model.get_model_power()
+    matter_ps_real = model.matter_power_spectrum_fnc(model.kmode)
+    assert np.allclose(model.auto_power_matter_model, matter_ps_real)
+
+    # add rsd, test kaiser term
+    model.mumode = np.ones_like(model.kmode)
+    model.get_model_power()
+    matter_ps_rsd = model.auto_power_matter_model
+    assert np.allclose(matter_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2)
+
+    # test tracer with no rsd but with bias
+    model = PowerSpectrum(tracer_bias_1=2.0)
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1_model
+    assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
+
+    # add rsd
+    model.mumode = np.ones_like(model.kmode)
+    model.matter_only_rsd = True
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1_model
+    assert np.allclose(tracer_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 4)
+
+    # true rsd
+    model.matter_only_rsd = False
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1_model
+    assert np.allclose(
+        tracer_ps_rsd / matter_ps_real, (1 + model.f_growth / 2.0) ** 2 * 4
+    )
+
+    # test 2 tracers with no rsd but with bias
+    model = PowerSpectrum(
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        cross_coeff=0.5,
+    )
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_1_model
+    assert np.allclose(tracer_ps_rsd, matter_ps_real * 4)
+    tracer_ps_rsd = model.auto_power_tracer_2_model
+    assert np.allclose(tracer_ps_rsd, matter_ps_real * 9)
+
+    # add rsd
+    model.mumode = np.ones_like(model.kmode)
+    model.matter_only_rsd = True
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_2_model
+    cross_ps_rsd = model.cross_power_tracer_model
+    assert np.allclose(tracer_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 9)
+    assert np.allclose(
+        cross_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2 * 6 - 6 + 6 * 0.5
+    )
+
+    # true rsd
+    model.matter_only_rsd = False
+    model.get_model_power()
+    tracer_ps_rsd = model.auto_power_tracer_2_model
+    cross_ps_rsd = model.cross_power_tracer_model
+    assert np.allclose(
+        tracer_ps_rsd / matter_ps_real, (1 + model.f_growth / 3.0) ** 2 * 9
+    )
+    assert np.allclose(
+        cross_ps_rsd / matter_ps_real,
+        (1 + model.f_growth / 2.0) * (1 + model.f_growth / 3.0) * 6 - 6 + 6 * 0.5,
+    )
+
+
+def test_gaussian_beam_attenuation():
+    # small scale goes to almost zero
+    Bbeam_test = gaussian_beam_attenuation(100, 1)
+    assert Bbeam_test < 1e-3
+    # large scale is not affected
+    Bbeam_test = gaussian_beam_attenuation(1e-4, 1)
+    assert np.abs(1 - Bbeam_test) < 1e-3
+    # FWHM/2
+    Bbeam_test = gaussian_beam_attenuation(np.sqrt(2 * np.log(2)), 1)
+    assert np.allclose(Bbeam_test, 0.5)
+    # without beam
+    model = PowerSpectrum(
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        cross_coeff=0.5,
+        # sigma_beam_ch=np.ones(100)
+    )
+    model.mumode = np.ones_like(model.kmode)
+    model.get_model_power()
+    tracer_ps_rsd_1 = model.auto_power_tracer_1_model
+    tracer_ps_rsd_2 = model.auto_power_tracer_2_model
+    cross_ps_rsd = model.cross_power_tracer_model
+    # with beam
+    model = PowerSpectrum(
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        cross_coeff=0.5,
+        sigma_beam_ch=np.ones(100),
+    )
+    model.mumode = np.ones_like(model.kmode)
+    model.get_model_power()
+    tracer_ps_rsd_1_b = model.auto_power_tracer_1_model
+    tracer_ps_rsd_2_b = model.auto_power_tracer_2_model
+    cross_ps_rsd_b = model.cross_power_tracer_model
+    assert np.allclose(tracer_ps_rsd_1_b, tracer_ps_rsd_1)
+    assert np.allclose(tracer_ps_rsd_2_b, tracer_ps_rsd_2)
+    assert np.allclose(cross_ps_rsd_b, cross_ps_rsd)
+    sigma_beam = (
+        model.comoving_distance(model.z).value
+        * model.sigma_beam_ch.mean()
+        * np.pi
+        / 180
+    )
+    fwhm_beam = sigma_beam / (np.sqrt(2 * np.log(2)))
+    model = PowerSpectrum(
+        kmode=np.array([1 / fwhm_beam, 1 / fwhm_beam]),
+        mumode=np.array([0, 0]),
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        cross_coeff=0.5,
+        sigma_beam_ch=np.ones(100),
+    )
+    model.get_model_power()
+    tracer_ps_rsd_1_b = model.auto_power_tracer_1_model
+    tracer_ps_rsd_c_b = model.cross_power_tracer_model
+    model = PowerSpectrum(
+        kmode=np.array([1 / fwhm_beam, 1 / fwhm_beam]),
+        mumode=np.array([0, 0]),
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        cross_coeff=0.5,
+        # sigma_beam_ch=np.ones(100)
+    )
+    model.get_model_power()
+
+    tracer_ps_rsd_1 = model.auto_power_tracer_1_model
+    tracer_ps_rsd_c = model.cross_power_tracer_model
+    assert np.allclose(tracer_ps_rsd_1 / tracer_ps_rsd_1_b, [4, 4])
+    # tracer_2 does not have beam
+    assert np.allclose(tracer_ps_rsd_c / tracer_ps_rsd_c_b, [2, 2])
+
+
+def test_set_corrtype():
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+    )
+    ps.set_corr_type("gal", 1)
+    assert ps.mean_center_1 == True
+    assert ps.unitless_1 == True
+    assert ps.remove_sn_1 == True
+    ps.set_corr_type("HI", 1)
+    assert ps.mean_center_1 == False
+    assert ps.unitless_1 == False
+    assert ps.remove_sn_1 == False
+    power = ps.auto_power_3d_1
+    floor1 = ps.auto_power_3d_1.mean()
+    floor2 = get_gaussian_noise_floor(
+        1,
+        box_dim,
+        box_volume=np.prod(ps.box_len),
+    )
+    assert np.abs((floor1 - floor2) / floor1) < 2e-2
+    with pytest.raises(ValueError):
+        ps.set_corr_type("gal", 3)
+    with pytest.raises(ValueError):
+        ps.set_corr_type("something", 1)
+
+
+def test_step_window_attenuation():
+    assert step_window_attenuation(1, 1) == np.sinc(1 / np.pi / 2)
+    assert step_window_attenuation(0, 0) == 1.0
+
+
+def test_temp_amp():
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = ModelPowerSpectrum()
+    assert ps.step_sampling() == 1
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+        mean_amp_1="average_hi_temp",
+        mean_amp_2="one",
+        tracer_bias_2=1.0,
+        sampling_resol=[0.1, 0.1, 0.1],
+        model_k_from_field=True,
+    )
+    # test a custom avg
+    ps.one = 1.0
+    ps.get_model_power()

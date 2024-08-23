@@ -148,13 +148,15 @@ def fourier_window_for_assignment(
     The window function can be written as [1]
 
     .. math::
-        W(k_x,k_y,k_z) = {\rm sinc}\bigg(\frac{k_x H_x}{2}\bigg)
+        W(k_x,k_y,k_z) = \Bigg({\rm sinc}\bigg(\frac{k_x H_x}{2}\bigg)
         {\rm sinc}\bigg(\frac{k_y H_y}{2}\bigg)
-        {\rm sinc}\bigg(\frac{k_z H_z}{2}\bigg),
+        {\rm sinc}\bigg(\frac{k_z H_z}{2}\bigg)\Bigg)^p,
 
 
     where :math:`k_{x,y,z}` is the wavenumber of the grid in Fourier space
     and :math:`H_{x,y,z}` is the length of the grid in real space.
+    :math:`p` is the power index related to the mass assignment scheme, and
+    is equal to [1,2,3,4] for [nnb,cic,tsc,pcs]
 
     Parameters
     ----------

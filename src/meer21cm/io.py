@@ -12,6 +12,9 @@ meerkat_L_band_nu_min = 856.0 * 1e6  # in Hz
 meerkat_L_band_nu_max = 1712.0 * 1e6  # in Hz
 meerkat_4k_delta_nu = 0.208984375 * 1e6  # in Hz
 
+meerklass_L_deep_nu_min = 971 * 1e6
+meerklass_L_deep_nu_max = 1023.8 * 1e6
+
 
 def cal_freq(
     ch_id,

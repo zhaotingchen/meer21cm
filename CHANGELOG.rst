@@ -3,10 +3,16 @@ Releases
 
 dev
 ---
+Features
+++++++++
+* a base class for better structure
+* model power spectrum
+* power spectrum weights and convolution
 
 Enhancements
 ++++++++++++
 * allows more flexibility in PCA
+* more precise HI average temp
 
 v0.3.0
 ------

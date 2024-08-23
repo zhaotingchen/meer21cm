@@ -1,9 +1,12 @@
 import numpy as np
 import camb
 import astropy
+from meer21cm import Specification
+from scipy.interpolate import interp1d
+from meer21cm.util import omega_hi_to_average_temp
 
 
-class CosmologyCalculator:
+class CosmologyCalculator(Specification):
     """
     The class for storing the cosmological model used for calculation.
 
@@ -15,20 +18,28 @@ class CosmologyCalculator:
 
     def __init__(
         self,
-        cosmo_model="Planck18",
-        z=0,
-        **hi_params,
+        nonlinear="none",
+        kmax=2.0,
+        kmin=1e-4,
+        omegahi=5e-4,
+        **params,
     ):
-        self._cosmo = None
-        self.cosmo = cosmo_model
-        self.__dict__.update(hi_params)
-        self.z = z
+        super().__init__(**params)
+        self.nonlinear = nonlinear
+        self.kmax = kmax
+        self.kmin = kmin
+        self._matter_power_spectrum_fnc = None
+        self.omegahi = omegahi
 
     @property
-    def cosmo(self):
-        return self._cosmo
+    def average_hi_temp(self):
+        """
+        The average HI brightness temperature in Kelvin.
+        """
+        tbar = omega_hi_to_average_temp(self.omegahi, z=self.z, cosmo=self)
+        return tbar
 
-    @cosmo.setter
+    @Specification.cosmo.setter
     def cosmo(self, value):
         if isinstance(value, str):
             cosmo = getattr(astropy.cosmology, value)
@@ -42,9 +53,9 @@ class CosmologyCalculator:
         for key in cosmo.__dir__():
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
+        self.camb_pars = self.get_camb_pars()
 
-    @property
-    def camb_pars(self):
+    def get_camb_pars(self):
         """
         The associated :class:`camb.model.CAMBparams` set by the input cosmology.
         """
@@ -74,3 +85,28 @@ class CosmologyCalculator:
         results = camb.get_results(pars)
         self.f_growth = results.get_fsigma8()[0] / results.get_sigma8()[0]
         return pars
+
+    @property
+    def matter_power_spectrum_fnc(self):
+        """
+        Interpolation function for the real-space isotropic matter power spectrum.
+        """
+        return self._matter_power_spectrum_fnc
+
+    def get_matter_power_spectrum(self):
+        pars = self.camb_pars
+        pars.set_matter_power(
+            redshifts=np.unique(np.array([0.0, self.z])).tolist(),
+            kmax=self.kmax / self.h,
+        )
+        pars.NonLinear = getattr(camb.model, "NonLinear_" + self.nonlinear)
+        results = camb.get_results(pars)
+        kh, z, pk = results.get_matter_power_spectrum(
+            minkh=self.kmin / self.h, maxkh=self.kmax / self.h, npoints=200
+        )
+        karr = kh * self.h
+        pkarr = pk[-1] / self.h**3
+        matter_power_func = interp1d(
+            karr, pkarr, bounds_error=False, fill_value="extrapolate"
+        )
+        self._matter_power_spectrum_fnc = matter_power_func

@@ -117,7 +117,13 @@ def gaussian_beam(sigma):
     return lambda x: np.exp(-(x**2) / 2 / sigma**2)
 
 
-def isotropic_beam_profile(xdim, ydim, wproj, beam_func, ang_unit=units.deg):
+def isotropic_beam_profile(
+    xdim,
+    ydim,
+    wproj,
+    beam_func,
+    ang_unit=units.deg,
+):
     """
     Generate an isotropic image of the beam for given ``wproj`` and ``beam_func``. The image can later be used to convolve or deconvolve with intensity maps.
 
@@ -144,7 +150,8 @@ def isotropic_beam_profile(xdim, ydim, wproj, beam_func, ang_unit=units.deg):
     ang_dist = (
         (get_ang_between_coord(ra, dec, ra_cen, dec_cen) * units.deg).to(ang_unit).value
     )
-    return beam_func(ang_dist)
+    beam_image = beam_func(ang_dist)
+    return beam_image
 
 
 def dish_beam_sigma(dish_diameter, nu, gamma=1.0, ang_unit=units.deg):

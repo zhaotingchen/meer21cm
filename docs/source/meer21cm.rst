@@ -9,6 +9,14 @@ meer21cm.cosmology module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.dataanalysis module
+-------------------------
+
+.. automodule:: meer21cm.dataanalysis
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.fg module
 ------------------
 

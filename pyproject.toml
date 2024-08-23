@@ -51,6 +51,9 @@ docs = [
     "sphinx",
     "sphinx_rtd_theme",
     "myst-parser",
+    "numpydoc",
+    "nbsphinx",
+    "ipykernel"
 ]
 full = ["meer21cm[test]","meer21cm[lint]","meer21cm[docs]"]
 
