@@ -490,6 +490,7 @@ def get_shot_noise(
         box_volume
         * np.sum((weights * real_field) ** 2)
         / np.sum(weights * real_field) ** 2
+        * (np.sum(weights) / weights.size) ** 2
     )
     return shot_noise
 

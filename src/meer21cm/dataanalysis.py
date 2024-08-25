@@ -9,7 +9,12 @@ from meer21cm.util import (
 )
 from astropy import constants, units
 import astropy
-from meer21cm.io import cal_freq, meerklass_L_deep_nu_min, meerklass_L_deep_nu_max
+from meer21cm.io import (
+    cal_freq,
+    meerklass_L_deep_nu_min,
+    meerklass_L_deep_nu_max,
+    read_map,
+)
 from astropy.wcs.utils import proj_plane_pixel_area
 import meer21cm
 
@@ -28,9 +33,19 @@ class Specification:
         sigma_beam_ch=None,
         beam_unit=units.deg,
         map_unit=units.K,
+        map_file=None,
+        counts_file=None,
+        los_axis=-1,
+        nu_min=-np.inf,
+        nu_max=np.inf,
         **kwparams,
     ):
         self._cosmo = None
+        self.map_file = map_file
+        self.counts_file = counts_file
+        self.los_axis = los_axis
+        self.nu_min = nu_min
+        self.nu_max = nu_max
         if nu is None:
             nu = cal_freq(
                 np.arange(4096) + 1,
@@ -49,7 +64,7 @@ class Specification:
         self.beam_unit = beam_unit
         if map_has_sampling is None:
             map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
-        self.map_has_sampling = map_has_sampling
+        self._map_has_sampling = map_has_sampling
         self.map_unit = map_unit
         if not check_unit_equiv(map_unit, units.K):
             if not check_unit_equiv(map_unit, units.Jy):
@@ -63,7 +78,7 @@ class Specification:
             self.map_unit_type = "T"
         xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
         # the coordinates of each pixel in the map
-        self.ra_map, self.dec_map = get_wcs_coor(wproj, xx, yy)
+        self._ra_map, self._dec_map = get_wcs_coor(wproj, xx, yy)
         self.__dict__.update(kwparams)
         self.cosmo = cosmo
 
@@ -87,6 +102,7 @@ class Specification:
 
     @cosmo.setter
     def cosmo(self, value):
+        cosmo = value
         if isinstance(value, str):
             cosmo = getattr(astropy.cosmology, value)
         self._cosmo = cosmo
@@ -148,3 +164,59 @@ class Specification:
         angular resolution of the map pixel in deg
         """
         return np.sqrt(self.pixel_area)
+
+    @property
+    def data(self):
+        """
+        The map data
+        """
+        return self._data
+
+    @property
+    def counts(self):
+        """
+        The number of hits per pixel for the map data
+        """
+        return self._counts
+
+    @property
+    def map_has_sampling(self):
+        """
+        A binary window for whether a pixel has been sampled
+        """
+        return self._map_has_sampling
+
+    @property
+    def ra_map(self):
+        """
+        A binary window for whether a pixel has been sampled
+        """
+        return self._ra_map
+
+    @property
+    def dec_map(self):
+        """
+        A binary window for whether a pixel has been sampled
+        """
+        return self._dec_map
+
+    def read_from_fits(self):
+        if self.map_file is None:
+            print("no map_file specified")
+            return None
+        (
+            self._data,
+            self._counts,
+            self._map_has_sampling,
+            self._ra_map,
+            self._dec_map,
+            self.nu,
+            self.wproj,
+        ) = read_map(
+            self.map_file,
+            counts_file=self.counts_file,
+            nu_min=self.nu_min,
+            nu_max=self.nu_max,
+            los_axis=self.los_axis,
+        )
+        self.num_pix_x, self.num_pix_y = self._ra_map.shape

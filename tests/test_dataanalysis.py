@@ -14,9 +14,12 @@ def test_cosmo():
 
 def test_update_pars():
     spec = Specification()
+    # test string input
     spec.cosmo = "Planck15"
     assert spec.cosmo is Planck15
     assert spec.h == Planck15.h
+    # test direct input
+    spec.cosmo = Planck15
 
 
 def test_defaults(test_nu, test_W):
@@ -48,3 +51,23 @@ def test_velocity(test_nu, test_wproj):
     assert np.allclose(spec.freq_resol, np.diff(test_nu).mean())
     assert np.allclose(spec.pixel_area, proj_plane_pixel_area(test_wproj))
     assert np.allclose(spec.pix_resol, np.sqrt(spec.pixel_area))
+
+
+def test_read_fits(test_fits):
+    sp = Specification()
+    # should be None
+    sp.read_from_fits()
+    # set map file
+    sp.map_file = test_fits
+    sp.num_pix_x = 1
+    sp.num_pix_y = 1
+    sp.read_from_fits()
+    assert np.allclose(sp.data.shape, (133, 73, 2))
+    assert np.allclose(sp.counts.shape, (133, 73, 2))
+    assert np.allclose(sp.ra_map.shape, (133, 73))
+    assert np.allclose(sp.dec_map.shape, (133, 73))
+
+    assert np.allclose(sp.map_has_sampling.shape, (133, 73, 2))
+    assert sp.num_pix_x == 133
+    assert sp.num_pix_y == 73
+    assert len(sp.nu) == 2

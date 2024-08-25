@@ -38,11 +38,10 @@ from .grid import (
 )
 import healpy as hp
 
-python_ver = sys.version_info[0] + sys.version_info[1] / 10
-if python_ver >= 3.9:
-    from powerbox import LogNormalPowerBox
-    from halomod import TracerHaloModel as THM
-    from powerbox import dft
+
+from powerbox import LogNormalPowerBox
+from halomod import TracerHaloModel as THM
+from powerbox import dft
 
 
 class HISimulation:
