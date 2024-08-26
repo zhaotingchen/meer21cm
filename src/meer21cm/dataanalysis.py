@@ -40,7 +40,10 @@ class Specification:
         nu_max=np.inf,
         **kwparams,
     ):
-        self._cosmo = None
+        if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
+            self._cosmo = kwparams["_cosmo"]
+        else:
+            self._cosmo = cosmo
         self.map_file = map_file
         self.counts_file = counts_file
         self.los_axis = los_axis
@@ -80,7 +83,7 @@ class Specification:
         # the coordinates of each pixel in the map
         self._ra_map, self._dec_map = get_wcs_coor(wproj, xx, yy)
         self.__dict__.update(kwparams)
-        self.cosmo = cosmo
+        self.cosmo = self._cosmo
 
     @property
     def z_ch(self):
@@ -199,6 +202,20 @@ class Specification:
         A binary window for whether a pixel has been sampled
         """
         return self._dec_map
+
+    @property
+    def W_HI(self):
+        """
+        alias for the binary map sampling.
+        """
+        return self._map_has_sampling
+
+    @property
+    def w_HI(self):
+        """
+        alias for the weights per pixel.
+        """
+        return self._counts
 
     def read_from_fits(self):
         if self.map_file is None:

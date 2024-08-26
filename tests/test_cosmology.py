@@ -1,4 +1,4 @@
-from meer21cm import CosmologyCalculator
+from meer21cm import CosmologyCalculator, Specification
 from astropy.cosmology import Planck18, Planck15
 import numpy as np
 import camb
@@ -41,3 +41,9 @@ def test_matter_power():
     coscal.get_matter_power_spectrum()
     pk_interp = coscal.matter_power_spectrum_fnc(k_test)
     assert np.abs((pk_test - pk_interp) / pk_test).max() < 5e-3
+
+
+def test_inheritance():
+    sp = Specification(cosmo=Planck15)
+    coscal = CosmologyCalculator(**sp.__dict__)
+    assert coscal.cosmo is Planck15

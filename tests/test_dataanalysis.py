@@ -71,3 +71,5 @@ def test_read_fits(test_fits):
     assert sp.num_pix_x == 133
     assert sp.num_pix_y == 73
     assert len(sp.nu) == 2
+    sp.W_HI
+    sp.w_HI

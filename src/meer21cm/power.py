@@ -1,5 +1,5 @@
 """
-This module handles computation of power spectrum from gridded fields.
+This module handles computation of power spectrum from gridded fields and its corresponding model power spectrum from theory.
 """
 import numpy as np
 from meer21cm.cosmology import CosmologyCalculator

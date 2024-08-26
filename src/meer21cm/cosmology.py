@@ -30,6 +30,8 @@ class CosmologyCalculator(Specification):
         self.kmin = kmin
         self._matter_power_spectrum_fnc = None
         self.omegahi = omegahi
+        # reset
+        # self.cosmo = cosmo
 
     @property
     def average_hi_temp(self):
@@ -41,6 +43,7 @@ class CosmologyCalculator(Specification):
 
     @Specification.cosmo.setter
     def cosmo(self, value):
+        cosmo = value
         if isinstance(value, str):
             cosmo = getattr(astropy.cosmology, value)
         self._cosmo = cosmo
@@ -84,6 +87,7 @@ class CosmologyCalculator(Specification):
         pars.set_matter_power(redshifts=[self.z], kmax=2.0)
         results = camb.get_results(pars)
         self.f_growth = results.get_fsigma8()[0] / results.get_sigma8()[0]
+        self.sigma_8_z = results.get_sigma8()[0]
         return pars
 
     @property
