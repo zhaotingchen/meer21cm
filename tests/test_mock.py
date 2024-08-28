@@ -6,13 +6,59 @@ from meer21cm.mock import (
     HISimulation,
     run_lognormal_mock,
     gen_clustering_gal_pos,
+    MockSimulation,
 )
 from meer21cm.util import hod_obuljen18
-from astropy.cosmology import Planck18
+from astropy.cosmology import Planck18, WMAP1
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
+from meer21cm.power import PowerSpectrum
+
+
+def test_matter_mock(test_W):
+    # default is Planck18, so use WMAP1 to test
+    # if cosmo is properly updated throughout
+    mock = MockSimulation(
+        cosmo=WMAP1,
+    )
+    mock._map_has_sampling = test_W
+    k1dedges = np.geomspace(0.05, 1.5, 20)
+    mock.get_mock_matter_field()
+    # underlying code has been tested in grid
+    # simply test invoking
+    mock.box_origin
+    mock.box_len
+    mock.box_resol
+    mock.box_ndim
+    mock.rot_mat_sky_to_box
+    mock.pix_coor_in_cartesian
+    mock.pix_coor_in_box
+    mock.mock_tracer_position
+    # test input and output
+    ps = PowerSpectrum(
+        field_1=mock.mock_matter_field,
+        box_len=mock.box_len,
+        model_k_from_field=True,
+        include_sampling=[True, False],
+        k1dbins=k1dedges,
+        sampling_resol=mock.box_resol,
+        cosmo=mock.cosmo,
+    )
+    pfield_i, keff, nmodes = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    ps.get_matter_power_spectrum()
+    # pmatter3d = ps.matter_power_spectrum_fnc(ps.kmode)*ps.step_sampling()
+    pmatter3d = ps.matter_power_spectrum_fnc(ps.kmode)
+    pm1d, _, _ = ps.get_1d_power(
+        pmatter3d,
+    )
+    avg_deviation = np.sqrt(
+        ((np.abs((pfield_i - pm1d) / pm1d)) ** 2 * nmodes).sum() / nmodes.sum()
+    )
+    assert avg_deviation < 1e-1
 
 
 def test_auto_mmin(test_wproj, test_nu, test_W, test_GAMA_range):

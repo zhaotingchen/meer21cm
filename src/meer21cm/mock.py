@@ -37,11 +37,214 @@ from .grid import (
     minimum_enclosing_box_of_lightcone,
 )
 import healpy as hp
-
+from meer21cm.power import ModelPowerSpectrum
 
 from powerbox import LogNormalPowerBox
 from halomod import TracerHaloModel as THM
 from powerbox import dft
+
+
+# 20 lines missing before adding in
+class MockSimulation(ModelPowerSpectrum):
+    def __init__(
+        self,
+        density="poisson",
+        relative_resol_to_pix=0.5,
+        target_relative_to_num_g=2.5,
+        kaiser_rsd=False,
+        ra_range=(-np.inf, np.inf),
+        dec_range=(-400, 400),
+        seed=None,
+        box_buffkick=5,
+        downres_factor_transverse=1.2,
+        downres_factor_radial=2.0,
+        **params,
+    ):
+        super().__init__(**params)
+        self.density = density.lower()
+        self.relative_resol_to_pix = relative_resol_to_pix
+        self.kaiser_rsd = kaiser_rsd
+        if seed is None:
+            seed = np.random.randint(0, 2**32)
+        self.seed = seed
+        self.rng = default_rng(self.seed)
+        self.box_buffkick = box_buffkick
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_x_len",
+            "_y_len",
+            "_z_len",
+            "_rot_mat_sky_to_box",
+            "_pix_coor_in_cartesian",
+            "_box_resol",
+            "_box_ndim",
+            "_mock_matter_field",
+            "_mock_tracer_position",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+        self.downres_factor_transverse = downres_factor_transverse
+        self.downres_factor_radial = downres_factor_radial
+
+    @property
+    def box_origin(self):
+        """
+        The coordinate of the origin of the box in Mpc.
+        See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
+        for definition.
+        """
+        return np.array([self._x_start, self._y_start, self._z_start])
+
+    @property
+    def box_len(self):
+        """
+        The length of all sides of the box in Mpc.
+        """
+        return np.array([self._x_len, self._y_len, self._z_len])
+
+    @property
+    def box_resol(self):
+        """
+        The grid length of each side of the enclosing box in Mpc.
+        """
+        return self._box_resol
+
+    @property
+    def box_ndim(self):
+        """
+        The number of grids along each side of the enclosing box.
+        """
+        return self._box_ndim
+
+    @property
+    def rot_mat_sky_to_box(self):
+        """
+        The rotational matrix from spheircal cooridnate to regular box.
+
+        See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
+        for definition.
+        """
+        return self._rot_mat_sky_to_box
+
+    @property
+    def pix_coor_in_cartesian(self):
+        """
+        The cartesian coordinate of the pixels in Mpc.
+        """
+        return self._pix_coor_in_cartesian
+
+    @property
+    def pix_coor_in_box(self):
+        """
+        The cartesian coordinate of the pixels in Mpc,
+        shifted so that the origin is the origin of the enclosing box.
+        """
+        return self.pix_coor_in_cartesian - self.box_origin[None, :]
+
+    def get_enclosing_box(self):
+        """
+        invoke to calculate the box dimensions for enclosing all
+        the map pixels.
+        """
+        ra = self.ra_map
+        dec = self.dec_map
+        map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
+        (
+            self._x_start,
+            self._y_start,
+            self._z_start,
+            self._x_len,
+            self._y_len,
+            self._z_len,
+            rot_back,
+            pos_arr,
+        ) = minimum_enclosing_box_of_lightcone(
+            ra[map_mask],
+            dec[map_mask],
+            self.nu,
+            cosmo=self.cosmo,
+            return_coord=True,
+            buffkick=self.box_buffkick,
+        )
+        self._rot_mat_sky_to_box = np.linalg.inv(rot_back)
+        self._pix_coor_in_cartesian = pos_arr
+        downres = np.array(
+            [
+                self.downres_factor_transverse,
+                self.downres_factor_transverse,
+                self.downres_factor_radial,
+            ]
+        )
+        comov_dist = self.comoving_distance(self.z_ch).value
+        pix_resol_in_mpc = (
+            np.pi / 180 * self.pix_resol * self.comoving_distance(self.z).value
+        )
+        los_resol_in_mpc = (comov_dist.max() - comov_dist.min()) / len(self.nu)
+        box_resol = (
+            np.array([pix_resol_in_mpc, pix_resol_in_mpc, los_resol_in_mpc]) * downres
+        )
+        ndim_rg = self.box_len / box_resol
+        ndim_rg = ndim_rg.astype("int")
+        for i in range(3):
+            if ndim_rg[i] % 2 != 0:
+                ndim_rg[i] += 1
+        box_resol = self.box_len / ndim_rg
+        self._box_resol = box_resol
+        self._box_ndim = ndim_rg
+
+    @property
+    def mock_matter_field(self):
+        """
+        The simulated dark matter density field.
+        """
+        return self._mock_matter_field
+
+    def get_mock_matter_field(self):
+        if self.box_ndim is None:
+            self.get_enclosing_box()
+        if self.matter_power_spectrum_fnc is None:
+            self.get_matter_power_spectrum()
+        pb = LogNormalPowerBox(
+            N=self.box_ndim,
+            dim=3,
+            pk=self.matter_power_spectrum_fnc,
+            boxlength=self.box_len,
+            seed=self.seed,
+        )
+        self._mock_matter_field = pb.delta_x()
+        delta_k = dft.fft(
+            self._mock_matter_field,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0]
+        # rotation of a vector is not deterministic, any direction would do
+        self._velocity_k_z = np.nan_to_num(
+            -1j
+            * (1 / (1 + self.z))
+            * self.cosmo.H(self.z).to("km s^-1 Mpc^-1").value
+            * self.f_growth
+            * pb.kvec[2][None, None, :]
+            / pb.k() ** 2
+            * delta_k
+        )
+        self._velocity_z = dft.ifft(
+            self._velocity_k_z,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0].real
+
+    @property
+    def mock_tracer_position(self):
+        """
+        The simulated tracer positions.
+        """
+        return self._mock_tracer_position
 
 
 class HISimulation:

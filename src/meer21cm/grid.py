@@ -27,7 +27,6 @@ def minimum_enclosing_box_of_lightcone(
     .. highlight:: python
     .. code-block:: python
 
-        pos += np.array([x_min,y_min,z_min])
         vec = inv_rot @ pos
         vec /= np.sqrt(np.sum(vec**2))
         ra_pos, dec_pos = hp.vec2ang(vec,lonlat=True)
@@ -72,6 +71,9 @@ def minimum_enclosing_box_of_lightcone(
             The length of the box along z-axis.
         inv_rot: ``numpy`` array.
             The rotational matrix to rotate the box back to the sky positions.
+        pos_arr: ``numpy'' array.
+            Only returns if ``return_coord = True''.
+            The Cartesian coordinates of the input ra and dec.
 
     """
     ra_arr = (ra_arr.ravel() * units.Unit(ang_unit)).to("deg").value

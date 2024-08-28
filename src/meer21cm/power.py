@@ -625,19 +625,23 @@ def bin_3d_to_1d(
     indx = (kfield[:, None] >= k1dedges[None, :-1]) * (
         kfield[:, None] < k1dedges[None, 1:]
     )
-    ps1d = np.sum(ps3d[:, None] * indx * weights[:, None], 0) / np.sum(
-        indx * weights[:, None], 0
-    )
-    k1deff = np.sum(kfield[:, None] * indx * weights[:, None], 0) / np.sum(
-        indx * weights[:, None], 0
-    )
-    if error is True:
-        ps1derr = np.sqrt(
-            np.sum(
-                (ps3d[:, None] - ps1d[None, :]) ** 2 * (indx * weights[:, None]) ** 2, 0
-            )
-            / np.sum((indx * weights[:, None]), 0) ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ps1d = np.sum(ps3d[:, None] * indx * weights[:, None], 0) / np.sum(
+            indx * weights[:, None], 0
         )
+        k1deff = np.sum(kfield[:, None] * indx * weights[:, None], 0) / np.sum(
+            indx * weights[:, None], 0
+        )
+    if error is True:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ps1derr = np.sqrt(
+                np.sum(
+                    (ps3d[:, None] - ps1d[None, :]) ** 2
+                    * (indx * weights[:, None]) ** 2,
+                    0,
+                )
+                / np.sum((indx * weights[:, None]), 0) ** 2
+            )
     nmodes = np.sum(indx * (weights[:, None] > 0), 0)
 
     if error is True:
@@ -795,7 +799,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mumode = self.k_para
             slice_indx = (None,) * (len(field_1.shape) - 1)
             slice_indx += (slice(None, None, None),)
-            mumode = self.k_para[slice_indx] / kmode
+            with np.errstate(divide="ignore", invalid="ignore"):
+                mumode = self.k_para[slice_indx] / kmode
         ModelPowerSpectrum.__init__(
             self,
             kmode=kmode,
