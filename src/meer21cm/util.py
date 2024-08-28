@@ -16,6 +16,17 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
+def center_to_edges(arr):
+    """
+    Extend a linear spaced monotonic array
+    so that the original array is the middle point of the output array.
+    """
+    result = arr.copy()
+    dx = np.diff(arr)
+    result = np.append(result[:-1] - dx / 2, result[-2:] + dx[-2:] / 2)
+    return result
+
+
 def coeff_hi_density_to_temp(z=0, cosmo=Planck18):
     r"""
     The conversion coefficient :math:`C_{\rm HI}` so that

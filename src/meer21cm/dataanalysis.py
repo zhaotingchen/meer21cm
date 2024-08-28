@@ -6,6 +6,8 @@ from meer21cm.util import (
     get_wcs_coor,
     radec_to_indx,
     freq_to_redshift,
+    f_21,
+    center_to_edges,
 )
 from astropy import constants, units
 import astropy
@@ -14,6 +16,7 @@ from meer21cm.io import (
     meerklass_L_deep_nu_min,
     meerklass_L_deep_nu_max,
     read_map,
+    filter_incomplete_los,
 )
 from astropy.wcs.utils import proj_plane_pixel_area
 import meer21cm
@@ -38,6 +41,9 @@ class Specification:
         los_axis=-1,
         nu_min=-np.inf,
         nu_max=np.inf,
+        filter_map_los=True,
+        gal_file=None,
+        weighting="counts",
         **kwparams,
     ):
         if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
@@ -84,6 +90,9 @@ class Specification:
         self._ra_map, self._dec_map = get_wcs_coor(wproj, xx, yy)
         self.__dict__.update(kwparams)
         self.cosmo = self._cosmo
+        self.filter_map_los = filter_map_los
+        self.gal_file = gal_file
+        self.weighting = weighting
 
     @property
     def z_ch(self):
@@ -189,6 +198,8 @@ class Specification:
         """
         return self._map_has_sampling
 
+    W_HI = map_has_sampling
+
     @property
     def ra_map(self):
         """
@@ -204,18 +215,79 @@ class Specification:
         return self._dec_map
 
     @property
-    def W_HI(self):
+    def weights_map_pixel(self):
         """
-        alias for the binary map sampling.
+        the weights per map pixel.
         """
-        return self._map_has_sampling
+        return self._weights_map_pixel
+
+    w_HI = weights_map_pixel
 
     @property
-    def w_HI(self):
+    def ra_gal(self):
         """
-        alias for the weights per pixel.
+        RA coordinates of galaxy catalogue for cross-correlation
         """
-        return self._counts
+        return self._ra_gal
+
+    @property
+    def dec_gal(self):
+        """
+        Dec coordinates of galaxy catalogue for cross-correlation
+        """
+        return self._dec_gal
+
+    @property
+    def z_gal(self):
+        """
+        Redshifts of galaxy catalogue for cross-correlation
+        """
+        return self._z_gal
+
+    @property
+    def freq_gal(self):
+        """
+        The 21cm line frequency for each galaxy in Hz.
+        """
+        return f_21 / (1 + self.z_gal)
+
+    @property
+    def ch_id_gal(self):
+        """
+        The channel id (0-indexed) of each galaxy in the catalogue
+        for cross-correlation.
+        Galaxies out of the frequency range will be given len(self.nu) as indices.
+        """
+        nu_edges = center_to_edges(self.nu)
+        nu_edges_extend = center_to_edges(center_to_edges(nu_edges))
+        gal_which_ch = np.digitize(self.freq_gal, nu_edges_extend) - 2
+        # first and last bins are out of range
+        gal_which_ch[gal_which_ch < 0] = len(self.nu)
+        return gal_which_ch
+
+    def read_gal_cat(self):
+        """
+        Read in a galaxy catalogue for cross-correlation
+        """
+        if self.gal_file is None:
+            print("no gal_file specified")
+            return None
+        hdu = fits.open(self.gal_file)
+        hdr = hdu[1].header
+        ra_g = hdu[1].data["RA"]  # Right ascension (J2000) [deg]
+        dec_g = hdu[1].data["DEC"]  # Declination (J2000) [deg]
+        z_g = hdu[1].data["Z"]  # Spectroscopic redshift, -1 for none attempted
+
+        # select only galaxies that fall into range
+        z_edges = center_to_edges(self.z_ch)
+        zmin, zmax = self.z_ch.min(), self.z_ch.max()
+        z_Lband = (z_g > zmin) & (z_g < zmax)
+        ra_g = ra_g[z_Lband]
+        dec_g = dec_g[z_Lband]
+        z_g = z_g[z_Lband]
+        self._ra_gal = ra_g
+        self._dec_gal = dec_g
+        self._z_gal = z_g
 
     def read_from_fits(self):
         if self.map_file is None:
@@ -237,3 +309,19 @@ class Specification:
             los_axis=self.los_axis,
         )
         self.num_pix_x, self.num_pix_y = self._ra_map.shape
+        if self.filter_map_los:
+            (
+                self._data,
+                self._map_has_sampling,
+                _,
+                self._counts,
+            ) = filter_incomplete_los(
+                self._data,
+                self._map_has_sampling,
+                self._counts,
+                self._counts,
+            )
+        if self.weighting.lower()[:5] == "count":
+            self._weights_map_pixel = self._counts
+        elif self.weighting.lower()[:7] == "uniform":
+            self._weights_map_pixel = (self._counts > 0).astype("float")

@@ -4,7 +4,7 @@ import numpy as np
 from astropy import units, constants
 import pytest
 from astropy.wcs.utils import proj_plane_pixel_area
-from meer21cm.util import freq_to_redshift
+from meer21cm.util import freq_to_redshift, center_to_edges
 
 
 def test_cosmo():
@@ -57,6 +57,7 @@ def test_read_fits(test_fits):
     sp = Specification()
     # should be None
     sp.read_from_fits()
+    sp.read_gal_cat()
     # set map file
     sp.map_file = test_fits
     sp.num_pix_x = 1
@@ -72,4 +73,18 @@ def test_read_fits(test_fits):
     assert sp.num_pix_y == 73
     assert len(sp.nu) == 2
     sp.W_HI
-    sp.w_HI
+    assert np.allclose(sp.w_HI, sp.counts)
+    sp.weighting = "uniform"
+    sp.read_from_fits()
+    assert np.allclose(sp.w_HI, sp.counts > 0)
+
+
+def test_gal_readin(test_gal_fits):
+    sp = Specification()
+    sp.gal_file = test_gal_fits
+    sp.read_gal_cat()
+    nu_edges = center_to_edges(sp.nu)
+    assert np.mean(sp.freq_gal >= nu_edges[sp.ch_id_gal]) == 1
+    assert np.mean(sp.freq_gal <= nu_edges[sp.ch_id_gal + 1]) == 1
+    assert len(sp.ra_gal) == len(sp.z_gal)
+    assert len(sp.dec_gal) == len(sp.z_gal)

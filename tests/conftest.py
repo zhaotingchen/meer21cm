@@ -33,6 +33,12 @@ def test_fits():
 
 
 @pytest.fixture
+def test_gal_fits():
+    map_file = data_dir + "test_gal.fits"
+    return map_file
+
+
+@pytest.fixture
 def test_wcs():
     map_file = data_dir + "test_fits.fits"
     wcs = WCS(map_file)

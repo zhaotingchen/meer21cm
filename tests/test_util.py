@@ -6,6 +6,11 @@ from meer21cm.util import *
 import sys
 
 
+def test_center_to_edges():
+    outarr = center_to_edges(np.linspace(0.5, 9.5, 10))
+    assert np.allclose(outarr, np.linspace(0, 10, 11))
+
+
 def test_omega_hi_to_average_temp():
     # just for tests
     omega_hi = 1e-4

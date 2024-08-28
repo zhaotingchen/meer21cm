@@ -30,8 +30,6 @@ class CosmologyCalculator(Specification):
         self.kmin = kmin
         self._matter_power_spectrum_fnc = None
         self.omegahi = omegahi
-        # reset
-        # self.cosmo = cosmo
 
     @property
     def average_hi_temp(self):
