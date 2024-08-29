@@ -80,6 +80,7 @@ class MockSimulation(ModelPowerSpectrum):
             "_pix_coor_in_cartesian",
             "_box_resol",
             "_box_ndim",
+            "_mock_matter_field_r",
             "_mock_matter_field",
             "_mock_tracer_position",
         ]
@@ -87,6 +88,7 @@ class MockSimulation(ModelPowerSpectrum):
             setattr(self, attr, None)
         self.downres_factor_transverse = downres_factor_transverse
         self.downres_factor_radial = downres_factor_radial
+        self.target_relative_to_num_g = target_relative_to_num_g
 
     @property
     def box_origin(self):
@@ -213,31 +215,26 @@ class MockSimulation(ModelPowerSpectrum):
             boxlength=self.box_len,
             seed=self.seed,
         )
-        self._mock_matter_field = pb.delta_x()
+        self._mock_matter_field_r = pb.delta_x()
         delta_k = dft.fft(
-            self._mock_matter_field,
+            self._mock_matter_field_r,
             L=pb.boxlength,
             a=pb.fourier_a,
             b=pb.fourier_b,
             backend=pb.fftbackend,
         )[0]
-        # rotation of a vector is not deterministic, any direction would do
-        self._velocity_k_z = np.nan_to_num(
-            -1j
-            * (1 / (1 + self.z))
-            * self.cosmo.H(self.z).to("km s^-1 Mpc^-1").value
-            * self.f_growth
-            * pb.kvec[2][None, None, :]
-            / pb.k() ** 2
-            * delta_k
-        )
-        self._velocity_z = dft.ifft(
-            self._velocity_k_z,
-            L=pb.boxlength,
-            a=pb.fourier_a,
-            b=pb.fourier_b,
-            backend=pb.fftbackend,
-        )[0].real
+        if self.kaiser_rsd:
+            mumode = np.nan_to_num(pb.kvec[-1][None, None, :] / pb.k())
+            delta_k *= 1 + mumode**2 * self.f_growth
+            self._mock_matter_field = dft.ifft(
+                delta_k,
+                L=pb.boxlength,
+                a=pb.fourier_a,
+                b=pb.fourier_b,
+                backend=pb.fftbackend,
+            )[0].real
+        else:
+            self._mock_matter_field = self._mock_matter_field_r.copy()
 
     @property
     def mock_tracer_position(self):

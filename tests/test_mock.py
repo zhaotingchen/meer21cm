@@ -59,6 +59,29 @@ def test_matter_mock(test_W):
         ((np.abs((pfield_i - pm1d) / pm1d)) ** 2 * nmodes).sum() / nmodes.sum()
     )
     assert avg_deviation < 1e-1
+    # test RSD
+    mock.kaiser_rsd = True
+    mock.get_mock_matter_field()
+    ps = PowerSpectrum(
+        field_1=mock.mock_matter_field,
+        box_len=mock.box_len,
+        model_k_from_field=True,
+        include_sampling=[True, False],
+        k1dbins=k1dedges,
+        sampling_resol=mock.box_resol,
+        cosmo=mock.cosmo,
+    )
+    pfield_i_rsd, keff, nmodes = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    ps.get_matter_power_spectrum()
+    ps.get_model_power()
+    pm1d_rsd, _, _ = ps.get_1d_power(np.nan_to_num(ps.auto_power_matter_model))
+    avg_deviation = np.sqrt(
+        ((np.abs((pfield_i_rsd - pm1d_rsd) / pm1d_rsd)) ** 2 * nmodes).sum()
+        / nmodes.sum()
+    )
+    assert avg_deviation < 1e-1
 
 
 def test_auto_mmin(test_wproj, test_nu, test_W, test_GAMA_range):

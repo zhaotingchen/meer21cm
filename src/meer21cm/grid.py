@@ -145,7 +145,8 @@ def fourier_window_for_assignment(
     window="nnb",
 ):
     r"""
-    Calculate the effective window function in Fourier space from mass assignment scheme that sample continueous fields to discrete grids.
+    Calculate the effective window function in Fourier space from mass assignment scheme
+    that sample continueous fields to discrete grids.
 
     The window function can be written as [1]
 
@@ -174,7 +175,9 @@ def fourier_window_for_assignment(
 
     References
     ----------
-    .. [1] Sefusatti, E. et al., "Accurate Estimators of Correlation Functions in Fourier Space", https://ui.adsabs.harvard.edu/abs/2016MNRAS.460.3624S.
+    .. [1] Sefusatti, E. et al.,
+        "Accurate Estimators of Correlation Functions in Fourier Space",
+        https://ui.adsabs.harvard.edu/abs/2016MNRAS.460.3624S.
     """
     p = allowed_window_scheme.index(window) + 1
     wx, wy, wz = [np.sinc(np.fft.fftfreq(num_mesh[i])) for i in range(3)]
@@ -230,6 +233,7 @@ def project_particle_to_regular_grid(
     particle_weights=None,
     compensate=False,
     shift=0.0,
+    average=True,
 ):
     """
     Project particles into 3D regular grids with a certain assignment scheme.
@@ -257,6 +261,9 @@ def project_particle_to_regular_grid(
             sampling window function.
         shift: float, default 0.0.
             The shift of the field when performing Fourier transform, in the unit of cell size.
+        average: bool, default True.
+            The grid values are weighted averages of the particles if True
+            and weighted sums of the particles if False.
 
     Returns
     -------
@@ -289,9 +296,11 @@ def project_particle_to_regular_grid(
         mass=particle_weights.ravel(),
         resampler=window,
     )
-    projected_map[projected_weights > 0] = (
-        projected_map[projected_weights > 0] / projected_weights[projected_weights > 0]
-    )
+    if average:
+        projected_map[projected_weights > 0] = (
+            projected_map[projected_weights > 0]
+            / projected_weights[projected_weights > 0]
+        )
     if compensate:
         projected_map = compensate_grid_window_effects(
             projected_map,
