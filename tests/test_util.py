@@ -11,6 +11,11 @@ def test_center_to_edges():
     assert np.allclose(outarr, np.linspace(0, 10, 11))
 
 
+def test_find_ch_id():
+    ch_id = find_ch_id(np.array([0.1, 0.6, 1.7, 3.5]), np.array([0, 1, 2]))
+    assert np.allclose(ch_id, np.array([0, 1, 2, 3]))
+
+
 def test_omega_hi_to_average_temp():
     # just for tests
     omega_hi = 1e-4

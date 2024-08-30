@@ -8,6 +8,7 @@ from meer21cm.util import (
     freq_to_redshift,
     f_21,
     center_to_edges,
+    find_ch_id,
 )
 from astropy import constants, units
 import astropy
@@ -258,12 +259,7 @@ class Specification:
         for cross-correlation.
         Galaxies out of the frequency range will be given len(self.nu) as indices.
         """
-        nu_edges = center_to_edges(self.nu)
-        nu_edges_extend = center_to_edges(center_to_edges(nu_edges))
-        gal_which_ch = np.digitize(self.freq_gal, nu_edges_extend) - 2
-        # first and last bins are out of range
-        gal_which_ch[gal_which_ch < 0] = len(self.nu)
-        return gal_which_ch
+        return find_ch_id(self.freq_gal, self.nu)
 
     def read_gal_cat(self):
         """

@@ -27,6 +27,36 @@ def center_to_edges(arr):
     return result
 
 
+def find_ch_id(nu_inp, nu_ch):
+    r"""
+    For which channel does the input frequency fall into.
+    The channel ids are zero-indexed.
+    Input frequencies outside the frequency range are assigned
+    :math:`N_{\rm ch}` (note the last channel id is :math:`N_{\rm ch}-1`)
+
+    Parameters
+    ----------
+    nu_inp: array.
+        The input frequencies
+
+    nu_ch: array.
+        Must be monotonically increasing.
+        The centre frequencies of each channel.
+
+    Returns
+    -------
+    which_ch: int array.
+        The ch ids.
+    """
+    nu_edges = center_to_edges(nu_ch)
+    nu_edges_extend = center_to_edges(center_to_edges(nu_edges))
+    which_ch = np.digitize(nu_inp, nu_edges_extend) - 2
+    # first and last bins are out of range
+    which_ch[which_ch < 0] = len(nu_ch)
+    which_ch[which_ch > len(nu_ch)] = len(nu_ch)
+    return which_ch
+
+
 def coeff_hi_density_to_temp(z=0, cosmo=Planck18):
     r"""
     The conversion coefficient :math:`C_{\rm HI}` so that
