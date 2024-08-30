@@ -9,6 +9,8 @@ from meer21cm.util import (
     f_21,
     center_to_edges,
     find_ch_id,
+    tagging,
+    find_property_with_tags,
 )
 from astropy import constants, units
 import astropy
@@ -20,6 +22,7 @@ from meer21cm.io import (
     filter_incomplete_los,
 )
 from astropy.wcs.utils import proj_plane_pixel_area
+from itertools import chain
 import meer21cm
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
@@ -49,12 +52,21 @@ class Specification:
         dec_range=(-400, 400),
         **kwparams,
     ):
-        self.redshift_dep_attr = [
-            "_matter_power_spectrum_fnc",
-        ]
-        self.cosmo_dep_attr = [
-            "_matter_power_spectrum_fnc",
-        ]
+        self.dependency_dict = find_property_with_tags(self)
+        funcs = list(chain.from_iterable(list(self.dependency_dict.values())))
+        for func_i in np.unique(np.array(funcs)):
+            setattr(self, func_i + "_dep_attr", [])
+        for dep_attr, inp_func in self.dependency_dict.items():
+            for func in inp_func:
+                old_dict = getattr(self, func + "_dep_attr")
+                setattr(
+                    self,
+                    func + "_dep_attr",
+                    old_dict
+                    + [
+                        "_" + dep_attr,
+                    ],
+                )
 
         if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
             self._cosmo = kwparams["_cosmo"]
@@ -106,6 +118,14 @@ class Specification:
         self.ra_range = ra_range
         self.dec_range = dec_range
 
+    def clean_model_cache(self, attr):
+        """
+        set the input attributes to None
+        """
+        for att in attr:
+            if att in self.__dict__.keys():
+                setattr(self, att, None)
+
     @property
     def nu(self):
         """
@@ -116,7 +136,11 @@ class Specification:
     @nu.setter
     def nu(self, value):
         self._nu = np.array(value)
+        if "nu_dep_attr" in dir(self):
+            self.clean_model_cache(self.nu_dep_attr)
 
+    # nu dependent, but it calculates on the fly
+    # so no need for tags
     @property
     def z_ch(self):
         """

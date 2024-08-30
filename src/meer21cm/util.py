@@ -16,6 +16,47 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
+def find_property_with_tags(obj):
+    """
+    Retrieve a dictionary for all the properties of a class that has tags.
+    The keys of the dictionary are the property names and the values are the tags of each property.
+    """
+    func_dependency_dict = dict()
+    for func in dir(type(obj)):
+        if func[0] != "_":
+            if isinstance(getattr(type(obj), func), property):
+                if "tags" in dir(getattr(type(obj), func).fget):
+                    func_tags = getattr(type(obj), func).fget.tags
+                    func_dependency_dict.update({func: func_tags})
+    return func_dependency_dict
+
+
+def tagging(*tags):
+    """
+    A decorator that does one simple thing: Adding tags to functions.
+
+    For example, you can add tags when defining this function
+
+    .. highlight:: python
+    .. code-block:: python
+
+       from meer21cm.util import tagging
+       @tagging('test')
+       def foo(x):
+          return x
+       print(foo.tags)
+
+    You will find that ``foo.tags`` is ``('test',)``. ``meer21cm`` uses this function to keep track of
+    parameter dependencies of functions in classes.
+    """
+
+    def tagged_decorator(func):
+        func.tags = tags
+        return func
+
+    return tagged_decorator
+
+
 def center_to_edges(arr):
     """
     Extend a linear spaced monotonic array

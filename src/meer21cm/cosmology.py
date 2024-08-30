@@ -3,7 +3,7 @@ import camb
 import astropy
 from meer21cm import Specification
 from scipy.interpolate import interp1d
-from meer21cm.util import omega_hi_to_average_temp
+from meer21cm.util import omega_hi_to_average_temp, tagging
 
 
 class CosmologyCalculator(Specification):
@@ -30,20 +30,6 @@ class CosmologyCalculator(Specification):
         self.kmin = kmin
         self._matter_power_spectrum_fnc = None
         self.omegahi = omegahi
-
-    def clean_model_cache(self, attr):
-        """
-        set the input attributes to None
-        """
-        for att in attr:
-            if att in self.__dict__.keys():
-                setattr(self, att, None)
-
-    @Specification.nu.setter
-    def nu(self, value):
-        self._nu = np.array(value)
-        # redshift changed, clear cache
-        self.clean_model_cache(self.redshift_dep_attr)
 
     @property
     def average_hi_temp(self):
@@ -105,6 +91,7 @@ class CosmologyCalculator(Specification):
         return pars
 
     @property
+    @tagging("cosmo", "nu")
     def matter_power_spectrum_fnc(self):
         """
         Interpolation function for the real-space isotropic matter power spectrum.
