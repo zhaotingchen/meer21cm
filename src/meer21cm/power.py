@@ -229,13 +229,13 @@ class FieldPowerSpectrum:
         mean_amp_1=1.0,
         mean_amp_2=1.0,
     ):
-        self.field_1 = field_1
+        self._field_1 = field_1
+        self._field_2 = field_2
         self.weights_1 = weights_1
-        self.field_2 = field_2
         self.weights_2 = weights_2
-        self.box_len = np.array(box_len)
-        self.box_ndim = np.array(field_1.shape)
-        self.box_resol = self.box_len / self.box_ndim
+        self._box_len = np.array(box_len)
+        self._box_ndim = np.array(field_1.shape)
+        self._box_resol = self.box_len / self.box_ndim
         self.mean_center_1 = mean_center_1
         self.unitless_1 = unitless_1
         self.mean_center_2 = mean_center_2
@@ -249,6 +249,27 @@ class FieldPowerSpectrum:
         self._fourier_field_2 = None
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
+
+    @property
+    def box_len(self):
+        """
+        The length of all sides of the box in Mpc.
+        """
+        return self._box_len
+
+    @property
+    def box_resol(self):
+        """
+        The grid length of each side of the enclosing box in Mpc.
+        """
+        return self._box_resol
+
+    @property
+    def box_ndim(self):
+        """
+        The number of grids along each side of the enclosing box.
+        """
+        return self._box_ndim
 
     def set_corr_type(self, corr_type, tracer_indx):
         """
@@ -283,6 +304,17 @@ class FieldPowerSpectrum:
         setattr(self, "remove_sn_" + str(tracer_indx), remove_sn)
 
     @property
+    def x_vec(self):
+        return get_x_vector(
+            self.box_ndim,
+            self.box_resol,
+        )
+
+    @property
+    def x_mode(self):
+        return get_vec_mode(self.x_vec)
+
+    @property
     def k_vec(self):
         return get_k_vector(
             self.box_ndim,
@@ -300,6 +332,26 @@ class FieldPowerSpectrum:
     @property
     def k_mode(self):
         return get_vec_mode(self.k_vec)
+
+    @property
+    def field_1(self):
+        return self._field_1
+
+    @property
+    def field_2(self):
+        return self._field_2
+
+    @field_1.setter
+    def field_1(self, value):
+        # if field is updated, clear fourier field
+        self._field_1 = value
+        self._fourier_field_1 = None
+
+    @field_2.setter
+    def field_2(self, value):
+        # if field is updated, clear fourier field
+        self._field_2 = value
+        self._fourier_field_2 = None
 
     @property
     def fourier_field_1(self):
@@ -444,6 +496,16 @@ def get_fourier_density(
     weights = np.array(weights)
     fourier_field = np.fft.fftn(field * weights, norm=norm)
     return fourier_field
+
+
+def get_x_vector(box_ndim, box_resol):
+    """
+    Get the position vector along each direction for a given box.
+    """
+    xvecarr = tuple(
+        box_resol[i] * (np.arange(box_ndim[i]) + 0.5) for i in range(len(box_ndim))
+    )
+    return xvecarr
 
 
 def get_k_vector(box_ndim, box_resol):
@@ -800,7 +862,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             slice_indx = (None,) * (len(field_1.shape) - 1)
             slice_indx += (slice(None, None, None),)
             with np.errstate(divide="ignore", invalid="ignore"):
-                mumode = self.k_para[slice_indx] / kmode
+                mumode = np.nan_to_num(self.k_para[slice_indx] / kmode)
         ModelPowerSpectrum.__init__(
             self,
             kmode=kmode,

@@ -20,11 +20,13 @@ from meer21cm.power import PowerSpectrum
 def test_matter_mock(test_W):
     # default is Planck18, so use WMAP1 to test
     # if cosmo is properly updated throughout
+    k1dedges = np.geomspace(0.05, 1.5, 20)
+
     mock = MockSimulation(
         cosmo=WMAP1,
+        k1dbins=k1dedges,
     )
     mock._map_has_sampling = test_W
-    k1dedges = np.geomspace(0.05, 1.5, 20)
     mock.get_mock_matter_field()
     # underlying code has been tested in grid
     # simply test invoking
@@ -36,23 +38,18 @@ def test_matter_mock(test_W):
     mock.pix_coor_in_cartesian
     mock.pix_coor_in_box
     mock.mock_tracer_position
-    # test input and output
-    ps = PowerSpectrum(
-        field_1=mock.mock_matter_field,
-        box_len=mock.box_len,
-        model_k_from_field=True,
-        include_sampling=[True, False],
-        k1dbins=k1dedges,
-        sampling_resol=mock.box_resol,
-        cosmo=mock.cosmo,
-    )
-    pfield_i, keff, nmodes = ps.get_1d_power(
+    # test input and output power consistency
+    mock.k1dbins = k1dedges
+    mock.get_matter_power_spectrum()
+    mock.k1dbins = k1dedges
+
+    mock.field_1 = mock.mock_matter_field
+    pfield_i, keff, nmodes = mock.get_1d_power(
         "auto_power_3d_1",
     )
-    ps.get_matter_power_spectrum()
-    # pmatter3d = ps.matter_power_spectrum_fnc(ps.kmode)*ps.step_sampling()
-    pmatter3d = ps.matter_power_spectrum_fnc(ps.kmode)
-    pm1d, _, _ = ps.get_1d_power(
+
+    pmatter3d = mock.matter_power_spectrum_fnc(mock.kmode)
+    pm1d, _, _ = mock.get_1d_power(
         pmatter3d,
     )
     avg_deviation = np.sqrt(
@@ -62,26 +59,57 @@ def test_matter_mock(test_W):
     # test RSD
     mock.kaiser_rsd = True
     mock.get_mock_matter_field()
-    ps = PowerSpectrum(
-        field_1=mock.mock_matter_field,
-        box_len=mock.box_len,
-        model_k_from_field=True,
-        include_sampling=[True, False],
-        k1dbins=k1dedges,
-        sampling_resol=mock.box_resol,
-        cosmo=mock.cosmo,
-    )
-    pfield_i_rsd, keff, nmodes = ps.get_1d_power(
+    mock.field_1 = mock.mock_matter_field
+    pfield_i_rsd, keff, nmodes = mock.get_1d_power(
         "auto_power_3d_1",
     )
-    ps.get_matter_power_spectrum()
-    ps.get_model_power()
-    pm1d_rsd, _, _ = ps.get_1d_power(np.nan_to_num(ps.auto_power_matter_model))
+    mock.get_matter_power_spectrum()
+    mock.get_model_power()
+    pm1d_rsd, _, _ = mock.get_1d_power(mock.auto_power_matter_model)
     avg_deviation = np.sqrt(
         ((np.abs((pfield_i_rsd - pm1d_rsd) / pm1d_rsd)) ** 2 * nmodes).sum()
         / nmodes.sum()
     )
     assert avg_deviation < 1e-1
+
+
+def test_tracer_mock(test_W):
+    k1dedges = np.geomspace(0.05, 1.5, 20)
+
+    mock = MockSimulation(
+        tracer_bias_1=1.5,
+        tracer_bias_2=1.9,
+        cosmo=WMAP1,
+        k1dbins=k1dedges,
+        kaiser_rsd=True,
+    )
+    mock._map_has_sampling = test_W
+    mock.get_mock_tracer_field()
+    mock.field_1 = mock.mock_tracer_field_1
+    mock.field_2 = mock.mock_tracer_field_2
+
+    mock.get_model_power()
+    pfield_1_rsd, keff, nmodes = mock.get_1d_power(
+        "auto_power_3d_1",
+    )
+    pfield_2_rsd, keff, nmodes = mock.get_1d_power(
+        "auto_power_3d_2",
+    )
+    pfield_c_rsd, keff, nmodes = mock.get_1d_power(
+        "cross_power_3d",
+    )
+
+    pmod_1, _, _ = mock.get_1d_power((mock.auto_power_tracer_1_model))
+    pmod_2, _, _ = mock.get_1d_power((mock.auto_power_tracer_2_model))
+    pmod_c, _, _ = mock.get_1d_power((mock.cross_power_tracer_model))
+    pfield = [pfield_1_rsd, pfield_2_rsd, pfield_c_rsd]
+    pmod = [pmod_1, pmod_2, pmod_c]
+    for i in range(3):
+        avg_deviation = np.sqrt(
+            ((np.abs((pfield[i] - pmod[i]) / pmod[i])) ** 2 * nmodes).sum()
+            / nmodes.sum()
+        )
+        assert avg_deviation < 1e-1
 
 
 def test_auto_mmin(test_wproj, test_nu, test_W, test_GAMA_range):

@@ -4,6 +4,19 @@ from powerbox import PowerBox
 import pytest
 from scipy.signal import windows
 from meer21cm import PowerSpectrum
+from meer21cm.util import center_to_edges
+
+
+def test_get_x_vector():
+    box_len = np.array([100, 200, 60])
+    box_dim = np.array([10, 20, 6])
+    box_resol = box_len / box_dim
+    xvec = get_x_vector(box_dim, box_resol)
+    for i in range(3):
+        xbins_i = center_to_edges(xvec[i])
+        assert xbins_i[0] == 0.0
+        assert xbins_i[-1] == box_len[i]
+        assert np.diff(xbins_i).mean() == box_resol[i]
 
 
 def test_get_k_vector():
@@ -106,6 +119,8 @@ def test_FieldPowerSpectrum():
         unitless_1=True,
         mean_center_1=True,
     )
+    ps.x_vec
+    ps.x_mode
     for i in range(3):
         assert np.allclose(ps.k_vec[i], kvec[i])
     assert np.allclose(ps.k_mode, kmode)
@@ -268,6 +283,12 @@ def test_power_weights_renorm():
     power3 = ps.cross_power_3d
     floor3 = power3.mean()
     assert np.abs((floor3 - floor1) / floor1) < 1e-2
+    # test clear cache for fields
+    ps.field_1 = rand_noise
+    # an update should clean fourier field
+    assert ps.fourier_field_1 is None
+    ps.field_2 = rand_noise
+    assert ps.fourier_field_2 is None
 
 
 def test_get_modelpk_conv():

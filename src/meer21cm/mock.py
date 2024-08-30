@@ -37,7 +37,7 @@ from .grid import (
     minimum_enclosing_box_of_lightcone,
 )
 import healpy as hp
-from meer21cm.power import ModelPowerSpectrum
+from meer21cm.power import PowerSpectrum
 
 from powerbox import LogNormalPowerBox
 from halomod import TracerHaloModel as THM
@@ -45,7 +45,7 @@ from powerbox import dft
 
 
 # 20 lines missing before adding in
-class MockSimulation(ModelPowerSpectrum):
+class MockSimulation(PowerSpectrum):
     def __init__(
         self,
         density="poisson",
@@ -78,11 +78,14 @@ class MockSimulation(ModelPowerSpectrum):
             "_z_len",
             "_rot_mat_sky_to_box",
             "_pix_coor_in_cartesian",
+            "_box_len",
             "_box_resol",
             "_box_ndim",
             "_mock_matter_field_r",
             "_mock_matter_field",
             "_mock_tracer_position",
+            "_mock_tracer_field_1",
+            "_mock_tracer_field_2",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -104,7 +107,7 @@ class MockSimulation(ModelPowerSpectrum):
         """
         The length of all sides of the box in Mpc.
         """
-        return np.array([self._x_len, self._y_len, self._z_len])
+        return self._box_len
 
     @property
     def box_resol(self):
@@ -170,6 +173,13 @@ class MockSimulation(ModelPowerSpectrum):
             return_coord=True,
             buffkick=self.box_buffkick,
         )
+        self._box_len = np.array(
+            [
+                self._x_len,
+                self._y_len,
+                self._z_len,
+            ]
+        )
         self._rot_mat_sky_to_box = np.linalg.inv(rot_back)
         self._pix_coor_in_cartesian = pos_arr
         downres = np.array(
@@ -195,6 +205,12 @@ class MockSimulation(ModelPowerSpectrum):
         box_resol = self.box_len / ndim_rg
         self._box_resol = box_resol
         self._box_ndim = ndim_rg
+        self.kmode = self.k_mode
+        slice_indx = (None,) * (len(self._box_ndim) - 1)
+        slice_indx += (slice(None, None, None),)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
+        self.sampling_resol = self.box_resol
 
     @property
     def mock_matter_field(self):
@@ -204,6 +220,9 @@ class MockSimulation(ModelPowerSpectrum):
         return self._mock_matter_field
 
     def get_mock_matter_field(self):
+        self._mock_matter_field = self.get_mock_field(bias=1)
+
+    def get_mock_field(self, bias):
         if self.box_ndim is None:
             self.get_enclosing_box()
         if self.matter_power_spectrum_fnc is None:
@@ -215,7 +234,8 @@ class MockSimulation(ModelPowerSpectrum):
             boxlength=self.box_len,
             seed=self.seed,
         )
-        self._mock_matter_field_r = pb.delta_x()
+        if self._mock_matter_field_r is None:
+            self._mock_matter_field_r = pb.delta_x()
         delta_k = dft.fft(
             self._mock_matter_field_r,
             L=pb.boxlength,
@@ -225,16 +245,36 @@ class MockSimulation(ModelPowerSpectrum):
         )[0]
         if self.kaiser_rsd:
             mumode = np.nan_to_num(pb.kvec[-1][None, None, :] / pb.k())
-            delta_k *= 1 + mumode**2 * self.f_growth
-            self._mock_matter_field = dft.ifft(
-                delta_k,
-                L=pb.boxlength,
-                a=pb.fourier_a,
-                b=pb.fourier_b,
-                backend=pb.fftbackend,
-            )[0].real
+            delta_k *= bias + mumode**2 * self.f_growth
         else:
-            self._mock_matter_field = self._mock_matter_field_r.copy()
+            delta_k *= bias
+        self._mock_field = dft.ifft(
+            delta_k,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0].real
+        return self._mock_field
+
+    @property
+    def mock_tracer_field_1(self):
+        """
+        The simulated tracer field 1.
+        """
+        return self._mock_tracer_field_1 * self.mean_amp_1
+
+    @property
+    def mock_tracer_field_2(self):
+        """
+        The simulated tracer field 2.
+        """
+        return self._mock_tracer_field_2 * self.mean_amp_2
+
+    def get_mock_tracer_field(self):
+        self._mock_tracer_field_1 = self.get_mock_field(bias=self.tracer_bias_1)
+        if self.tracer_bias_2 is not None:
+            self._mock_tracer_field_2 = self.get_mock_field(bias=self.tracer_bias_2)
 
     @property
     def mock_tracer_position(self):

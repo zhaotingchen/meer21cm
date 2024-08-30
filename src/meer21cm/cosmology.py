@@ -55,6 +55,8 @@ class CosmologyCalculator(Specification):
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
         self.camb_pars = self.get_camb_pars()
+        # clear matter power calculation if cosmology is changed
+        self._matter_power_spectrum_fnc = None
 
     def get_camb_pars(self):
         """
