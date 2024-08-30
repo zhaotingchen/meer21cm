@@ -3,6 +3,11 @@ This module handles computation of power spectrum from gridded fields and its co
 """
 import numpy as np
 from meer21cm.cosmology import CosmologyCalculator
+from meer21cm.grid import (
+    minimum_enclosing_box_of_lightcone,
+    project_particle_to_regular_grid,
+)
+from scipy.signal import windows
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -55,7 +60,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
 
-        self.sampling_resol = sampling_resol
+        self._sampling_resol = sampling_resol
         self.has_resol = True
         if self.sampling_resol is None:
             self.has_resol = False
@@ -72,6 +77,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     def fog_term(self, sigma_v):
         return getattr(self, "fog_" + self.fog_profile)(sigma_v)
+
+    @property
+    def sampling_resol(self):
+        return self._sampling_resol
 
     @property
     def auto_power_matter_model(self):
@@ -231,8 +240,8 @@ class FieldPowerSpectrum:
     ):
         self._field_1 = field_1
         self._field_2 = field_2
-        self.weights_1 = weights_1
-        self.weights_2 = weights_2
+        self._weights_1 = weights_1
+        self._weights_2 = weights_2
         self._box_len = np.array(box_len)
         self._box_ndim = np.array(field_1.shape)
         self._box_resol = self.box_len / self.box_ndim
@@ -351,6 +360,26 @@ class FieldPowerSpectrum:
     def field_2(self, value):
         # if field is updated, clear fourier field
         self._field_2 = value
+        self._fourier_field_2 = None
+
+    @property
+    def weights_1(self):
+        return self._weights_1
+
+    @property
+    def weights_2(self):
+        return self._weights_2
+
+    @weights_1.setter
+    def weights_1(self, value):
+        # if weight is updated, clear fourier field
+        self._weights_1 = value
+        self._fourier_field_1 = None
+
+    @weights_2.setter
+    def weights_2(self, value):
+        # if weight is updated, clear fourier field
+        self._weights_2 = value
         self._fourier_field_2 = None
 
     @property
@@ -834,6 +863,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         mean_amp_2=1.0,
         sampling_resol=None,
         include_sampling=[True, False],
+        downres_factor_transverse=1.2,
+        downres_factor_radial=2.0,
+        field_from_mapdata=False,
+        box_buffkick=5,
+        compensate=True,
+        taper_func=windows.blackmanharris,
         **params,
     ):
         if field_1 is None:
@@ -884,6 +919,26 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             **params,
         )
         self.k1dbins = k1dbins
+        self.downres_factor_transverse = downres_factor_transverse
+        self.downres_factor_radial = downres_factor_radial
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_x_len",
+            "_y_len",
+            "_z_len",
+            "_rot_mat_sky_to_box",
+            "_pix_coor_in_cartesian",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+        self.upgrade_sampling_from_gridding = False
+        self.box_buffkick = box_buffkick
+        self.compensate = compensate
+        self.taper_func = taper_func
+        if field_from_mapdata:
+            self.get_enclosing_box()
 
     def get_1d_power(
         self,
@@ -921,3 +976,140 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             * step_window_attenuation(k_para, sampling_resol[2])
         )
         return B_sampling
+
+    @property
+    def box_origin(self):
+        """
+        The coordinate of the origin of the box in Mpc.
+        See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
+        for definition.
+        """
+        return np.array([self._x_start, self._y_start, self._z_start])
+
+    @property
+    def box_len(self):
+        """
+        The length of all sides of the box in Mpc.
+        """
+        return self._box_len
+
+    @property
+    def box_resol(self):
+        """
+        The grid length of each side of the enclosing box in Mpc.
+        """
+        return self._box_resol
+
+    @property
+    def box_ndim(self):
+        """
+        The number of grids along each side of the enclosing box.
+        """
+        return self._box_ndim
+
+    @property
+    def rot_mat_sky_to_box(self):
+        """
+        The rotational matrix from spheircal cooridnate to regular box.
+
+        See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
+        for definition.
+        """
+        return self._rot_mat_sky_to_box
+
+    @property
+    def pix_coor_in_cartesian(self):
+        """
+        The cartesian coordinate of the pixels in Mpc.
+        """
+        return self._pix_coor_in_cartesian
+
+    @property
+    def pix_coor_in_box(self):
+        """
+        The cartesian coordinate of the pixels in Mpc,
+        shifted so that the origin is the origin of the enclosing box.
+        """
+        return self.pix_coor_in_cartesian - self.box_origin[None, :]
+
+    def get_enclosing_box(self):
+        """
+        invoke to calculate the box dimensions for enclosing all
+        the map pixels.
+        """
+        ra = self.ra_map
+        dec = self.dec_map
+        map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
+        (
+            self._x_start,
+            self._y_start,
+            self._z_start,
+            self._x_len,
+            self._y_len,
+            self._z_len,
+            rot_back,
+            pos_arr,
+        ) = minimum_enclosing_box_of_lightcone(
+            ra[map_mask],
+            dec[map_mask],
+            self.nu,
+            cosmo=self.cosmo,
+            return_coord=True,
+            buffkick=self.box_buffkick,
+        )
+        self._box_len = np.array(
+            [
+                self._x_len,
+                self._y_len,
+                self._z_len,
+            ]
+        )
+        self._rot_mat_sky_to_box = np.linalg.inv(rot_back)
+        self._pix_coor_in_cartesian = pos_arr
+        downres = np.array(
+            [
+                self.downres_factor_transverse,
+                self.downres_factor_transverse,
+                self.downres_factor_radial,
+            ]
+        )
+        pix_resol_in_mpc = self.pix_resol_in_mpc
+        los_resol_in_mpc = self.los_resol_in_mpc
+        box_resol = (
+            np.array([pix_resol_in_mpc, pix_resol_in_mpc, los_resol_in_mpc]) * downres
+        )
+        ndim_rg = self.box_len / box_resol
+        ndim_rg = ndim_rg.astype("int")
+        for i in range(3):
+            if ndim_rg[i] % 2 != 0:
+                ndim_rg[i] += 1
+        box_resol = self.box_len / ndim_rg
+        self._box_resol = box_resol
+        self._box_ndim = ndim_rg
+        self.kmode = self.k_mode
+        slice_indx = (None,) * (len(self._box_ndim) - 1)
+        slice_indx += (slice(None, None, None),)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
+        if self.upgrade_sampling_from_gridding:
+            self._sampling_resol = self.box_resol
+
+    def grid_data_to_field(self):
+        hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(
+            self.pix_coor_in_box,
+            self.box_len,
+            self.box_ndim,
+            particle_value=self.data[self.W_HI].ravel(),
+            particle_weights=self.w_HI[self.W_HI].ravel(),
+            compensate=self.compensate,
+        )
+        hi_map_rg = np.array(hi_map_rg)
+        hi_weights_rg = np.array(hi_weights_rg)
+        pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
+        taper_HI = self.taper_func(self.box_ndim[-1])
+        weights_hi = (pixel_counts_hi_rg.mean(axis=-1) > 0)[:, :, None] * taper_HI[
+            None, None, :
+        ]
+        self.field_1 = hi_map_rg
+        self.weights_1 = weights_hi
+        return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg

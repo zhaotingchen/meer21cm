@@ -3,7 +3,7 @@ from meer21cm.power import *
 from powerbox import PowerBox
 import pytest
 from scipy.signal import windows
-from meer21cm import PowerSpectrum
+from meer21cm import PowerSpectrum, Specification
 from meer21cm.util import center_to_edges
 
 
@@ -289,6 +289,28 @@ def test_power_weights_renorm():
     assert ps.fourier_field_1 is None
     ps.field_2 = rand_noise
     assert ps.fourier_field_2 is None
+    ps = PowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        weights_1=taper,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+    )
+    power3 = ps.cross_power_3d
+    ps.weights_1 = taper
+    ps.weights_2 = taper
+    # an update should clean fourier field
+    assert ps.fourier_field_1 is None
+    assert ps.fourier_field_2 is None
+    # test invoking
+    ps.box_len
+    ps.box_resol
+    ps.box_ndim
 
 
 def test_get_modelpk_conv():
@@ -582,3 +604,35 @@ def test_temp_amp():
     # test a custom avg
     ps.one = 1.0
     ps.get_model_power()
+
+
+def test_noise_power_from_map(test_W):
+    sp = Specification(
+        ra_range=(334, 357),
+    )
+    sp._map_has_sampling = (test_W * np.ones(sp.nu.size)[None, None, :]) > 0
+    sp._data = np.random.normal(size=sp.map_has_sampling.shape) * sp.map_has_sampling
+    sp._weights_map_pixel = sp.map_has_sampling
+    nkbin = 16
+    # in Mpc
+    kmin, kmax = 0.1, 0.4
+    kbins = np.linspace(kmin, kmax, nkbin + 1)  # k-bin edges [using linear binning]
+    ps = PowerSpectrum(
+        field_from_mapdata=True,
+        downres_factor_transverse=1.5,
+        downres_factor_radial=2.0,
+        k1dbins=kbins,
+        box_buffkick=10,
+        compensate=False,
+        **sp.__dict__,
+    )
+    v_cell = ps.pix_resol_in_mpc**2 * ps.los_resol_in_mpc
+    ps.grid_data_to_field()
+    pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    avg_deviation = np.sqrt(
+        ((np.abs((pdata_1d_hi - v_cell) / v_cell)) ** 2 * nmodes_hi).sum()
+        / nmodes_hi.sum()
+    )
+    assert avg_deviation < 1e-1
