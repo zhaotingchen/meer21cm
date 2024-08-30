@@ -28,6 +28,11 @@ def test_defaults(test_nu, test_W):
     assert np.allclose(spec.map_has_sampling, np.ones(test_W.shape))
     assert np.allclose(spec.z_ch, freq_to_redshift(test_nu))
     assert np.allclose(spec.z, freq_to_redshift(test_nu).mean())
+    x_res = 0.3 * np.pi / 180 * Planck18.comoving_distance(spec.z).value
+    assert np.allclose(spec.pix_resol_in_mpc, x_res)
+    los = Planck18.comoving_distance(spec.z_ch).value
+    z_res = (los[0] - los[-1]) / len(spec.nu)
+    assert np.allclose(z_res, spec.los_resol_in_mpc)
 
 
 def test_unit_conversion():

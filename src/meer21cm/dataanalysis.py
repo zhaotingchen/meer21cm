@@ -45,6 +45,8 @@ class Specification:
         filter_map_los=True,
         gal_file=None,
         weighting="counts",
+        ra_range=(-np.inf, np.inf),
+        dec_range=(-400, 400),
         **kwparams,
     ):
         if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
@@ -94,6 +96,8 @@ class Specification:
         self.filter_map_los = filter_map_los
         self.gal_file = gal_file
         self.weighting = weighting
+        self.ra_range = ra_range
+        self.dec_range = dec_range
 
     @property
     def z_ch(self):
@@ -177,6 +181,27 @@ class Specification:
         angular resolution of the map pixel in deg
         """
         return np.sqrt(self.pixel_area)
+
+    @property
+    def pix_resol_in_mpc(self):
+        """
+        angular resolution of the map pixel in Mpc
+        """
+        return (
+            np.sqrt(self.pixel_area)
+            * np.pi
+            / 180
+            * self.comoving_distance(self.z).to("Mpc").value
+        )
+
+    @property
+    def los_resol_in_mpc(self):
+        """
+        effective frequency resolution in Mpc
+        """
+        comov_dist = self.comoving_distance(self.z_ch).value
+        los_resol_in_mpc = (comov_dist.max() - comov_dist.min()) / len(self.nu)
+        return los_resol_in_mpc
 
     @property
     def data(self):
@@ -317,6 +342,20 @@ class Specification:
                 self._counts,
                 self._counts,
             )
+        ra_temp = self.ra_map.copy()
+        ra_temp[ra_temp > 180] -= 360
+        ra_range = np.array(self.ra_range)
+        ra_range[ra_range > 180] -= 360
+        map_sel = (
+            (ra_temp > ra_range[0])
+            * (ra_temp < ra_range[1])
+            * (self.dec_map > self.dec_range[0])
+            * (self.dec_map < self.dec_range[1])
+        )[:, :, None]
+        self._data *= map_sel
+        self._counts *= map_sel
+        self._map_has_sampling *= map_sel
+
         if self.weighting.lower()[:5] == "count":
             self._weights_map_pixel = self._counts
         elif self.weighting.lower()[:7] == "uniform":
