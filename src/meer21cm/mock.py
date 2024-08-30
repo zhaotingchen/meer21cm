@@ -99,8 +99,6 @@ class MockSimulation(PowerSpectrum):
     def get_mock_field(self, bias):
         if self.box_ndim is None:
             self.get_enclosing_box()
-        if self.matter_power_spectrum_fnc is None:
-            self.get_matter_power_spectrum()
         pb = LogNormalPowerBox(
             N=self.box_ndim,
             dim=3,

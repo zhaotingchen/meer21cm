@@ -49,6 +49,13 @@ class Specification:
         dec_range=(-400, 400),
         **kwparams,
     ):
+        self.redshift_dep_attr = [
+            "_matter_power_spectrum_fnc",
+        ]
+        self.cosmo_dep_attr = [
+            "_matter_power_spectrum_fnc",
+        ]
+
         if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
             self._cosmo = kwparams["_cosmo"]
         else:
@@ -64,7 +71,7 @@ class Specification:
             )
             nu_sel = (nu > meerklass_L_deep_nu_min) * (nu < meerklass_L_deep_nu_max)
             nu = nu[nu_sel]
-        self.nu = nu
+        self._nu = np.array(nu)
         if wproj is None:
             map_file = default_data_dir + "test_fits.fits"
             wcs = WCS(map_file)
@@ -98,6 +105,17 @@ class Specification:
         self.weighting = weighting
         self.ra_range = ra_range
         self.dec_range = dec_range
+
+    @property
+    def nu(self):
+        """
+        The input frequencies of the survey
+        """
+        return self._nu
+
+    @nu.setter
+    def nu(self, value):
+        self._nu = np.array(value)
 
     @property
     def z_ch(self):
@@ -320,7 +338,7 @@ class Specification:
             self._map_has_sampling,
             self._ra_map,
             self._dec_map,
-            self.nu,
+            self._nu,
             self.wproj,
         ) = read_map(
             self.map_file,

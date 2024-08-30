@@ -31,6 +31,20 @@ class CosmologyCalculator(Specification):
         self._matter_power_spectrum_fnc = None
         self.omegahi = omegahi
 
+    def clean_model_cache(self, attr):
+        """
+        set the input attributes to None
+        """
+        for att in attr:
+            if att in self.__dict__.keys():
+                setattr(self, att, None)
+
+    @Specification.nu.setter
+    def nu(self, value):
+        self._nu = np.array(value)
+        # redshift changed, clear cache
+        self.clean_model_cache(self.redshift_dep_attr)
+
     @property
     def average_hi_temp(self):
         """
@@ -55,8 +69,8 @@ class CosmologyCalculator(Specification):
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
         self.camb_pars = self.get_camb_pars()
-        # clear matter power calculation if cosmology is changed
-        self._matter_power_spectrum_fnc = None
+        # cosmology changed, clear cache
+        self.clean_model_cache(self.cosmo_dep_attr)
 
     def get_camb_pars(self):
         """
@@ -95,12 +109,14 @@ class CosmologyCalculator(Specification):
         """
         Interpolation function for the real-space isotropic matter power spectrum.
         """
+        if self._matter_power_spectrum_fnc is None:
+            self.get_matter_power_spectrum()
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):
         pars = self.camb_pars
         pars.set_matter_power(
-            redshifts=np.unique(np.array([0.0, self.z])).tolist(),
+            redshifts=np.unique(np.array([self.z, 0.0])).tolist(),
             kmax=self.kmax / self.h,
         )
         pars.NonLinear = getattr(camb.model, "NonLinear_" + self.nonlinear)

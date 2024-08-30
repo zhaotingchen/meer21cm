@@ -20,6 +20,9 @@ def test_update_pars():
     assert spec.h == Planck15.h
     # test direct input
     spec.cosmo = Planck15
+    # test nu
+    spec.nu = [1.4e9, 1.4e9]
+    spec.z
 
 
 def test_defaults(test_nu, test_W):
