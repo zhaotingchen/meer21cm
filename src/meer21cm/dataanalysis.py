@@ -97,16 +97,7 @@ class Specification:
             map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
         self._map_has_sampling = map_has_sampling
         self.map_unit = map_unit
-        if not check_unit_equiv(map_unit, units.K):
-            if not check_unit_equiv(map_unit, units.Jy):
-                raise (
-                    ValueError,
-                    "map unit has be to either temperature or flux density.",
-                )
-            else:
-                self.map_unit_type = "F"
-        else:
-            self.map_unit_type = "T"
+        self.map_unit_type
         xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
         # the coordinates of each pixel in the map
         self._ra_map, self._dec_map = get_wcs_coor(wproj, xx, yy)
@@ -117,6 +108,22 @@ class Specification:
         self.weighting = weighting
         self.ra_range = ra_range
         self.dec_range = dec_range
+        self._sigma_beam_ch_in_mpc = None
+
+    @property
+    def map_unit_type(self):
+        map_unit = self.map_unit
+        if not check_unit_equiv(map_unit, units.K):
+            if not check_unit_equiv(map_unit, units.Jy):
+                raise (
+                    ValueError,
+                    "map unit has be to either temperature or flux density.",
+                )
+            else:
+                map_unit_type = "F"
+        else:
+            map_unit_type = "T"
+        return map_unit_type
 
     def clean_model_cache(self, attr):
         """
@@ -125,6 +132,54 @@ class Specification:
         for att in attr:
             if att in self.__dict__.keys():
                 setattr(self, att, None)
+
+    @property
+    def beam_unit(self):
+        """
+        The unit of input beam size parameter sigma
+        """
+        return self._beam_unit
+
+    @beam_unit.setter
+    def beam_unit(self, value):
+        self._beam_unit = value
+        if "beam_dep_attr" in dir(self):
+            self.clean_model_cache(self.beam_dep_attr)
+
+    @property
+    def sigma_beam_ch(self):
+        """
+        The input beam size parameter sigma for each channel
+        """
+        return self._sigma_beam_ch
+
+    @sigma_beam_ch.setter
+    def sigma_beam_ch(self, value):
+        self._sigma_beam_ch = value
+        if "beam_dep_attr" in dir(self):
+            self.clean_model_cache(self.beam_dep_attr)
+
+    @property
+    @tagging("cosmo", "beam")
+    def sigma_beam_ch_in_mpc(self):
+        """
+        The input beam size parameter in Mpc in each channel
+        """
+        if self._sigma_beam_ch_in_mpc is None and self.sigma_beam_ch is not None:
+            self._sigma_beam_ch_in_mpc = (
+                self.comoving_distance(self.z_ch).to("Mpc").value
+                * (self.sigma_beam_ch * self.beam_unit).to("rad").value
+            )
+        return self._sigma_beam_ch_in_mpc
+
+    @property
+    def sigma_beam_in_mpc(self):
+        """
+        The channel averaged beam size in Mpc
+        """
+        if self.sigma_beam_ch_in_mpc is None:
+            return None
+        return self.sigma_beam_ch_in_mpc.mean()
 
     @property
     def nu(self):

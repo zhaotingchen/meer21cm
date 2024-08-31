@@ -96,3 +96,20 @@ def test_gal_readin(test_gal_fits):
     assert np.mean(sp.freq_gal <= nu_edges[sp.ch_id_gal + 1]) == 1
     assert len(sp.ra_gal) == len(sp.z_gal)
     assert len(sp.dec_gal) == len(sp.z_gal)
+
+
+def test_beam_update():
+    ps = Specification()
+    assert ps.sigma_beam_ch_in_mpc is None
+    assert ps.sigma_beam_in_mpc is None
+    ps.sigma_beam_ch = np.ones(ps.nu.size)
+    assert ps._sigma_beam_ch_in_mpc is None
+    s1 = ps.sigma_beam_ch_in_mpc
+    assert np.allclose(s1.mean(), ps.sigma_beam_in_mpc)
+    ps.sigma_beam_ch = np.ones(ps.nu.size) * 2
+    assert ps._sigma_beam_ch_in_mpc is None
+    s2 = ps.sigma_beam_ch_in_mpc
+    assert np.allclose(2 * s1, s2)
+    ps.beam_unit = units.rad
+    s3 = ps.sigma_beam_ch_in_mpc
+    assert np.allclose(np.pi * s3 / 180, s2)
