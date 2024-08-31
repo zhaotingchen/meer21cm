@@ -289,9 +289,9 @@ def test_power_weights_renorm():
     # test clear cache for fields
     ps.field_1 = rand_noise
     # an update should clean fourier field
-    assert ps.fourier_field_1 is None
+    assert ps._fourier_field_1 is None
     ps.field_2 = rand_noise
-    assert ps.fourier_field_2 is None
+    assert ps._fourier_field_2 is None
     ps = PowerSpectrum(
         rand_noise,
         box_len,
@@ -308,8 +308,8 @@ def test_power_weights_renorm():
     ps.weights_1 = taper
     ps.weights_2 = taper
     # an update should clean fourier field
-    assert ps.fourier_field_1 is None
-    assert ps.fourier_field_2 is None
+    assert ps._fourier_field_1 is None
+    assert ps._fourier_field_2 is None
     # test invoking
     ps.box_len
     ps.box_resol

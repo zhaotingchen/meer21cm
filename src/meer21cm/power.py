@@ -323,16 +323,13 @@ class FieldPowerSpectrum:
         unitless_2=False,
         remove_sn_2=False,
         corrtype=None,
-        mean_amp_1=1.0,
-        mean_amp_2=1.0,
     ):
-        self._field_1 = field_1
-        self._field_2 = field_2
-        self._weights_1 = weights_1
-        self._weights_2 = weights_2
-        self._box_len = np.array(box_len)
-        self._box_ndim = np.array(field_1.shape)
-        self._box_resol = self.box_len / self.box_ndim
+        self.field_1 = field_1
+        self.field_2 = field_2
+        self.weights_1 = weights_1
+        self.weights_2 = weights_2
+        self.box_len = np.array(box_len)
+        self.box_ndim = np.array(field_1.shape)
         self.mean_center_1 = mean_center_1
         self.unitless_1 = unitless_1
         self.mean_center_2 = mean_center_2
@@ -344,8 +341,8 @@ class FieldPowerSpectrum:
             assert np.allclose(field_2.shape, field_1.shape), error_message
         self._fourier_field_1 = None
         self._fourier_field_2 = None
-        self.mean_amp_1 = mean_amp_1
-        self.mean_amp_2 = mean_amp_2
+        # self.mean_amp_1 = mean_amp_1
+        # self.mean_amp_2 = mean_amp_2
 
     @property
     def box_len(self):
@@ -354,12 +351,18 @@ class FieldPowerSpectrum:
         """
         return self._box_len
 
+    @box_len.setter
+    def box_len(self, value):
+        self._box_len = value
+        if "box_dep_attr" in dir(self):
+            self.clean_cache(self.box_dep_attr)
+
     @property
     def box_resol(self):
         """
         The grid length of each side of the enclosing box in Mpc.
         """
-        return self._box_resol
+        return self.box_len / self.box_ndim
 
     @property
     def box_ndim(self):
@@ -367,6 +370,12 @@ class FieldPowerSpectrum:
         The number of grids along each side of the enclosing box.
         """
         return self._box_ndim
+
+    @box_ndim.setter
+    def box_ndim(self, value):
+        self._box_ndim = value
+        if "box_dep_attr" in dir(self):
+            self.clean_cache(self.box_dep_attr)
 
     def set_corr_type(self, corr_type, tracer_indx):
         """
@@ -442,13 +451,15 @@ class FieldPowerSpectrum:
     def field_1(self, value):
         # if field is updated, clear fourier field
         self._field_1 = value
-        self._fourier_field_1 = None
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
 
     @field_2.setter
     def field_2(self, value):
         # if field is updated, clear fourier field
         self._field_2 = value
-        self._fourier_field_2 = None
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
 
     @property
     def weights_1(self):
@@ -462,16 +473,21 @@ class FieldPowerSpectrum:
     def weights_1(self, value):
         # if weight is updated, clear fourier field
         self._weights_1 = value
-        self._fourier_field_1 = None
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
 
     @weights_2.setter
     def weights_2(self, value):
         # if weight is updated, clear fourier field
         self._weights_2 = value
-        self._fourier_field_2 = None
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
 
     @property
+    @tagging("box", "field_1")
     def fourier_field_1(self):
+        if self._fourier_field_1 is None:
+            self.get_fourier_field_1()
         return self._fourier_field_1
 
     def get_fourier_field_1(self):
@@ -484,7 +500,10 @@ class FieldPowerSpectrum:
         self._fourier_field_1 = result
 
     @property
+    @tagging("box", "field_2")
     def fourier_field_2(self):
+        if self._fourier_field_2 is None:
+            self.get_fourier_field_2()
         return self._fourier_field_2
 
     def get_fourier_field_2(self):
@@ -500,8 +519,6 @@ class FieldPowerSpectrum:
 
     @property
     def auto_power_3d_1(self):
-        if self._fourier_field_1 is None:
-            self.get_fourier_field_1()
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,
@@ -525,8 +542,8 @@ class FieldPowerSpectrum:
     def auto_power_3d_2(self):
         if self.field_2 is None:
             return None
-        if self._fourier_field_2 is None:
-            self.get_fourier_field_2()
+        # if self._fourier_field_2 is None:
+        #    self.get_fourier_field_2()
         power_spectrum = get_power_spectrum(
             self.fourier_field_2,
             self.box_len,
@@ -544,10 +561,6 @@ class FieldPowerSpectrum:
     def cross_power_3d(self):
         if self.field_2 is None:
             return None
-        if self._fourier_field_1 is None:
-            self.get_fourier_field_1()
-        if self._fourier_field_2 is None:
-            self.get_fourier_field_2()
         weights_2 = self.weights_2
         # if none, the default for get_power_spectrum is
         # to use weights_1, here we want separate weights_2
@@ -1072,26 +1085,27 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return np.array([self._x_start, self._y_start, self._z_start])
 
-    @property
-    def box_len(self):
-        """
-        The length of all sides of the box in Mpc.
-        """
-        return self._box_len
-
-    @property
-    def box_resol(self):
-        """
-        The grid length of each side of the enclosing box in Mpc.
-        """
-        return self._box_resol
-
-    @property
-    def box_ndim(self):
-        """
-        The number of grids along each side of the enclosing box.
-        """
-        return self._box_ndim
+    #
+    # @property
+    # def box_len(self):
+    #    """
+    #    The length of all sides of the box in Mpc.
+    #    """
+    #    return self._box_len
+    #
+    # @property
+    # def box_resol(self):
+    #    """
+    #    The grid length of each side of the enclosing box in Mpc.
+    #    """
+    #    return self._box_resol
+    #
+    # @property
+    # def box_ndim(self):
+    #    """
+    #    The number of grids along each side of the enclosing box.
+    #    """
+    #    return self._box_ndim
 
     @property
     def rot_mat_sky_to_box(self):
@@ -1143,7 +1157,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             return_coord=True,
             buffkick=self.box_buffkick,
         )
-        self._box_len = np.array(
+        self.box_len = np.array(
             [
                 self._x_len,
                 self._y_len,
@@ -1170,8 +1184,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             if ndim_rg[i] % 2 != 0:
                 ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
-        self._box_resol = box_resol
-        self._box_ndim = ndim_rg
+        # self._box_resol = box_resol
+        self.box_ndim = ndim_rg
         self.kmode = self.k_mode
         slice_indx = (None,) * (len(self._box_ndim) - 1)
         slice_indx += (slice(None, None, None),)
