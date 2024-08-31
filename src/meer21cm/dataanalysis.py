@@ -125,7 +125,7 @@ class Specification:
             map_unit_type = "T"
         return map_unit_type
 
-    def clean_model_cache(self, attr):
+    def clean_cache(self, attr):
         """
         set the input attributes to None
         """
@@ -144,7 +144,7 @@ class Specification:
     def beam_unit(self, value):
         self._beam_unit = value
         if "beam_dep_attr" in dir(self):
-            self.clean_model_cache(self.beam_dep_attr)
+            self.clean_cache(self.beam_dep_attr)
 
     @property
     def sigma_beam_ch(self):
@@ -157,7 +157,7 @@ class Specification:
     def sigma_beam_ch(self, value):
         self._sigma_beam_ch = value
         if "beam_dep_attr" in dir(self):
-            self.clean_model_cache(self.beam_dep_attr)
+            self.clean_cache(self.beam_dep_attr)
 
     @property
     @tagging("cosmo", "beam")
@@ -192,7 +192,7 @@ class Specification:
     def nu(self, value):
         self._nu = np.array(value)
         if "nu_dep_attr" in dir(self):
-            self.clean_model_cache(self.nu_dep_attr)
+            self.clean_cache(self.nu_dep_attr)
 
     # nu dependent, but it calculates on the fly
     # so no need for tags

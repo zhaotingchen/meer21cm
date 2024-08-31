@@ -56,7 +56,7 @@ class CosmologyCalculator(Specification):
                 self.__dict__.update({key: getattr(cosmo, key)})
         self.camb_pars = self.get_camb_pars()
         # cosmology changed, clear cache
-        self.clean_model_cache(self.cosmo_dep_attr)
+        self.clean_cache(self.cosmo_dep_attr)
 
     def get_camb_pars(self):
         """

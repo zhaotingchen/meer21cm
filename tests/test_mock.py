@@ -40,7 +40,7 @@ def test_matter_mock(test_W):
     mock.mock_tracer_position
     # test input and output power consistency
     mock.k1dbins = k1dedges
-    mock.get_matter_power_spectrum()
+    # mock.get_matter_power_spectrum()
     mock.k1dbins = k1dedges
 
     mock.field_1 = mock.mock_matter_field
@@ -63,8 +63,6 @@ def test_matter_mock(test_W):
     pfield_i_rsd, keff, nmodes = mock.get_1d_power(
         "auto_power_3d_1",
     )
-    mock.get_matter_power_spectrum()
-    mock.get_model_power()
     pm1d_rsd, _, _ = mock.get_1d_power(mock.auto_power_matter_model)
     avg_deviation = np.sqrt(
         ((np.abs((pfield_i_rsd - pm1d_rsd) / pm1d_rsd)) ** 2 * nmodes).sum()
@@ -88,7 +86,6 @@ def test_tracer_mock(test_W):
     mock.field_1 = mock.mock_tracer_field_1
     mock.field_2 = mock.mock_tracer_field_2
 
-    mock.get_model_power()
     pfield_1_rsd, keff, nmodes = mock.get_1d_power(
         "auto_power_3d_1",
     )
