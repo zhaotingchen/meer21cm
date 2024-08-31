@@ -9,6 +9,7 @@ from meer21cm.grid import (
 )
 from scipy.signal import windows
 from meer21cm.util import tagging
+from meer21cm.dataanalysis import Specification
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -308,7 +309,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
 
 
-class FieldPowerSpectrum:
+class FieldPowerSpectrum(Specification):
     def __init__(
         self,
         field_1,
@@ -323,7 +324,9 @@ class FieldPowerSpectrum:
         unitless_2=False,
         remove_sn_2=False,
         corrtype=None,
+        **params,
     ):
+        super().__init__(**params)
         self.field_1 = field_1
         self.field_2 = field_2
         self.weights_1 = weights_1
@@ -341,8 +344,6 @@ class FieldPowerSpectrum:
             assert np.allclose(field_2.shape, field_1.shape), error_message
         self._fourier_field_1 = None
         self._fourier_field_2 = None
-        # self.mean_amp_1 = mean_amp_1
-        # self.mean_amp_2 = mean_amp_2
 
     @property
     def box_len(self):
@@ -480,6 +481,62 @@ class FieldPowerSpectrum:
     def weights_2(self, value):
         # if weight is updated, clear fourier field
         self._weights_2 = value
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    def mean_center_1(self):
+        """
+        Whether field_1 needs to be mean centered
+        """
+        return self._mean_center_1
+
+    @property
+    def mean_center_2(self):
+        """
+        Whether field_2 needs to be mean centered
+        """
+        return self._mean_center_2
+
+    @mean_center_1.setter
+    def mean_center_1(self, value):
+        # if weight is updated, clear fourier field
+        self._mean_center_1 = value
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
+
+    @mean_center_2.setter
+    def mean_center_2(self, value):
+        # if weight is updated, clear fourier field
+        self._mean_center_2 = value
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    def unitless_1(self):
+        """
+        Whether field_1 needs to be divided by its mean
+        """
+        return self._unitless_1
+
+    @property
+    def unitless_2(self):
+        """
+        Whether field_2 needs to be divided by its mean
+        """
+        return self._unitless_2
+
+    @unitless_1.setter
+    def unitless_1(self, value):
+        # if weight is updated, clear fourier field
+        self._unitless_1 = value
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
+
+    @unitless_2.setter
+    def unitless_2(self, value):
+        # if weight is updated, clear fourier field
+        self._unitless_2 = value
         if "field_2_dep_attr" in dir(self):
             self.clean_cache(self.field_2_dep_attr)
 

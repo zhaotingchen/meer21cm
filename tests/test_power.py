@@ -635,3 +635,29 @@ def test_cache():
     ps.mumode = np.ones_like(ps.kmode)
     assert ps._auto_power_matter_model is None
     assert ps.beam_attenuation() == 1.0
+    box_len = np.array([80, 50, 100])
+    box_dim = np.array([100, 200, 41])
+    box_resol = box_len / box_dim
+    rand_noise = np.random.normal(size=box_dim)
+    ps = FieldPowerSpectrum(
+        rand_noise,
+        box_len,
+        remove_sn_1=False,
+        unitless_1=False,
+        mean_center_1=False,
+        field_2=rand_noise,
+        remove_sn_2=False,
+        mean_center_2=False,
+        unitless_2=False,
+    )
+    power1 = ps.auto_power_3d_1
+    floor1 = power1.mean()
+    power3 = ps.cross_power_3d
+    floor3 = power3.mean()
+    assert np.abs((floor3 - floor1) / floor1) < 1e-2
+    ps.unitless_2 = False
+    assert ps._fourier_field_2 is None
+    ps.fourier_field_2
+    ps.mean_center_2 = False
+    assert ps._fourier_field_2 is None
+    ps.fourier_field_2
