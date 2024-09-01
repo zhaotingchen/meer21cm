@@ -26,7 +26,7 @@ def test_matter_mock(test_W):
         cosmo=WMAP1,
         k1dbins=k1dedges,
     )
-    mock._map_has_sampling = test_W
+    mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
     mock.get_mock_matter_field()
     # underlying code has been tested in grid
     # simply test invoking
@@ -39,8 +39,6 @@ def test_matter_mock(test_W):
     mock.pix_coor_in_box
     mock.mock_tracer_position
     # test input and output power consistency
-    mock.k1dbins = k1dedges
-    # mock.get_matter_power_spectrum()
     mock.k1dbins = k1dedges
 
     mock.field_1 = mock.mock_matter_field
@@ -71,7 +69,8 @@ def test_matter_mock(test_W):
     assert avg_deviation < 1e-1
 
 
-def test_tracer_mock(test_W):
+@pytest.mark.parametrize("tracer_i", [(1), (2)])
+def test_tracer_mock(test_W, tracer_i):
     k1dedges = np.geomspace(0.05, 1.5, 20)
 
     mock = MockSimulation(
@@ -80,8 +79,14 @@ def test_tracer_mock(test_W):
         cosmo=WMAP1,
         k1dbins=k1dedges,
         kaiser_rsd=True,
+        # mock is generated on the grid so no sampling effects
+        include_sampling=[False, False],
+        downres_factor_transverse=0.8,
+        downres_factor_radial=0.8,
+        # mean_amp_1='average_hi_temp',
     )
-    mock._map_has_sampling = test_W
+    setattr(mock, "mean_amp_" + str(tracer_i), "average_hi_temp")
+    mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
     mock.get_mock_tracer_field()
     mock.field_1 = mock.mock_tracer_field_1
     mock.field_2 = mock.mock_tracer_field_2

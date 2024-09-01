@@ -44,7 +44,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if mumode is None:
             self.mumode = np.zeros_like(self.kmode)
         self.include_beam = include_beam
-        self.fog_profile = fog_profile
         self.cross_coeff = cross_coeff
         self._auto_power_matter_model = None
         self._auto_power_tracer_1_model = None
@@ -54,12 +53,50 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.weights_2 = weights_2
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
-
-        self._sampling_resol = sampling_resol
+        self.include_sampling = include_sampling
+        self.sampling_resol = sampling_resol
         self.has_resol = True
         if self.sampling_resol is None:
             self.has_resol = False
-        self.include_sampling = include_sampling
+        if self.sampling_resol == "auto":
+            self.sampling_resol = [
+                self.pix_resol_in_mpc,
+                self.pix_resol_in_mpc,
+                self.los_resol_in_mpc,
+            ]
+        self.fog_profile = fog_profile
+
+    @property
+    def fog_profile(self):
+        return self._fog_profile
+
+    @fog_profile.setter
+    def fog_profile(self, value):
+        self._fog_profile = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def sigma_v_1(self):
+        return self._sigma_v_1
+
+    @sigma_v_1.setter
+    def sigma_v_1(self, value):
+        self._sigma_v_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @property
+    def sigma_v_2(self):
+        return self._sigma_v_2
+
+    @sigma_v_2.setter
+    def sigma_v_2(self, value):
+        self._sigma_v_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
 
     @property
     def include_beam(self):
@@ -143,6 +180,17 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def sampling_resol(self):
         return self._sampling_resol
+
+    @sampling_resol.setter
+    def sampling_resol(self, value):
+        self._sampling_resol = value
+        self.has_resol = True
+        if self.include_sampling[0]:
+            if "tracer_1_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_1_dep_attr)
+        if self.include_sampling[1]:
+            if "tracer_2_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_2_dep_attr)
 
     @property
     @tagging("cosmo", "nu", "kmode", "mumode")
@@ -459,28 +507,6 @@ class FieldPowerSpectrum(Specification):
     def field_2(self, value):
         # if field is updated, clear fourier field
         self._field_2 = value
-        if "field_2_dep_attr" in dir(self):
-            self.clean_cache(self.field_2_dep_attr)
-
-    @property
-    def weights_1(self):
-        return self._weights_1
-
-    @property
-    def weights_2(self):
-        return self._weights_2
-
-    @weights_1.setter
-    def weights_1(self, value):
-        # if weight is updated, clear fourier field
-        self._weights_1 = value
-        if "field_1_dep_attr" in dir(self):
-            self.clean_cache(self.field_1_dep_attr)
-
-    @weights_2.setter
-    def weights_2(self, value):
-        # if weight is updated, clear fourier field
-        self._weights_2 = value
         if "field_2_dep_attr" in dir(self):
             self.clean_cache(self.field_2_dep_attr)
 
@@ -1142,28 +1168,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return np.array([self._x_start, self._y_start, self._z_start])
 
-    #
-    # @property
-    # def box_len(self):
-    #    """
-    #    The length of all sides of the box in Mpc.
-    #    """
-    #    return self._box_len
-    #
-    # @property
-    # def box_resol(self):
-    #    """
-    #    The grid length of each side of the enclosing box in Mpc.
-    #    """
-    #    return self._box_resol
-    #
-    # @property
-    # def box_ndim(self):
-    #    """
-    #    The number of grids along each side of the enclosing box.
-    #    """
-    #    return self._box_ndim
-
     @property
     def rot_mat_sky_to_box(self):
         """
@@ -1249,7 +1253,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         with np.errstate(divide="ignore", invalid="ignore"):
             self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
         if self.upgrade_sampling_from_gridding:
-            self._sampling_resol = self.box_resol
+            self.sampling_resol = self.box_resol
 
     def grid_data_to_field(self):
         hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(
@@ -1269,4 +1273,52 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         ]
         self.field_1 = hi_map_rg
         self.weights_1 = weights_hi
+        self.unitless_1 = False
+        include_beam = np.array(self.include_beam)
+        include_beam[0] = True
+        self.include_beam = include_beam
+        include_sampling = np.array(self.include_sampling)
+        include_sampling[0] = True
+        self.include_sampling = include_sampling
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
+
+    def grid_gal_to_field(self):
+        (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
+            self.ra_gal,
+            self.dec_gal,
+            self.freq_gal,
+            cosmo=self.cosmo,
+            return_coord=True,
+            tile=False,
+            rot_mat=self.rot_mat_sky_to_box,
+        )
+        gal_pos_in_box = gal_pos_arr - self.box_origin[None, :]
+        (
+            gal_map_rg,
+            gal_weights_rg,
+            pixel_counts_gal_rg,
+        ) = project_particle_to_regular_grid(
+            gal_pos_in_box,
+            self.box_len,
+            self.box_ndim,
+            compensate=self.compensate,
+        )
+        gal_map_rg = np.array(gal_map_rg)
+        gal_weights_rg = np.array(gal_weights_rg)
+        pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
+        self.field_2 = gal_map_rg
+        taper_g = self.taper_func(self.box_ndim[-1])
+        weights_g = (pixel_counts_gal_rg.mean(axis=-1) > 0)[:, :, None] * taper_g[
+            None, None, :
+        ]
+        self.weights_2 = weights_g
+        self.mean_center_2 = True
+        self.unitless_2 = True
+        include_beam = np.array(self.include_beam)
+        include_beam[1] = False
+        self.include_beam = include_beam
+        include_sampling = np.array(self.include_sampling)
+        include_sampling[1] = False
+        self.include_sampling = include_sampling
+
+        return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg

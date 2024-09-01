@@ -50,6 +50,9 @@ class Specification:
         weighting="counts",
         ra_range=(-np.inf, np.inf),
         dec_range=(-400, 400),
+        data=None,
+        weights_map_pixel=None,
+        counts=None,
         **kwparams,
     ):
         self.dependency_dict = find_property_with_tags(self)
@@ -95,7 +98,7 @@ class Specification:
         self.beam_unit = beam_unit
         if map_has_sampling is None:
             map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
-        self._map_has_sampling = map_has_sampling
+        self.map_has_sampling = map_has_sampling
         self.map_unit = map_unit
         self.map_unit_type
         xx, yy = np.meshgrid(np.arange(num_pix_x), np.arange(num_pix_y), indexing="ij")
@@ -109,6 +112,9 @@ class Specification:
         self.ra_range = ra_range
         self.dec_range = dec_range
         self._sigma_beam_ch_in_mpc = None
+        self.data = data
+        self.weights_map_pixel = weights_map_pixel
+        self.counts = counts
 
     @property
     def map_unit_type(self):
@@ -307,6 +313,10 @@ class Specification:
         """
         return self._data
 
+    @data.setter
+    def data(self, value):
+        self._data = value
+
     @property
     def counts(self):
         """
@@ -314,12 +324,20 @@ class Specification:
         """
         return self._counts
 
+    @counts.setter
+    def counts(self, value):
+        self._counts = value
+
     @property
     def map_has_sampling(self):
         """
         A binary window for whether a pixel has been sampled
         """
         return self._map_has_sampling
+
+    @map_has_sampling.setter
+    def map_has_sampling(self, value):
+        self._map_has_sampling = value
 
     W_HI = map_has_sampling
 
@@ -343,6 +361,10 @@ class Specification:
         the weights per map pixel.
         """
         return self._weights_map_pixel
+
+    @weights_map_pixel.setter
+    def weights_map_pixel(self, value):
+        self._weights_map_pixel = value
 
     w_HI = weights_map_pixel
 
@@ -403,21 +425,24 @@ class Specification:
         ra_g = ra_g[z_Lband]
         dec_g = dec_g[z_Lband]
         z_g = z_g[z_Lband]
+
+        # select only ra_range and dec_range
         self._ra_gal = ra_g
         self._dec_gal = dec_g
         self._z_gal = z_g
+        self.trim_gal_to_range()
 
     def read_from_fits(self):
         if self.map_file is None:
             print("no map_file specified")
             return None
         (
-            self._data,
-            self._counts,
-            self._map_has_sampling,
+            self.data,
+            self.counts,
+            self.map_has_sampling,
             self._ra_map,
             self._dec_map,
-            self._nu,
+            self.nu,
             self.wproj,
         ) = read_map(
             self.map_file,
@@ -428,17 +453,20 @@ class Specification:
         )
         self.num_pix_x, self.num_pix_y = self._ra_map.shape
         if self.filter_map_los:
-            (
-                self._data,
-                self._map_has_sampling,
-                _,
-                self._counts,
-            ) = filter_incomplete_los(
-                self._data,
-                self._map_has_sampling,
-                self._counts,
-                self._counts,
+            (self.data, self.map_has_sampling, _, self.counts,) = filter_incomplete_los(
+                self.data,
+                self.map_has_sampling,
+                self.counts,
+                self.counts,
             )
+        self.trim_map_to_range()
+
+        if self.weighting.lower()[:5] == "count":
+            self.weights_map_pixel = self.counts
+        elif self.weighting.lower()[:7] == "uniform":
+            self.weights_map_pixel = (self.counts > 0).astype("float")
+
+    def trim_map_to_range(self):
         ra_temp = self.ra_map.copy()
         ra_temp[ra_temp > 180] -= 360
         ra_range = np.array(self.ra_range)
@@ -449,11 +477,21 @@ class Specification:
             * (self.dec_map > self.dec_range[0])
             * (self.dec_map < self.dec_range[1])
         )[:, :, None]
-        self._data *= map_sel
-        self._counts *= map_sel
-        self._map_has_sampling *= map_sel
+        self.data = self.data * map_sel
+        self.counts = self.counts * map_sel
+        self.map_has_sampling = self.map_has_sampling * map_sel
 
-        if self.weighting.lower()[:5] == "count":
-            self._weights_map_pixel = self._counts
-        elif self.weighting.lower()[:7] == "uniform":
-            self._weights_map_pixel = (self._counts > 0).astype("float")
+    def trim_gal_to_range(self):
+        ra_temp = self.ra_gal.copy()
+        ra_temp[ra_temp > 180] -= 360
+        ra_range = np.array(self.ra_range)
+        ra_range[ra_range > 180] -= 360
+        gal_sel = (
+            (ra_temp > ra_range[0])
+            * (ra_temp < ra_range[1])
+            * (self.dec_gal > self.dec_range[0])
+            * (self.dec_gal < self.dec_range[1])
+        )
+        self._ra_gal = self.ra_gal[gal_sel]
+        self._dec_gal = self.dec_gal[gal_sel]
+        self._z_gal = self.z_gal[gal_sel]

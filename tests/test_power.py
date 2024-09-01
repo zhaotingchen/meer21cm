@@ -451,6 +451,22 @@ def test_ModelPowerSpectrum():
         cross_ps_rsd / matter_ps_real,
         (1 + model.f_growth / 2.0) * (1 + model.f_growth / 3.0) * 6 - 6 + 6 * 0.5,
     )
+    # test change r
+    model.cross_coeff = 0.9
+    cross_ps_rsd = model.cross_power_tracer_model
+    assert np.allclose(
+        cross_ps_rsd / matter_ps_real,
+        (1 + model.f_growth / 2.0) * (1 + model.f_growth / 3.0) * 6 - 6 + 6 * 0.9,
+    )
+    # test change v
+    model.sigma_v_1 = 1e20
+    assert np.allclose(model.auto_power_tracer_1_model, np.zeros_like(model.kmode))
+    model.sigma_v_2 = 1e20
+    assert np.allclose(model.auto_power_tracer_2_model, np.zeros_like(model.kmode))
+    model.weights_1 = 1
+    assert model._auto_power_tracer_1_model is None
+    model.weights_2 = 1
+    assert model._auto_power_tracer_2_model is None
 
 
 def test_gaussian_beam_attenuation():
@@ -598,25 +614,23 @@ def test_temp_amp():
 
 
 def test_noise_power_from_map(test_W):
-    sp = Specification(
+    sp = PowerSpectrum(
         ra_range=(334, 357),
     )
-    sp._map_has_sampling = (test_W * np.ones(sp.nu.size)[None, None, :]) > 0
-    sp._data = np.random.normal(size=sp.map_has_sampling.shape) * sp.map_has_sampling
-    sp._weights_map_pixel = sp.map_has_sampling
+    sp.map_has_sampling = (test_W * np.ones(sp.nu.size)[None, None, :]) > 0
+    sp.data = np.random.normal(size=sp.map_has_sampling.shape) * sp.map_has_sampling
+    sp.weights_map_pixel = sp.map_has_sampling
     nkbin = 16
     # in Mpc
     kmin, kmax = 0.1, 0.4
     kbins = np.linspace(kmin, kmax, nkbin + 1)  # k-bin edges [using linear binning]
-    ps = PowerSpectrum(
-        field_from_mapdata=True,
-        downres_factor_transverse=1.5,
-        downres_factor_radial=2.0,
-        k1dbins=kbins,
-        box_buffkick=10,
-        compensate=False,
-        **sp.__dict__,
-    )
+    ps = sp
+    ps.downres_factor_transverse = 1.5
+    ps.downres_factor_radial = 2.0
+    ps.k1dbins = kbins
+    ps.box_buffkick = 10
+    ps.compensate = False
+    ps.get_enclosing_box()
     v_cell = ps.pix_resol_in_mpc**2 * ps.los_resol_in_mpc
     ps.grid_data_to_field()
     pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
@@ -661,3 +675,77 @@ def test_cache():
     ps.mean_center_2 = False
     assert ps._fourier_field_2 is None
     ps.fourier_field_2
+
+
+def test_gal_poisson_power(test_W):
+    sp = PowerSpectrum(
+        ra_range=(334, 357),
+        sampling_resol="auto",
+        tracer_bias_2=1.0,  # just for invoke clean tracer_2
+    )
+    sp.map_has_sampling = (test_W * np.ones(sp.nu.size)[None, None, :]) > 0
+    num_g = 10000
+    gal_pix_indx = np.random.choice(np.arange(sp.W_HI.sum()), size=num_g, replace=False)
+    has_gal = np.zeros(sp.W_HI.sum())
+    has_gal[gal_pix_indx] += 1
+    data = np.zeros(sp.W_HI.shape)
+    data[sp.W_HI] += has_gal
+    sp = PowerSpectrum(
+        ra_range=(334, 357),
+        sampling_resol="auto",
+        tracer_bias_2=1.0,  # just for invoke clean tracer_2
+        data=data,
+        weights_map_pixel=sp.map_has_sampling,
+        map_has_sampling=sp.map_has_sampling,
+        field_from_map_data=True,
+    )
+    sp.data = data
+    sp.weights_map_pixel = sp.map_has_sampling
+    nkbin = 16
+    # in Mpc
+    kmin, kmax = 0.1, 0.4
+    kbins = np.linspace(kmin, kmax, nkbin + 1)  # k-bin edges [using linear binning]
+    ps = sp
+    ps.downres_factor_transverse = 2.0
+    ps.downres_factor_radial = 4.0
+    ps.k1dbins = kbins
+    ps.box_buffkick = 1.5
+    ps.compensate = False
+    ps.get_enclosing_box()
+    gal_map_rg, weights_gal_rg, pix_count_rg = ps.grid_data_to_field()
+    ps.mean_center_1 = True
+    ps.unitless_1 = True
+    taper = ps.taper_func(ps.box_ndim[-1])
+    weights = (pix_count_rg.mean(axis=-1) > 0.5).astype("float")[:, :, None] * taper[
+        None, None, :
+    ]
+    ps.weights_1 = weights
+    pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    B_samp = ps.step_sampling()
+    p_sn = (pix_count_rg > 0).mean() * np.prod(ps.box_len) / num_g / B_samp
+    psn_1d, _, _ = ps.get_1d_power(p_sn)
+    avg_deviation = np.sqrt(
+        ((np.abs((pdata_1d_hi - psn_1d) / psn_1d)) ** 2 * nmodes_hi).sum()
+        / nmodes_hi.sum()
+    )
+    assert avg_deviation < 2e-1
+
+
+def test_grid_gal(test_gal_fits, test_W):
+    ps = PowerSpectrum(gal_file=test_gal_fits)
+    ps.W_HI = (test_W * ps.nu[None, None, :]) > 0
+    ps.data = ps.W_HI
+    ps.w_HI = ps.W_HI
+    ps = PowerSpectrum(
+        gal_file=test_gal_fits,
+        data=ps.data,
+        map_has_sampling=ps.W_HI,
+        weights_map_pixel=ps.w_HI,
+        field_from_mapdata=True,
+        include_sampling=[True, True],
+        tracer_bias_2=1.0,  # just for invoking some tests
+    )
+    ps.read_gal_cat()
+    ps.grid_gal_to_field()

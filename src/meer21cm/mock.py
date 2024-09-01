@@ -134,14 +134,20 @@ class MockSimulation(PowerSpectrum):
         """
         The simulated tracer field 1.
         """
-        return self._mock_tracer_field_1 * self.mean_amp_1
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_1 * mean_amp
 
     @property
     def mock_tracer_field_2(self):
         """
         The simulated tracer field 2.
         """
-        return self._mock_tracer_field_2 * self.mean_amp_2
+        mean_amp = self.mean_amp_2
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_2 * mean_amp
 
     def get_mock_tracer_field(self):
         self._mock_tracer_field_1 = self.get_mock_field(bias=self.tracer_bias_1)
