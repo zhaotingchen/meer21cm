@@ -6,6 +6,55 @@ from meer21cm.util import *
 import sys
 
 
+def test_tagging():
+    @tagging("test")
+    def foo():
+        pass
+
+    assert foo.tags == ("test",)
+
+
+def test_find_property_with_tags():
+    class Foo:
+        def __init__(
+            self,
+            xinit=1,
+        ):
+            self.x = xinit
+            self.dependency_dict = find_property_with_tags(self)
+
+        @property
+        @tagging("test")
+        def x(self):
+            return self._x
+
+        @x.setter
+        def x(self, value):
+            self._x = value
+
+        @property
+        def y(self):
+            return self._y
+
+        @y.setter
+        def y(self, value):
+            self._y = value
+
+    foo = Foo(1)
+    foo.x = 2
+    assert foo.dependency_dict == {"x": ("test",)}
+
+
+def test_center_to_edges():
+    outarr = center_to_edges(np.linspace(0.5, 9.5, 10))
+    assert np.allclose(outarr, np.linspace(0, 10, 11))
+
+
+def test_find_ch_id():
+    ch_id = find_ch_id(np.array([0.1, 0.6, 1.7, 3.5]), np.array([0, 1, 2]))
+    assert np.allclose(ch_id, np.array([0, 1, 2, 3]))
+
+
 def test_omega_hi_to_average_temp():
     # just for tests
     omega_hi = 1e-4

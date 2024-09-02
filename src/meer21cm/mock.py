@@ -37,12 +37,129 @@ from .grid import (
     minimum_enclosing_box_of_lightcone,
 )
 import healpy as hp
+from meer21cm.power import PowerSpectrum
 
-python_ver = sys.version_info[0] + sys.version_info[1] / 10
-if python_ver >= 3.9:
-    from powerbox import LogNormalPowerBox
-    from halomod import TracerHaloModel as THM
-    from powerbox import dft
+from powerbox import LogNormalPowerBox
+from halomod import TracerHaloModel as THM
+from powerbox import dft
+
+
+# 20 lines missing before adding in
+class MockSimulation(PowerSpectrum):
+    def __init__(
+        self,
+        density="poisson",
+        relative_resol_to_pix=0.5,
+        target_relative_to_num_g=2.5,
+        kaiser_rsd=False,
+        seed=None,
+        **params,
+    ):
+        super().__init__(**params)
+        self.density = density.lower()
+        self.relative_resol_to_pix = relative_resol_to_pix
+        self.kaiser_rsd = kaiser_rsd
+        if seed is None:
+            seed = np.random.randint(0, 2**32)
+        self.seed = seed
+        self.rng = default_rng(self.seed)
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_x_len",
+            "_y_len",
+            "_z_len",
+            "_rot_mat_sky_to_box",
+            "_pix_coor_in_cartesian",
+            "_box_len",
+            "_box_resol",
+            "_box_ndim",
+            "_mock_matter_field_r",
+            "_mock_matter_field",
+            "_mock_tracer_position",
+            "_mock_tracer_field_1",
+            "_mock_tracer_field_2",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+        self.target_relative_to_num_g = target_relative_to_num_g
+        self.upgrade_sampling_from_gridding = True
+
+    @property
+    def mock_matter_field(self):
+        """
+        The simulated dark matter density field.
+        """
+        return self._mock_matter_field
+
+    def get_mock_matter_field(self):
+        self._mock_matter_field = self.get_mock_field(bias=1)
+
+    def get_mock_field(self, bias):
+        if self.box_ndim is None:
+            self.get_enclosing_box()
+        pb = LogNormalPowerBox(
+            N=self.box_ndim,
+            dim=3,
+            pk=self.matter_power_spectrum_fnc,
+            boxlength=self.box_len,
+            seed=self.seed,
+        )
+        if self._mock_matter_field_r is None:
+            self._mock_matter_field_r = pb.delta_x()
+        delta_k = dft.fft(
+            self._mock_matter_field_r,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0]
+        if self.kaiser_rsd:
+            mumode = np.nan_to_num(pb.kvec[-1][None, None, :] / pb.k())
+            delta_k *= bias + mumode**2 * self.f_growth
+        else:
+            delta_k *= bias
+        self._mock_field = dft.ifft(
+            delta_k,
+            L=pb.boxlength,
+            a=pb.fourier_a,
+            b=pb.fourier_b,
+            backend=pb.fftbackend,
+        )[0].real
+        return self._mock_field
+
+    @property
+    def mock_tracer_field_1(self):
+        """
+        The simulated tracer field 1.
+        """
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_1 * mean_amp
+
+    @property
+    def mock_tracer_field_2(self):
+        """
+        The simulated tracer field 2.
+        """
+        mean_amp = self.mean_amp_2
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_2 * mean_amp
+
+    def get_mock_tracer_field(self):
+        self._mock_tracer_field_1 = self.get_mock_field(bias=self.tracer_bias_1)
+        if self.tracer_bias_2 is not None:
+            self._mock_tracer_field_2 = self.get_mock_field(bias=self.tracer_bias_2)
+
+    @property
+    def mock_tracer_position(self):
+        """
+        The simulated tracer positions.
+        """
+        return self._mock_tracer_position
 
 
 class HISimulation:

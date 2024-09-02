@@ -16,6 +16,88 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
+def find_property_with_tags(obj):
+    """
+    Retrieve a dictionary for all the properties of a class that has tags.
+    The keys of the dictionary are the property names and the values are the tags of each property.
+    """
+    func_dependency_dict = dict()
+    for func in dir(type(obj)):
+        if func[0] != "_":
+            if isinstance(getattr(type(obj), func), property):
+                if "tags" in dir(getattr(type(obj), func).fget):
+                    func_tags = getattr(type(obj), func).fget.tags
+                    func_dependency_dict.update({func: func_tags})
+    return func_dependency_dict
+
+
+def tagging(*tags):
+    """
+    A decorator that does one simple thing: Adding tags to functions.
+
+    For example, you can add tags when defining this function
+
+    .. highlight:: python
+    .. code-block:: python
+
+       from meer21cm.util import tagging
+       @tagging('test')
+       def foo(x):
+          return x
+       print(foo.tags)
+
+    You will find that ``foo.tags`` is ``('test',)``. ``meer21cm`` uses this function to keep track of
+    parameter dependencies of functions in classes.
+    """
+
+    def tagged_decorator(func):
+        func.tags = tags
+        return func
+
+    return tagged_decorator
+
+
+def center_to_edges(arr):
+    """
+    Extend a linear spaced monotonic array
+    so that the original array is the middle point of the output array.
+    """
+    result = arr.copy()
+    dx = np.diff(arr)
+    result = np.append(result[:-1] - dx / 2, result[-2:] + dx[-2:] / 2)
+    return result
+
+
+def find_ch_id(nu_inp, nu_ch):
+    r"""
+    For which channel does the input frequency fall into.
+    The channel ids are zero-indexed.
+    Input frequencies outside the frequency range are assigned
+    :math:`N_{\rm ch}` (note the last channel id is :math:`N_{\rm ch}-1`)
+
+    Parameters
+    ----------
+    nu_inp: array.
+        The input frequencies
+
+    nu_ch: array.
+        Must be monotonically increasing.
+        The centre frequencies of each channel.
+
+    Returns
+    -------
+    which_ch: int array.
+        The ch ids.
+    """
+    nu_edges = center_to_edges(nu_ch)
+    nu_edges_extend = center_to_edges(center_to_edges(nu_edges))
+    which_ch = np.digitize(nu_inp, nu_edges_extend) - 2
+    # first and last bins are out of range
+    which_ch[which_ch < 0] = len(nu_ch)
+    which_ch[which_ch > len(nu_ch)] = len(nu_ch)
+    return which_ch
+
+
 def coeff_hi_density_to_temp(z=0, cosmo=Planck18):
     r"""
     The conversion coefficient :math:`C_{\rm HI}` so that

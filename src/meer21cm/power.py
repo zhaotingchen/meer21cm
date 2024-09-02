@@ -1,8 +1,15 @@
 """
-This module handles computation of power spectrum from gridded fields.
+This module handles computation of power spectrum from gridded fields and its corresponding model power spectrum from theory.
 """
 import numpy as np
 from meer21cm.cosmology import CosmologyCalculator
+from meer21cm.grid import (
+    minimum_enclosing_box_of_lightcone,
+    project_particle_to_regular_grid,
+)
+from scipy.signal import windows
+from meer21cm.util import tagging
+from meer21cm.dataanalysis import Specification
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -14,7 +21,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
         sigma_v_1=0.0,
         tracer_bias_2=None,
         sigma_v_2=0.0,
-        matter_only_rsd=False,
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
@@ -31,7 +37,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.sigma_v_1 = sigma_v_1
         self.tracer_bias_2 = tracer_bias_2
         self.sigma_v_2 = sigma_v_2
-        self.matter_only_rsd = matter_only_rsd
         self.kmode = kmode
         self.mumode = mumode
         if kmode is None:
@@ -39,12 +44,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if mumode is None:
             self.mumode = np.zeros_like(self.kmode)
         self.include_beam = include_beam
-        self.has_beam = True
-        if self.sigma_beam_ch is None and (np.array(self.include_beam).sum() > 0):
-            print("no input beam found, setting include_beam to False")
-            self.include_beam = [False, False]
-            self.has_beam = False
-        self.fog_profile = fog_profile
         self.cross_coeff = cross_coeff
         self._auto_power_matter_model = None
         self._auto_power_tracer_1_model = None
@@ -54,12 +53,67 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.weights_2 = weights_2
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
-
+        self.include_sampling = include_sampling
         self.sampling_resol = sampling_resol
         self.has_resol = True
         if self.sampling_resol is None:
             self.has_resol = False
-        self.include_sampling = include_sampling
+        if self.sampling_resol == "auto":
+            self.sampling_resol = [
+                self.pix_resol_in_mpc,
+                self.pix_resol_in_mpc,
+                self.los_resol_in_mpc,
+            ]
+        self.fog_profile = fog_profile
+
+    @property
+    def fog_profile(self):
+        return self._fog_profile
+
+    @fog_profile.setter
+    def fog_profile(self, value):
+        self._fog_profile = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def sigma_v_1(self):
+        return self._sigma_v_1
+
+    @sigma_v_1.setter
+    def sigma_v_1(self, value):
+        self._sigma_v_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @property
+    def sigma_v_2(self):
+        return self._sigma_v_2
+
+    @sigma_v_2.setter
+    def sigma_v_2(self, value):
+        self._sigma_v_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def include_beam(self):
+        return self._include_beam
+
+    @include_beam.setter
+    def include_beam(self, value):
+        self._include_beam = value
+        if self.sigma_beam_ch is None and (np.array(self.include_beam).sum() > 0):
+            print("no input beam found, setting include_beam to False")
+            self._include_beam = [False, False]
+        if value[0]:
+            if "tracer_1_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_1_dep_attr)
+        if value[1]:
+            if "tracer_2_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_2_dep_attr)
 
     def fog_lorentz(self, sigma_v):
         """
@@ -74,32 +128,139 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return getattr(self, "fog_" + self.fog_profile)(sigma_v)
 
     @property
+    def tracer_bias_1(self):
+        return self._tracer_bias_1
+
+    @tracer_bias_1.setter
+    def tracer_bias_1(self, value):
+        self._tracer_bias_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @property
+    def tracer_bias_2(self):
+        return self._tracer_bias_2
+
+    @tracer_bias_2.setter
+    def tracer_bias_2(self, value):
+        self._tracer_bias_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def cross_coeff(self):
+        return self._cross_coeff
+
+    @cross_coeff.setter
+    def cross_coeff(self, value):
+        self._cross_coeff = value
+        if "cross_coeff_dep_attr" in dir(self):
+            self.clean_cache(self.cross_coeff_dep_attr)
+
+    @property
+    def kmode(self):
+        return self._kmode
+
+    @kmode.setter
+    def kmode(self, value):
+        self._kmode = value
+        if "kmode_dep_attr" in dir(self):
+            self.clean_cache(self.kmode_dep_attr)
+
+    @property
+    def mumode(self):
+        return self._mumode
+
+    @mumode.setter
+    def mumode(self, value):
+        self._mumode = value
+        if "mumode_dep_attr" in dir(self):
+            self.clean_cache(self.mumode_dep_attr)
+
+    @property
+    def sampling_resol(self):
+        return self._sampling_resol
+
+    @sampling_resol.setter
+    def sampling_resol(self, value):
+        self._sampling_resol = value
+        self.has_resol = True
+        if self.include_sampling[0]:
+            if "tracer_1_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_1_dep_attr)
+        if self.include_sampling[1]:
+            if "tracer_2_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    @tagging("cosmo", "nu", "kmode", "mumode")
     def auto_power_matter_model(self):
+        """
+        The model matter power spectrum with RSD effects.
+        The 3D k-modes corrospond to the input ``kmode`` and ``mumode``.
+        """
+        if self._auto_power_matter_model is None:
+            self.get_model_matter_power()
         return self._auto_power_matter_model
 
     @property
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam")
     def auto_power_tracer_1_model(self):
-        return self._auto_power_tracer_1_model
+        if self._auto_power_tracer_1_model is None:
+            self.get_model_power_i(1)
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._auto_power_tracer_1_model * mean_amp**2
 
     @property
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam")
     def auto_power_tracer_2_model(self):
-        return self._auto_power_tracer_2_model
+        if self._auto_power_tracer_2_model is None:
+            self.get_model_power_i(2)
+        mean_amp = self.mean_amp_2
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        if self._auto_power_tracer_2_model is None:
+            return None
+        return self._auto_power_tracer_2_model * mean_amp**2
 
     @property
+    @tagging(
+        "cosmo",
+        "nu",
+        "kmode",
+        "mumode",
+        "tracer_2",
+        "beam",
+        "tracer_1",
+        "cross_coeff",
+    )
     def cross_power_tracer_model(self):
-        return self._cross_power_tracer_model
+        if self._cross_power_tracer_model is None:
+            self.get_model_power_cross()
+        mean_amp2 = self.mean_amp_2
+        if isinstance(mean_amp2, str):
+            mean_amp2 = getattr(self, mean_amp2)
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        if self._cross_power_tracer_model is None:
+            return None
+        return self._cross_power_tracer_model * mean_amp * mean_amp2
 
     def step_sampling(self):
         return 1.0
 
     def beam_attenuation(self):
-        if not self.has_beam:
+        if self.sigma_beam_ch is None:
             return 1.0
         # in the future for asymmetric beam this way
         # of writing may be probelmatic
         k_perp = self.kmode * np.sqrt(1 - self.mumode**2)
-        sigma_beam_rad = (self.sigma_beam_ch.mean() * self.beam_unit).to("rad").value
-        sigma_beam_mpc = sigma_beam_rad * self.comoving_distance(self.z).to("Mpc").value
+        # sigma_beam_rad = (self.sigma_beam_ch.mean() * self.beam_unit).to("rad").value
+        # sigma_beam_mpc = sigma_beam_rad * self.comoving_distance(self.z).to("Mpc").value
+        sigma_beam_mpc = self.sigma_beam_in_mpc
         B_beam = gaussian_beam_attenuation(k_perp, sigma_beam_mpc)
         return B_beam
 
@@ -128,14 +289,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
         return power_in_redshift_space
 
-    def get_model_power(self):
-        B_beam = self.beam_attenuation()
-        B_sampling = self.step_sampling()
-        tracer_beam_indx = np.array(self.include_beam).astype("int")
-        tracer_samp_indx = np.array(self.include_sampling).astype("int")
-
-        if self.matter_power_spectrum_fnc is None:
-            self.get_matter_power_spectrum()
+    def get_model_matter_power(self):
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         beta_m = self.f_growth
         self._auto_power_matter_model = self.cal_rsd_power(
@@ -143,75 +297,67 @@ class ModelPowerSpectrum(CosmologyCalculator):
             beta_m,
             0.0,
         )
-        pk3d_tt_r = self.tracer_bias_1**2 * pk3d_mm_r
-        if self.matter_only_rsd:
-            beta_1 = self.f_growth
-        else:
-            beta_1 = self.f_growth / self.tracer_bias_1
-        self._auto_power_tracer_1_model = self.cal_rsd_power(
+
+    def get_model_power_i(self, i):
+        if getattr(self, "tracer_bias_" + str(i)) is None:
+            return None
+        B_beam = self.beam_attenuation()
+        B_sampling = self.step_sampling()
+        tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
+        tracer_samp_indx = np.array(self.include_sampling).astype("int")[i - 1]
+        tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
+        pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
+        pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
+        beta_i = self.f_growth / tracer_bias_i
+        auto_power_model = self.cal_rsd_power(
             pk3d_tt_r,
-            beta_1,
-            self.sigma_v_1,
+            beta_i,
+            getattr(self, "sigma_v_" + str(i)),
         )
-        self._auto_power_tracer_1_model *= B_beam ** (tracer_beam_indx[0] * 2)
-        self._auto_power_tracer_1_model *= B_sampling ** (tracer_samp_indx[0] * 2)
-        self._auto_power_tracer_1_model[self.kmode == 0] = 0.0
-        self._auto_power_tracer_1_model = get_modelpk_conv(
-            self._auto_power_tracer_1_model,
+        auto_power_model *= B_beam ** (tracer_beam_indx * 2)
+        auto_power_model *= B_sampling ** (tracer_samp_indx * 2)
+        auto_power_model = get_modelpk_conv(
+            auto_power_model,
+            weights1_in_real=getattr(self, "weights_" + str(i)),
+        )
+        setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
+
+    def get_model_power_cross(self):
+        if getattr(self, "tracer_bias_" + str(2)) is None:
+            return None
+        B_beam = self.beam_attenuation()
+        B_sampling = self.step_sampling()
+        tracer_beam_indx = np.array(self.include_beam).astype("int")
+        tracer_samp_indx = np.array(self.include_sampling).astype("int")
+        pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
+        # cross power
+        pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
+        beta_1 = self.f_growth / self.tracer_bias_1
+        beta_2 = self.f_growth / self.tracer_bias_2
+        self._cross_power_tracer_model = self.cal_rsd_power(
+            pk3d_tt_r,
+            beta1=beta_1,
+            sigmav_1=self.sigma_v_1,
+            beta2=beta_2,
+            sigmav_2=self.sigma_v_2,
+            r=self.cross_coeff,
+        )
+        self._cross_power_tracer_model[self.kmode == 0] = 0.0
+        self._cross_power_tracer_model *= B_beam ** (
+            tracer_beam_indx[0] + tracer_beam_indx[1]
+        )
+        self._cross_power_tracer_model *= B_sampling ** (
+            tracer_samp_indx[0] + tracer_samp_indx[1]
+        )
+        self._cross_power_tracer_model[self.kmode == 0] = 0.0
+        self._cross_power_tracer_model = get_modelpk_conv(
+            self._cross_power_tracer_model,
             weights1_in_real=self.weights_1,
+            weights2=self.weights_2,
         )
-        if isinstance(self.mean_amp_1, str):
-            self.mean_amp_1 = getattr(self, self.mean_amp_1)
-        self._auto_power_tracer_1_model *= self.mean_amp_1**2
-        if self.tracer_bias_2 is not None:
-            if self.matter_only_rsd:
-                beta_2 = self.f_growth
-            else:
-                beta_2 = self.f_growth / self.tracer_bias_2
-            pk3d_tt_r = self.tracer_bias_2**2 * pk3d_mm_r
-            self._auto_power_tracer_2_model = self.cal_rsd_power(
-                pk3d_tt_r,
-                beta_2,
-                self.sigma_v_2,
-            )
-            self._auto_power_tracer_2_model[self.kmode == 0] = 0.0
-            self._auto_power_tracer_2_model *= B_beam ** (tracer_beam_indx[1] * 2)
-            self._auto_power_tracer_2_model *= B_sampling ** (tracer_samp_indx[1] * 2)
-
-            self._auto_power_tracer_2_model = get_modelpk_conv(
-                self._auto_power_tracer_2_model,
-                weights1_in_real=self.weights_2,
-            )
-            if isinstance(self.mean_amp_2, str):
-                self.mean_amp_2 = getattr(self, self.mean_amp_2)
-            self._auto_power_tracer_2_model *= self.mean_amp_2**2
-            # cross power
-            pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
-            self._cross_power_tracer_model = self.cal_rsd_power(
-                pk3d_tt_r,
-                beta1=beta_1,
-                sigmav_1=self.sigma_v_1,
-                beta2=beta_2,
-                sigmav_2=self.sigma_v_2,
-                r=self.cross_coeff,
-            )
-            self._cross_power_tracer_model[self.kmode == 0] = 0.0
-            self._cross_power_tracer_model *= B_beam ** (
-                tracer_beam_indx[0] + tracer_beam_indx[1]
-            )
-            self._cross_power_tracer_model *= B_sampling ** (
-                tracer_samp_indx[0] + tracer_samp_indx[1]
-            )
-            self._cross_power_tracer_model[self.kmode == 0] = 0.0
-            self._cross_power_tracer_model = get_modelpk_conv(
-                self._cross_power_tracer_model,
-                weights1_in_real=self.weights_1,
-                weights2=self.weights_2,
-            )
-            self._cross_power_tracer_model *= self.mean_amp_2 * self.mean_amp_1
 
 
-class FieldPowerSpectrum:
+class FieldPowerSpectrum(Specification):
     def __init__(
         self,
         field_1,
@@ -226,16 +372,15 @@ class FieldPowerSpectrum:
         unitless_2=False,
         remove_sn_2=False,
         corrtype=None,
-        mean_amp_1=1.0,
-        mean_amp_2=1.0,
+        **params,
     ):
+        super().__init__(**params)
         self.field_1 = field_1
-        self.weights_1 = weights_1
         self.field_2 = field_2
+        self.weights_1 = weights_1
         self.weights_2 = weights_2
         self.box_len = np.array(box_len)
         self.box_ndim = np.array(field_1.shape)
-        self.box_resol = self.box_len / self.box_ndim
         self.mean_center_1 = mean_center_1
         self.unitless_1 = unitless_1
         self.mean_center_2 = mean_center_2
@@ -247,8 +392,39 @@ class FieldPowerSpectrum:
             assert np.allclose(field_2.shape, field_1.shape), error_message
         self._fourier_field_1 = None
         self._fourier_field_2 = None
-        self.mean_amp_1 = mean_amp_1
-        self.mean_amp_2 = mean_amp_2
+
+    @property
+    def box_len(self):
+        """
+        The length of all sides of the box in Mpc.
+        """
+        return self._box_len
+
+    @box_len.setter
+    def box_len(self, value):
+        self._box_len = value
+        if "box_dep_attr" in dir(self):
+            self.clean_cache(self.box_dep_attr)
+
+    @property
+    def box_resol(self):
+        """
+        The grid length of each side of the enclosing box in Mpc.
+        """
+        return self.box_len / self.box_ndim
+
+    @property
+    def box_ndim(self):
+        """
+        The number of grids along each side of the enclosing box.
+        """
+        return self._box_ndim
+
+    @box_ndim.setter
+    def box_ndim(self, value):
+        self._box_ndim = value
+        if "box_dep_attr" in dir(self):
+            self.clean_cache(self.box_dep_attr)
 
     def set_corr_type(self, corr_type, tracer_indx):
         """
@@ -283,6 +459,17 @@ class FieldPowerSpectrum:
         setattr(self, "remove_sn_" + str(tracer_indx), remove_sn)
 
     @property
+    def x_vec(self):
+        return get_x_vector(
+            self.box_ndim,
+            self.box_resol,
+        )
+
+    @property
+    def x_mode(self):
+        return get_vec_mode(self.x_vec)
+
+    @property
     def k_vec(self):
         return get_k_vector(
             self.box_ndim,
@@ -302,7 +489,88 @@ class FieldPowerSpectrum:
         return get_vec_mode(self.k_vec)
 
     @property
+    def field_1(self):
+        return self._field_1
+
+    @property
+    def field_2(self):
+        return self._field_2
+
+    @field_1.setter
+    def field_1(self, value):
+        # if field is updated, clear fourier field
+        self._field_1 = value
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
+
+    @field_2.setter
+    def field_2(self, value):
+        # if field is updated, clear fourier field
+        self._field_2 = value
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    def mean_center_1(self):
+        """
+        Whether field_1 needs to be mean centered
+        """
+        return self._mean_center_1
+
+    @property
+    def mean_center_2(self):
+        """
+        Whether field_2 needs to be mean centered
+        """
+        return self._mean_center_2
+
+    @mean_center_1.setter
+    def mean_center_1(self, value):
+        # if weight is updated, clear fourier field
+        self._mean_center_1 = value
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
+
+    @mean_center_2.setter
+    def mean_center_2(self, value):
+        # if weight is updated, clear fourier field
+        self._mean_center_2 = value
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    def unitless_1(self):
+        """
+        Whether field_1 needs to be divided by its mean
+        """
+        return self._unitless_1
+
+    @property
+    def unitless_2(self):
+        """
+        Whether field_2 needs to be divided by its mean
+        """
+        return self._unitless_2
+
+    @unitless_1.setter
+    def unitless_1(self, value):
+        # if weight is updated, clear fourier field
+        self._unitless_1 = value
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
+
+    @unitless_2.setter
+    def unitless_2(self, value):
+        # if weight is updated, clear fourier field
+        self._unitless_2 = value
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    @tagging("box", "field_1")
     def fourier_field_1(self):
+        if self._fourier_field_1 is None:
+            self.get_fourier_field_1()
         return self._fourier_field_1
 
     def get_fourier_field_1(self):
@@ -315,7 +583,10 @@ class FieldPowerSpectrum:
         self._fourier_field_1 = result
 
     @property
+    @tagging("box", "field_2")
     def fourier_field_2(self):
+        if self._fourier_field_2 is None:
+            self.get_fourier_field_2()
         return self._fourier_field_2
 
     def get_fourier_field_2(self):
@@ -331,8 +602,6 @@ class FieldPowerSpectrum:
 
     @property
     def auto_power_3d_1(self):
-        if self._fourier_field_1 is None:
-            self.get_fourier_field_1()
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,
@@ -356,8 +625,8 @@ class FieldPowerSpectrum:
     def auto_power_3d_2(self):
         if self.field_2 is None:
             return None
-        if self._fourier_field_2 is None:
-            self.get_fourier_field_2()
+        # if self._fourier_field_2 is None:
+        #    self.get_fourier_field_2()
         power_spectrum = get_power_spectrum(
             self.fourier_field_2,
             self.box_len,
@@ -375,10 +644,6 @@ class FieldPowerSpectrum:
     def cross_power_3d(self):
         if self.field_2 is None:
             return None
-        if self._fourier_field_1 is None:
-            self.get_fourier_field_1()
-        if self._fourier_field_2 is None:
-            self.get_fourier_field_2()
         weights_2 = self.weights_2
         # if none, the default for get_power_spectrum is
         # to use weights_1, here we want separate weights_2
@@ -446,6 +711,16 @@ def get_fourier_density(
     return fourier_field
 
 
+def get_x_vector(box_ndim, box_resol):
+    """
+    Get the position vector along each direction for a given box.
+    """
+    xvecarr = tuple(
+        box_resol[i] * (np.arange(box_ndim[i]) + 0.5) for i in range(len(box_ndim))
+    )
+    return xvecarr
+
+
 def get_k_vector(box_ndim, box_resol):
     """
     Get the wavenumber vector along each direction
@@ -490,6 +765,7 @@ def get_shot_noise(
         box_volume
         * np.sum((weights * real_field) ** 2)
         / np.sum(weights * real_field) ** 2
+        * (np.sum(weights) / weights.size) ** 2
     )
     return shot_noise
 
@@ -624,19 +900,23 @@ def bin_3d_to_1d(
     indx = (kfield[:, None] >= k1dedges[None, :-1]) * (
         kfield[:, None] < k1dedges[None, 1:]
     )
-    ps1d = np.sum(ps3d[:, None] * indx * weights[:, None], 0) / np.sum(
-        indx * weights[:, None], 0
-    )
-    k1deff = np.sum(kfield[:, None] * indx * weights[:, None], 0) / np.sum(
-        indx * weights[:, None], 0
-    )
-    if error is True:
-        ps1derr = np.sqrt(
-            np.sum(
-                (ps3d[:, None] - ps1d[None, :]) ** 2 * (indx * weights[:, None]) ** 2, 0
-            )
-            / np.sum((indx * weights[:, None]), 0) ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ps1d = np.sum(ps3d[:, None] * indx * weights[:, None], 0) / np.sum(
+            indx * weights[:, None], 0
         )
+        k1deff = np.sum(kfield[:, None] * indx * weights[:, None], 0) / np.sum(
+            indx * weights[:, None], 0
+        )
+    if error is True:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ps1derr = np.sqrt(
+                np.sum(
+                    (ps3d[:, None] - ps1d[None, :]) ** 2
+                    * (indx * weights[:, None]) ** 2,
+                    0,
+                )
+                / np.sum((indx * weights[:, None]), 0) ** 2
+            )
     nmodes = np.sum(indx * (weights[:, None] > 0), 0)
 
     if error is True:
@@ -758,7 +1038,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         sigma_v_1=0.0,
         tracer_bias_2=None,
         sigma_v_2=0.0,
-        matter_only_rsd=False,
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
@@ -767,6 +1046,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         mean_amp_2=1.0,
         sampling_resol=None,
         include_sampling=[True, False],
+        downres_factor_transverse=1.2,
+        downres_factor_radial=2.0,
+        field_from_mapdata=False,
+        box_buffkick=5,
+        compensate=True,
+        taper_func=windows.blackmanharris,
         **params,
     ):
         if field_1 is None:
@@ -794,7 +1079,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mumode = self.k_para
             slice_indx = (None,) * (len(field_1.shape) - 1)
             slice_indx += (slice(None, None, None),)
-            mumode = self.k_para[slice_indx] / kmode
+            with np.errstate(divide="ignore", invalid="ignore"):
+                mumode = np.nan_to_num(self.k_para[slice_indx] / kmode)
         ModelPowerSpectrum.__init__(
             self,
             kmode=kmode,
@@ -803,7 +1089,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             sigma_v_1=sigma_v_1,
             tracer_bias_2=tracer_bias_2,
             sigma_v_2=sigma_v_2,
-            matter_only_rsd=matter_only_rsd,
             include_beam=include_beam,
             fog_profile=fog_profile,
             cross_coeff=cross_coeff,
@@ -816,6 +1101,26 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             **params,
         )
         self.k1dbins = k1dbins
+        self.downres_factor_transverse = downres_factor_transverse
+        self.downres_factor_radial = downres_factor_radial
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_x_len",
+            "_y_len",
+            "_z_len",
+            "_rot_mat_sky_to_box",
+            "_pix_coor_in_cartesian",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+        self.upgrade_sampling_from_gridding = False
+        self.box_buffkick = box_buffkick
+        self.compensate = compensate
+        self.taper_func = taper_func
+        if field_from_mapdata:
+            self.get_enclosing_box()
 
     def get_1d_power(
         self,
@@ -853,3 +1158,167 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             * step_window_attenuation(k_para, sampling_resol[2])
         )
         return B_sampling
+
+    @property
+    def box_origin(self):
+        """
+        The coordinate of the origin of the box in Mpc.
+        See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
+        for definition.
+        """
+        return np.array([self._x_start, self._y_start, self._z_start])
+
+    @property
+    def rot_mat_sky_to_box(self):
+        """
+        The rotational matrix from spheircal cooridnate to regular box.
+
+        See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
+        for definition.
+        """
+        return self._rot_mat_sky_to_box
+
+    @property
+    def pix_coor_in_cartesian(self):
+        """
+        The cartesian coordinate of the pixels in Mpc.
+        """
+        return self._pix_coor_in_cartesian
+
+    @property
+    def pix_coor_in_box(self):
+        """
+        The cartesian coordinate of the pixels in Mpc,
+        shifted so that the origin is the origin of the enclosing box.
+        """
+        return self.pix_coor_in_cartesian - self.box_origin[None, :]
+
+    def get_enclosing_box(self):
+        """
+        invoke to calculate the box dimensions for enclosing all
+        the map pixels.
+        """
+        ra = self.ra_map
+        dec = self.dec_map
+        map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
+        (
+            self._x_start,
+            self._y_start,
+            self._z_start,
+            self._x_len,
+            self._y_len,
+            self._z_len,
+            rot_back,
+            pos_arr,
+        ) = minimum_enclosing_box_of_lightcone(
+            ra[map_mask],
+            dec[map_mask],
+            self.nu,
+            cosmo=self.cosmo,
+            return_coord=True,
+            buffkick=self.box_buffkick,
+        )
+        self.box_len = np.array(
+            [
+                self._x_len,
+                self._y_len,
+                self._z_len,
+            ]
+        )
+        self._rot_mat_sky_to_box = np.linalg.inv(rot_back)
+        self._pix_coor_in_cartesian = pos_arr
+        downres = np.array(
+            [
+                self.downres_factor_transverse,
+                self.downres_factor_transverse,
+                self.downres_factor_radial,
+            ]
+        )
+        pix_resol_in_mpc = self.pix_resol_in_mpc
+        los_resol_in_mpc = self.los_resol_in_mpc
+        box_resol = (
+            np.array([pix_resol_in_mpc, pix_resol_in_mpc, los_resol_in_mpc]) * downres
+        )
+        ndim_rg = self.box_len / box_resol
+        ndim_rg = ndim_rg.astype("int")
+        for i in range(3):
+            if ndim_rg[i] % 2 != 0:
+                ndim_rg[i] += 1
+        box_resol = self.box_len / ndim_rg
+        # self._box_resol = box_resol
+        self.box_ndim = ndim_rg
+        self.kmode = self.k_mode
+        slice_indx = (None,) * (len(self._box_ndim) - 1)
+        slice_indx += (slice(None, None, None),)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
+        if self.upgrade_sampling_from_gridding:
+            self.sampling_resol = self.box_resol
+
+    def grid_data_to_field(self):
+        hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(
+            self.pix_coor_in_box,
+            self.box_len,
+            self.box_ndim,
+            particle_value=self.data[self.W_HI].ravel(),
+            particle_weights=self.w_HI[self.W_HI].ravel(),
+            compensate=self.compensate,
+        )
+        hi_map_rg = np.array(hi_map_rg)
+        hi_weights_rg = np.array(hi_weights_rg)
+        pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
+        taper_HI = self.taper_func(self.box_ndim[-1])
+        weights_hi = (pixel_counts_hi_rg.mean(axis=-1) > 0)[:, :, None] * taper_HI[
+            None, None, :
+        ]
+        self.field_1 = hi_map_rg
+        self.weights_1 = weights_hi
+        self.unitless_1 = False
+        include_beam = np.array(self.include_beam)
+        include_beam[0] = True
+        self.include_beam = include_beam
+        include_sampling = np.array(self.include_sampling)
+        include_sampling[0] = True
+        self.include_sampling = include_sampling
+        return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
+
+    def grid_gal_to_field(self):
+        (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
+            self.ra_gal,
+            self.dec_gal,
+            self.freq_gal,
+            cosmo=self.cosmo,
+            return_coord=True,
+            tile=False,
+            rot_mat=self.rot_mat_sky_to_box,
+        )
+        gal_pos_in_box = gal_pos_arr - self.box_origin[None, :]
+        (
+            gal_map_rg,
+            gal_weights_rg,
+            pixel_counts_gal_rg,
+        ) = project_particle_to_regular_grid(
+            gal_pos_in_box,
+            self.box_len,
+            self.box_ndim,
+            compensate=self.compensate,
+        )
+        gal_map_rg = np.array(gal_map_rg)
+        gal_weights_rg = np.array(gal_weights_rg)
+        pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
+        self.field_2 = gal_map_rg
+        taper_g = self.taper_func(self.box_ndim[-1])
+        weights_g = (pixel_counts_gal_rg.mean(axis=-1) > 0)[:, :, None] * taper_g[
+            None, None, :
+        ]
+        self.weights_2 = weights_g
+        self.mean_center_2 = True
+        self.unitless_2 = True
+        include_beam = np.array(self.include_beam)
+        include_beam[1] = False
+        self.include_beam = include_beam
+        include_sampling = np.array(self.include_sampling)
+        include_sampling[1] = False
+        self.include_sampling = include_sampling
+
+        return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg

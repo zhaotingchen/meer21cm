@@ -3,7 +3,7 @@ import camb
 import astropy
 from meer21cm import Specification
 from scipy.interpolate import interp1d
-from meer21cm.util import omega_hi_to_average_temp
+from meer21cm.util import omega_hi_to_average_temp, tagging
 
 
 class CosmologyCalculator(Specification):
@@ -41,6 +41,7 @@ class CosmologyCalculator(Specification):
 
     @Specification.cosmo.setter
     def cosmo(self, value):
+        cosmo = value
         if isinstance(value, str):
             cosmo = getattr(astropy.cosmology, value)
         self._cosmo = cosmo
@@ -54,6 +55,8 @@ class CosmologyCalculator(Specification):
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
         self.camb_pars = self.get_camb_pars()
+        # cosmology changed, clear cache
+        self.clean_cache(self.cosmo_dep_attr)
 
     def get_camb_pars(self):
         """
@@ -84,19 +87,23 @@ class CosmologyCalculator(Specification):
         pars.set_matter_power(redshifts=[self.z], kmax=2.0)
         results = camb.get_results(pars)
         self.f_growth = results.get_fsigma8()[0] / results.get_sigma8()[0]
+        self.sigma_8_z = results.get_sigma8()[0]
         return pars
 
     @property
+    @tagging("cosmo", "nu")
     def matter_power_spectrum_fnc(self):
         """
         Interpolation function for the real-space isotropic matter power spectrum.
         """
+        if self._matter_power_spectrum_fnc is None:
+            self.get_matter_power_spectrum()
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):
         pars = self.camb_pars
         pars.set_matter_power(
-            redshifts=np.unique(np.array([0.0, self.z])).tolist(),
+            redshifts=np.unique(np.array([self.z, 0.0])).tolist(),
             kmax=self.kmax / self.h,
         )
         pars.NonLinear = getattr(camb.model, "NonLinear_" + self.nonlinear)
@@ -110,3 +117,30 @@ class CosmologyCalculator(Specification):
             karr, pkarr, bounds_error=False, fill_value="extrapolate"
         )
         self._matter_power_spectrum_fnc = matter_power_func
+
+    # weights_1 and weights_2 are later used in power spectrum
+    @property
+    def weights_1(self):
+        return self._weights_1
+
+    @property
+    def weights_2(self):
+        return self._weights_2
+
+    @weights_1.setter
+    def weights_1(self, value):
+        # if weight is updated, clear fourier field
+        self._weights_1 = value
+        if "field_1_dep_attr" in dir(self):
+            self.clean_cache(self.field_1_dep_attr)
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @weights_2.setter
+    def weights_2(self, value):
+        # if weight is updated, clear fourier field
+        self._weights_2 = value
+        if "field_2_dep_attr" in dir(self):
+            self.clean_cache(self.field_2_dep_attr)
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
