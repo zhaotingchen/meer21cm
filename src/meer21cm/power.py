@@ -250,16 +250,20 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._cross_power_tracer_model * mean_amp * mean_amp2
 
     def step_sampling(self):
+        """
+        The sampling window function to be convolved with data. Note that
+        the window can only be calculated in Cartesian grids, so it is not used
+        in ``ModelPowerSpectrum`` and only in ``PowerSpectrum``.
+        """
         return 1.0
 
+    # calculate on the fly, no need for tagging
     def beam_attenuation(self):
         if self.sigma_beam_ch is None:
             return 1.0
         # in the future for asymmetric beam this way
         # of writing may be probelmatic
         k_perp = self.kmode * np.sqrt(1 - self.mumode**2)
-        # sigma_beam_rad = (self.sigma_beam_ch.mean() * self.beam_unit).to("rad").value
-        # sigma_beam_mpc = sigma_beam_rad * self.comoving_distance(self.z).to("Mpc").value
         sigma_beam_mpc = self.sigma_beam_in_mpc
         B_beam = gaussian_beam_attenuation(k_perp, sigma_beam_mpc)
         return B_beam
@@ -600,6 +604,7 @@ class FieldPowerSpectrum(Specification):
         )
         self._fourier_field_2 = result
 
+    # the calculation of this is not heavy, simply on the fly
     @property
     def auto_power_3d_1(self):
         power_spectrum = get_power_spectrum(
@@ -625,8 +630,6 @@ class FieldPowerSpectrum(Specification):
     def auto_power_3d_2(self):
         if self.field_2 is None:
             return None
-        # if self._fourier_field_2 is None:
-        #    self.get_fourier_field_2()
         power_spectrum = get_power_spectrum(
             self.fourier_field_2,
             self.box_len,
@@ -1073,18 +1076,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             remove_sn_2=remove_sn_2,
             corrtype=corrtype,
         )
+        self.kmode = kmode
+        self.mumode = mumode
         if model_k_from_field:
-            # use field kmode to propagate into model
-            kmode = self.k_mode
-            mumode = self.k_para
-            slice_indx = (None,) * (len(field_1.shape) - 1)
-            slice_indx += (slice(None, None, None),)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                mumode = np.nan_to_num(self.k_para[slice_indx] / kmode)
+            self.propagate_field_k_to_model()
+        self.model_k_from_field = model_k_from_field
         ModelPowerSpectrum.__init__(
             self,
-            kmode=kmode,
-            mumode=mumode,
+            kmode=self.kmode,
+            mumode=self.mumode,
             tracer_bias_1=tracer_bias_1,
             sigma_v_1=sigma_v_1,
             tracer_bias_2=tracer_bias_2,
@@ -1122,6 +1122,20 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if field_from_mapdata:
             self.get_enclosing_box()
 
+    def propagate_field_k_to_model(self):
+        """
+        Use field k-modes for the model
+        """
+        # use field kmode to propagate into model
+        kmode = self.k_mode
+        mumode = self.k_para
+        slice_indx = (None,) * (len(self.box_len.shape) - 1)
+        slice_indx += (slice(None, None, None),)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mumode = np.nan_to_num(self.k_para[slice_indx] / kmode)
+        self.kmode = kmode
+        self.mumode = mumode
+
     def get_1d_power(
         self,
         power3d,
@@ -1132,7 +1146,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if k1dbins is None:
             k1dbins = self.k1dbins
         if k1dweights is None:
-            k1dweights = np.ones_like(self.field_1)
+            k1dweights = np.ones(self.box_ndim)
         if isinstance(power3d, str):
             power3d = getattr(self, power3d)
         if filter_dependent_k:
@@ -1145,6 +1159,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         return power1d, k1deff, nmodes
 
+    # calculate on-the-fly, no cache
     def step_sampling(self):
         if not self.has_resol:
             return 1.0
@@ -1247,13 +1262,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         box_resol = self.box_len / ndim_rg
         # self._box_resol = box_resol
         self.box_ndim = ndim_rg
-        self.kmode = self.k_mode
-        slice_indx = (None,) * (len(self._box_ndim) - 1)
-        slice_indx += (slice(None, None, None),)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
-        if self.upgrade_sampling_from_gridding:
-            self.sampling_resol = self.box_resol
+        if self.model_k_from_field:
+            self.propagate_field_k_to_model()
+        # self.kmode = self.k_mode
+        # slice_indx = (None,) * (len(self._box_ndim) - 1)
+        # slice_indx += (slice(None, None, None),)
+        # with np.errstate(divide="ignore", invalid="ignore"):
+        #    self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
+        # if self.upgrade_sampling_from_gridding:
+        #    self.sampling_resol = self.box_resol
 
     def grid_data_to_field(self):
         hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(

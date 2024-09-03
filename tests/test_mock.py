@@ -25,9 +25,11 @@ def test_matter_mock(test_W):
     mock = MockSimulation(
         cosmo=WMAP1,
         k1dbins=k1dedges,
+        model_k_from_field=True,
+        upgrade_sampling_from_gridding=True,
     )
     mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
-    mock.get_mock_matter_field()
+    mock.get_enclosing_box()
     # underlying code has been tested in grid
     # simply test invoking
     mock.box_origin
@@ -56,7 +58,7 @@ def test_matter_mock(test_W):
     assert avg_deviation < 1e-1
     # test RSD
     mock.kaiser_rsd = True
-    mock.get_mock_matter_field()
+    # mock.get_mock_matter_field()
     mock.field_1 = mock.mock_matter_field
     pfield_i_rsd, keff, nmodes = mock.get_1d_power(
         "auto_power_3d_1",
@@ -83,11 +85,13 @@ def test_tracer_mock(test_W, tracer_i):
         include_sampling=[False, False],
         downres_factor_transverse=0.8,
         downres_factor_radial=0.8,
+        model_k_from_field=True,
+        upgrade_sampling_from_gridding=True,
         # mean_amp_1='average_hi_temp',
     )
     setattr(mock, "mean_amp_" + str(tracer_i), "average_hi_temp")
     mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
-    mock.get_mock_tracer_field()
+    # mock.get_mock_tracer_field()
     mock.field_1 = mock.mock_tracer_field_1
     mock.field_2 = mock.mock_tracer_field_2
 

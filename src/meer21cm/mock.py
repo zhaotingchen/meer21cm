@@ -30,6 +30,7 @@ from .util import (
     freq_to_redshift,
     lamb_21,
     f_21,
+    tagging,
 )
 from .plot import plot_map
 from .grid import (
@@ -84,13 +85,25 @@ class MockSimulation(PowerSpectrum):
         for attr in init_attr:
             setattr(self, attr, None)
         self.target_relative_to_num_g = target_relative_to_num_g
-        self.upgrade_sampling_from_gridding = True
+        # self.upgrade_sampling_from_gridding = True
 
     @property
+    def kaiser_rsd(self):
+        return self._kaiser_rsd
+
+    @kaiser_rsd.setter
+    def kaiser_rsd(self, value):
+        self._kaiser_rsd = value
+        self.clean_cache(self.mock_dep_attr)
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box")
     def mock_matter_field(self):
         """
         The simulated dark matter density field.
         """
+        if self._mock_matter_field is None:
+            self.get_mock_matter_field()
         return self._mock_matter_field
 
     def get_mock_matter_field(self):
@@ -130,27 +143,35 @@ class MockSimulation(PowerSpectrum):
         return self._mock_field
 
     @property
+    @tagging("cosmo", "nu", "mock", "box", "tracer_1")
     def mock_tracer_field_1(self):
         """
         The simulated tracer field 1.
         """
+        if self._mock_tracer_field_1 is None:
+            self.get_mock_tracer_field_1()
         mean_amp = self.mean_amp_1
         if isinstance(mean_amp, str):
             mean_amp = getattr(self, mean_amp)
         return self._mock_tracer_field_1 * mean_amp
 
     @property
+    @tagging("cosmo", "nu", "mock", "box", "tracer_2")
     def mock_tracer_field_2(self):
         """
         The simulated tracer field 2.
         """
         mean_amp = self.mean_amp_2
+        if self._mock_tracer_field_2 is None:
+            self.get_mock_tracer_field_2()
         if isinstance(mean_amp, str):
             mean_amp = getattr(self, mean_amp)
         return self._mock_tracer_field_2 * mean_amp
 
-    def get_mock_tracer_field(self):
+    def get_mock_tracer_field_1(self):
         self._mock_tracer_field_1 = self.get_mock_field(bias=self.tracer_bias_1)
+
+    def get_mock_tracer_field_2(self):
         if self.tracer_bias_2 is not None:
             self._mock_tracer_field_2 = self.get_mock_field(bias=self.tracer_bias_2)
 

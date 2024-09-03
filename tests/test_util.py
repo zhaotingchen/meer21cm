@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from astropy.cosmology import Planck18
+from astropy.cosmology import Planck18, WMAP1
 from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from meer21cm.util import *
 import sys
@@ -62,6 +62,11 @@ def test_omega_hi_to_average_temp():
     HzoverH0 = (Planck18.H(z) / Planck18.H0).to("").value
     tbar_old = 0.18 * omega_hi * Planck18.h * (1 + z) ** 2 / HzoverH0
     tbar = omega_hi_to_average_temp(omega_hi, z=z, cosmo=Planck18)
+    assert (np.abs(tbar - tbar_old) / tbar) < 1e-1
+    # test another cosmology
+    HzoverH0 = (WMAP1.H(z) / WMAP1.H0).to("").value
+    tbar_old = 0.18 * omega_hi * WMAP1.h * (1 + z) ** 2 / HzoverH0
+    tbar = omega_hi_to_average_temp(omega_hi, z=z, cosmo=WMAP1)
     assert (np.abs(tbar - tbar_old) / tbar) < 1e-1
 
 

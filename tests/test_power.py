@@ -698,6 +698,7 @@ def test_gal_poisson_power(test_W):
         weights_map_pixel=sp.map_has_sampling,
         map_has_sampling=sp.map_has_sampling,
         field_from_map_data=True,
+        model_k_from_field=True,
     )
     sp.data = data
     sp.weights_map_pixel = sp.map_has_sampling
