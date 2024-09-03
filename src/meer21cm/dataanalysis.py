@@ -235,6 +235,8 @@ class Specification:
         for key in cosmo.__dir__():
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
+        # cosmology changed, clear cache
+        self.clean_cache(self.cosmo_dep_attr)
 
     @property
     def dvdf_ch(self):

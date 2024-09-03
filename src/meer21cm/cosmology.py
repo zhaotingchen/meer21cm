@@ -32,6 +32,20 @@ class CosmologyCalculator(Specification):
         self.omegahi = omegahi
 
     @property
+    def nonlinear(self):
+        """
+        What nonlinear input model to use for camb.
+        Set to ``'none'`` for linear matter power
+        """
+        return self._nonlinear
+
+    @nonlinear.setter
+    def nonlinear(self, value):
+        self._nonlinear = value
+        # cosmology changed, clear cache
+        self.clean_cache(self.cosmo_dep_attr)
+
+    @property
     def average_hi_temp(self):
         """
         The average HI brightness temperature in Kelvin.

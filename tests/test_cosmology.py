@@ -3,6 +3,7 @@ from astropy.cosmology import Planck18, Planck15
 import numpy as np
 import camb
 from meer21cm.util import f_21
+import pytest
 
 
 def test_cosmo():
@@ -11,7 +12,12 @@ def test_cosmo():
     # test input sigma8 resulting in consistent As with Planck18
     coscal.camb_pars
     assert np.abs(np.log(1e10 * coscal.As) - 3.047) < 1e-3
-    coscal.average_hi_temp
+    # only test invoking, the function itself is tested in util
+    t1, ohi1 = coscal.average_hi_temp, coscal.omegahi
+    # test update omegahi, scales correctly
+    coscal.omegahi = 5.5e-4
+    np.allclose(coscal.average_hi_temp / t1, (coscal.omegahi / ohi1))
+    # test another cosmology is included in util
 
 
 def test_update_pars():
@@ -22,20 +28,22 @@ def test_update_pars():
     coscal.cosmo
     coscal.camb_pars
     assert coscal.h == Planck15.h
+    # As has been updated
     assert coscal.As != As
 
 
-def test_matter_power():
-    coscal = CosmologyCalculator(nonlinear="both")
+@pytest.mark.parametrize("test_nonlinear", [("both"), ("none")])
+def test_matter_power(test_nonlinear):
+    coscal = CosmologyCalculator(nonlinear=test_nonlinear)
     pars = coscal.camb_pars
     pars.set_matter_power(
         redshifts=np.unique(np.array([0.0, coscal.z])).tolist(), kmax=2.0
     )
     pars.NonLinear = getattr(camb.model, "NonLinear_" + coscal.nonlinear)
     results = camb.get_results(pars)
-    k_test, z, pk_test = results.get_nonlinear_matter_power_spectrum(
-        hubble_units=False, k_hunit=False
-    )
+    k_test, z, pk_test = results.get_matter_power_spectrum()
+    k_test = k_test * coscal.h
+    pk_test = pk_test / coscal.h**3
     ksel = (k_test > coscal.kmin) * (k_test < coscal.kmax)
     k_test = k_test[ksel]
     pk_test = pk_test[-1, ksel]
