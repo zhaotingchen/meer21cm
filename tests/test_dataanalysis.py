@@ -4,12 +4,16 @@ import numpy as np
 from astropy import units, constants
 import pytest
 from astropy.wcs.utils import proj_plane_pixel_area
-from meer21cm.util import freq_to_redshift, center_to_edges
+from meer21cm.util import freq_to_redshift, center_to_edges, f_21
 
 
 def test_cosmo():
     spec = Specification()
     assert spec.h == Planck18.h
+    # an update should properly update the internal functions as well
+    spec.cosmo = "Planck15"
+    assert spec.cosmo is Planck15
+    assert spec.h == Planck15.h
 
 
 def test_update_pars():
@@ -21,8 +25,8 @@ def test_update_pars():
     # test direct input
     spec.cosmo = Planck15
     # test nu
-    spec.nu = [1.4e9, 1.4e9]
-    spec.z
+    spec.nu = [f_21, f_21]
+    assert np.allclose(spec.z, 0)
 
 
 def test_defaults(test_nu, test_W):
@@ -68,6 +72,7 @@ def test_read_fits(test_fits):
     sp.read_gal_cat()
     # set map file
     sp.map_file = test_fits
+    # set wrong dimensions, see if they get updated correctly
     sp.num_pix_x = 1
     sp.num_pix_y = 1
     sp.read_from_fits()
@@ -81,7 +86,9 @@ def test_read_fits(test_fits):
     assert sp.num_pix_y == 73
     assert len(sp.nu) == 2
     sp.W_HI
+    # if weights are correctly updated
     assert np.allclose(sp.w_HI, sp.counts)
+    # uniform weighting should be just binary
     sp.weighting = "uniform"
     sp.read_from_fits()
     assert np.allclose(sp.w_HI, sp.counts > 0)
@@ -92,6 +99,7 @@ def test_gal_readin(test_gal_fits):
     sp.gal_file = test_gal_fits
     sp.read_gal_cat()
     nu_edges = center_to_edges(sp.nu)
+    # see if trimming within the frequency range worked
     assert np.mean(sp.freq_gal >= nu_edges[sp.ch_id_gal]) == 1
     assert np.mean(sp.freq_gal <= nu_edges[sp.ch_id_gal + 1]) == 1
     assert len(sp.ra_gal) == len(sp.z_gal)
@@ -113,3 +121,7 @@ def test_beam_update():
     ps.beam_unit = units.rad
     s3 = ps.sigma_beam_ch_in_mpc
     assert np.allclose(np.pi * s3 / 180, s2)
+    # test update cosmo, then beam in mpc also change
+    ps.cosmo = "Planck15"
+    s4 = ps.sigma_beam_ch_in_mpc
+    assert not np.allclose(s4, s3)
