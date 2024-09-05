@@ -24,6 +24,7 @@ from meer21cm.io import (
 from astropy.wcs.utils import proj_plane_pixel_area
 from itertools import chain
 import meer21cm
+from scipy.interpolate import interp1d
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
@@ -497,3 +498,17 @@ class Specification:
         self._ra_gal = self.ra_gal[gal_sel]
         self._dec_gal = self.dec_gal[gal_sel]
         self._z_gal = self.z_gal[gal_sel]
+
+    def z_as_func_of_comov_dist(self):
+        """
+        Returns a function that returns the redshift
+        for input comoving distance.
+        """
+        zarr = np.linspace(
+            self.z_ch.min() * 0.9,
+            self.z_ch.max() * 1.1,
+            501,
+        )
+        xarr = self.comoving_distance(zarr).value
+        func = interp1d(xarr, zarr)
+        return func

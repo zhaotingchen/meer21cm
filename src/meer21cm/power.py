@@ -10,6 +10,7 @@ from meer21cm.grid import (
 from scipy.signal import windows
 from meer21cm.util import tagging
 from meer21cm.dataanalysis import Specification
+import healpy as hp
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -1058,9 +1059,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         **params,
     ):
         if field_1 is None:
-            field_1 = np.ones([10, 10, 10])
+            if "box_ndim" in params.keys():
+                field_1 = np.ones(params["box_ndim"])
+            else:
+                field_1 = np.ones([1, 1, 1])
         if box_len is None:
-            box_len = np.array([10, 10, 10])
+            box_len = np.array([0, 0, 0])
         FieldPowerSpectrum.__init__(
             self,
             field_1,
@@ -1339,3 +1343,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.include_sampling = include_sampling
 
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
+
+    def ra_dec_z_for_coord_in_box(self, pos_in_box):
+        pos_arr = pos_in_box + self.box_origin
+        rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
+        pos_arr = np.einsum("ij,aj->ai", rot_back, pos_arr)
+        pos_comov_dist = np.sqrt(np.sum(pos_arr**2, axis=-1))
+        pos_z = self.z_as_func_of_comov_dist()(pos_comov_dist)
+        pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
+        return pos_ra, pos_dec, pos_z

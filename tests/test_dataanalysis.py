@@ -125,3 +125,10 @@ def test_beam_update():
     ps.cosmo = "Planck15"
     s4 = ps.sigma_beam_ch_in_mpc
     assert not np.allclose(s4, s3)
+
+
+def test_z_interp():
+    ps = Specification()
+    func = ps.z_as_func_of_comov_dist()
+    z_rand = np.random.uniform(ps.z_ch.min(), ps.z_ch.max(), size=100)
+    assert np.allclose(func(ps.comoving_distance(z_rand).value), z_rand)
