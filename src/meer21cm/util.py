@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import healpy as hp
 from astropy.io import fits
-from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
 from astropy.cosmology import Planck18
 import inspect
 import sys
@@ -528,3 +527,50 @@ def hod_obuljen18(
     marr = 10**logmh * input_h_unit  # in Msun/h
     himass = 10 ** (m0h) * (marr / 10**mminh) ** alpha * np.exp(-(10**mminh) / marr)
     return himass * output_h_unit
+
+
+def check_unit_equiv(u1, u2):
+    """
+    Check if two units are equivelant
+
+    Parameters
+    ----------
+        u1: ``astropy.units.Unit`` object.
+            The first input unit.
+        u2: ``astropy.units.Unit`` object.
+            The second input unit.
+
+    Returns
+    -------
+        result: bool.
+            Whether they are the same unit.
+    """
+    return (1 * u1 / u2).si.unit == units.dimensionless_unscaled
+
+
+def jy_to_kelvin(val, omega, freq):
+    """
+    convert Jy/beam to brightness temperature in Kelvin.
+
+    Parameters
+    ----------
+        val: numpy array.
+            The input value(s) in Jy/beam or Jy/pix
+        omega: float.
+            beam or pixel area in Steradian.
+        freq: float.
+            the frequency for conversion in Hz.
+
+    Returns
+    -------
+        result: float array.
+            The brightness temperature in Kelvin.
+    """
+    freq = freq * units.Hz
+    omega = omega * units.sr
+    result = (
+        (val * units.Jy / omega)
+        .to(units.K, equivalencies=units.brightness_temperature(freq))
+        .value
+    )
+    return result

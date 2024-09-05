@@ -188,3 +188,27 @@ def test_hod_obuljen18():
     mass_1 = np.log10(hod_obuljen18(11.27))
     mass_2 = np.log10(10**9.52 * np.exp(-1) / Planck18.h)
     assert np.allclose(mass_1, mass_2)
+
+
+def test_check_unit_equiv():
+    assert check_unit_equiv(units.m, units.cm)
+    assert not check_unit_equiv(units.m, units.K)
+
+
+def test_jy_to_kelvin():
+    omega = np.random.uniform(0.01, 1)
+    freq = np.random.uniform(0.01, 1) * 1e9
+    test = jy_to_kelvin(1, omega, freq)
+    test2 = (
+        (
+            1
+            * units.Jy
+            / omega
+            * (constants.c / freq / units.Hz) ** 2
+            / 2
+            / constants.k_B
+        )
+        .to("K")
+        .value
+    )
+    assert np.allclose(test, test2)
