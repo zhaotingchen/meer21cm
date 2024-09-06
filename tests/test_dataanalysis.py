@@ -158,3 +158,19 @@ def test_beam_image():
     )
     # sigma_beam_ch updated by the input model
     assert np.allclose(sigma_beam_from_image, sp.sigma_beam_ch)
+
+
+def test_convolve_data():
+    sp = Specification()
+    D_dish = 13.5
+    sp.sigma_beam_ch = dish_beam_sigma(
+        D_dish,
+        sp.nu,
+    )
+    sp.data = np.zeros(sp.W_HI.shape)
+    sp.data[sp.num_pix_x // 2, sp.num_pix_y // 2] = 1.0
+    sp.w_HI = sp.W_HI
+    sp.convolve_data(sp.beam_image)
+    # test renorm
+    sum_test = sp.data.sum(axis=(0, 1))
+    assert np.allclose(sum_test, np.ones_like(sp.nu))

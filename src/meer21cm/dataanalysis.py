@@ -556,3 +556,16 @@ class Specification:
             )
             self.sigma_beam_ch = sigma_beam_from_image
         self._beam_image = beam_image
+
+    def convolve_data(self, kernel):
+        """
+        convolve data with an input kernel, and
+        update the corresponding weights.
+        """
+        data, w_HI = telescope.weighted_convolution(
+            self.data,
+            kernel,
+            self.w_HI,
+        )
+        self.data = data
+        self.w_HI = w_HI
