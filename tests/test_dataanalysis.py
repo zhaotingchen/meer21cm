@@ -5,6 +5,7 @@ from astropy import units, constants
 import pytest
 from astropy.wcs.utils import proj_plane_pixel_area
 from meer21cm.util import freq_to_redshift, center_to_edges, f_21
+from meer21cm.telescope import dish_beam_sigma
 
 
 def test_cosmo():
@@ -125,3 +126,35 @@ def test_beam_update():
     ps.cosmo = "Planck15"
     s4 = ps.sigma_beam_ch_in_mpc
     assert not np.allclose(s4, s3)
+
+
+def test_beam_image():
+    sp = Specification()
+    D_dish = 13.5
+    sigma_exp = dish_beam_sigma(
+        D_dish,
+        sp.nu,
+    )
+    sp.sigma_beam_ch = sigma_exp
+    beam_image = sp.beam_image
+    sigma_beam_from_image = (
+        np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * sp.pix_resol
+    )
+    assert np.allclose(sigma_beam_from_image, sp.sigma_beam_ch, rtol=1e-3, atol=1e-3)
+    sp.beam_model = "cos"
+    beam_image = sp.beam_image
+    sigma_beam_from_image = (
+        np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * sp.pix_resol
+    )
+    # for cos beam image sigma will be different from input since it is not
+    # an exact match
+    assert np.allclose(sigma_beam_from_image, sp.sigma_beam_ch, rtol=1e-1, atol=5e-2)
+    # no parameter, just an input model
+    sp.beam_model = "kat"
+    sp.beam_type = "anisotropic"
+    beam_image = sp.beam_image
+    sigma_beam_from_image = (
+        np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * sp.pix_resol
+    )
+    # sigma_beam_ch updated by the input model
+    assert np.allclose(sigma_beam_from_image, sp.sigma_beam_ch)
