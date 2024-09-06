@@ -4,6 +4,8 @@ from astropy import units, constants
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.signal import convolve
 from astropy.cosmology import Planck18
+import healpy as hp
+from katbeam import JimBeam
 
 
 def weighted_convolution(
@@ -96,6 +98,37 @@ def weighted_convolution(
     return conv_signal, conv_weights
 
 
+def kat_beam(nu, wproj, xdim, ydim, band="L"):
+    r"""
+    Returns a beam model from the ``katbeam`` model, which is a simplification of
+    the model reported in Asad et al. [1].
+    The katbeam implementation here still needs validation. Use it
+    with caution.
+
+    References
+    ----------
+    .. [1] Asad et al., "Primary beam effects of radio astronomy antennas -- II. Modelling the MeerKAT L-band beam", https://arxiv.org/abs/1904.07155
+    """
+    x_cen, y_cen = xdim // 2, ydim // 2
+    ra_cen, dec_cen = get_wcs_coor(
+        wproj,
+        x_cen,
+        y_cen,
+    )
+    xx, yy = np.meshgrid(np.arange(xdim), np.arange(ydim), indexing="ij")
+    ra, dec = get_wcs_coor(wproj, xx, yy)
+    vec = hp.ang2vec(ra, dec, lonlat=True)
+    vec_cen = hp.ang2vec(ra_cen, dec_cen, lonlat=True)
+    xx = np.arcsin(vec - vec_cen[None, None, :])[:, :, 0].T * 180 / np.pi
+    yy = np.arcsin(vec - vec_cen[None, None, :])[:, :, 1].T * 180 / np.pi
+    beam = JimBeam(f"MKAT-AA-{band}-JIM-2020")
+    freqMHz = nu / 1e6
+    beam_image = np.zeros((xdim, ydim, len(nu)))
+    for i, freq in enumerate(freqMHz):
+        beam_image[:, :, i] = beam.I(xx, yy, freq) ** 2
+    return beam_image
+
+
 def gaussian_beam(sigma):
     r"""
     Returns a Gaussian beam function
@@ -115,6 +148,29 @@ def gaussian_beam(sigma):
             The beam function.
     """
     return lambda x: np.exp(-(x**2) / 2 / sigma**2)
+
+
+def cos_beam(theta_ch):
+    r"""
+    Returns a cosine-tapered beam function [1]
+
+    .. math::
+        B(\theta) = \bigg[
+        \frac{\cos \big( 1.189 \pi \theta / \theta_b \big)}
+        {1-4\big( 1.189 \theta / \theta_b \big)}
+        \bigg]^2
+
+    for given input ::math::`\theta_b`
+    """
+
+    def beam_func(ang_dist):
+        beam = (
+            np.cos(1.189 * ang_dist * np.pi / theta_ch)
+            / (1 - 4 * (1.189 * ang_dist / theta_ch) ** 2)
+        ) ** 2
+        return beam
+
+    return beam_func
 
 
 def isotropic_beam_profile(
