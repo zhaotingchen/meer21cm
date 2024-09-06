@@ -103,7 +103,7 @@ def kat_beam(nu, wproj, xdim, ydim, band="L"):
     Returns a beam model from the ``katbeam`` model, which is a simplification of
     the model reported in Asad et al. [1].
     The katbeam implementation here still needs validation. Use it
-    with caution.
+    with caution, especially if you want correct orientation of the beam.
 
     References
     ----------
@@ -150,7 +150,7 @@ def gaussian_beam(sigma):
     return lambda x: np.exp(-(x**2) / 2 / sigma**2)
 
 
-def cos_beam(theta_ch):
+def cos_beam(sigma):
     r"""
     Returns a cosine-tapered beam function [1]
 
@@ -160,13 +160,29 @@ def cos_beam(theta_ch):
         {1-4\big( 1.189 \theta / \theta_b \big)}
         \bigg]^2
 
-    for given input ::math::`\theta_b`
+    for given input parameter :math:`\sigma`, the FWHM is set to
+    :math:`\theta_b = 2\sqrt{2{\rm log}2 \sigma}`.
+
+    Parameters
+    ----------
+        sigma: float.
+            The width of the beam profile.
+
+    Returns
+    -------
+        beam_func: function.
+            The beam function.
+
+    References
+    ----------
+    .. [1] Mauch et al., "The 1.28 GHz MeerKAT DEEP2 Image", https://arxiv.org/abs/1912.06212
     """
+    theta_b = 2 * np.sqrt(2 * np.log(2)) * sigma
 
     def beam_func(ang_dist):
         beam = (
-            np.cos(1.189 * ang_dist * np.pi / theta_ch)
-            / (1 - 4 * (1.189 * ang_dist / theta_ch) ** 2)
+            np.cos(1.189 * ang_dist * np.pi / theta_b)
+            / (1 - 4 * (1.189 * ang_dist / theta_b) ** 2)
         ) ** 2
         return beam
 

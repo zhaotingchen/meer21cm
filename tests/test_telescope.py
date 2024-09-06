@@ -8,7 +8,10 @@ from meer21cm import Specification
 
 def test_cos_beam():
     # input fhmw/2 should give 0.5
-    assert np.abs(cos_beam(1.0)(1.0 / 2) - 0.5) < 1e-3
+    sigma = 0.5
+    fwhm = 2 * np.sqrt(2 * np.log(2)) * sigma
+
+    assert np.abs(cos_beam(sigma)(fwhm / 2) - 0.5) < 1e-3
 
 
 def test_beam(test_wproj):
