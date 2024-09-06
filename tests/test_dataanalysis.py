@@ -130,6 +130,8 @@ def test_beam_update():
 
 def test_beam_image():
     sp = Specification()
+    # test None
+    assert sp.beam_image is None
     D_dish = 13.5
     sigma_exp = dish_beam_sigma(
         D_dish,
@@ -151,7 +153,6 @@ def test_beam_image():
     assert np.allclose(sigma_beam_from_image, sp.sigma_beam_ch, rtol=1e-1, atol=5e-2)
     # no parameter, just an input model
     sp.beam_model = "kat"
-    sp.beam_type = "anisotropic"
     beam_image = sp.beam_image
     sigma_beam_from_image = (
         np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * sp.pix_resol
@@ -174,3 +175,12 @@ def test_convolve_data():
     # test renorm
     sum_test = sp.data.sum(axis=(0, 1))
     assert np.allclose(sum_test, np.ones_like(sp.nu))
+
+
+def test_update_beam_type():
+    sp = Specification(beam_model="kat")
+    assert sp.beam_type == "anisotropic"
+    sp = Specification()
+    assert sp.beam_type == "isotropic"
+    with pytest.raises(ValueError):
+        sp.beam_model = "something"

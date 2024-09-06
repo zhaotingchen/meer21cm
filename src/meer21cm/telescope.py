@@ -1,5 +1,5 @@
 import numpy as np
-from .util import get_wcs_coor, get_ang_between_coord, freq_to_redshift
+from .util import get_wcs_coor, get_ang_between_coord, freq_to_redshift, tagging
 from astropy import units, constants
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.signal import convolve
@@ -98,6 +98,7 @@ def weighted_convolution(
     return conv_signal, conv_weights
 
 
+@tagging("anisotropic")
 def kat_beam(nu, wproj, xdim, ydim, band="L"):
     r"""
     Returns a beam model from the ``katbeam`` model, which is a simplification of
@@ -129,6 +130,7 @@ def kat_beam(nu, wproj, xdim, ydim, band="L"):
     return beam_image
 
 
+@tagging("isotropic")
 def gaussian_beam(sigma):
     r"""
     Returns a Gaussian beam function
@@ -150,6 +152,7 @@ def gaussian_beam(sigma):
     return lambda x: np.exp(-(x**2) / 2 / sigma**2)
 
 
+@tagging("isotropic")
 def cos_beam(sigma):
     r"""
     Returns a cosine-tapered beam function [1]

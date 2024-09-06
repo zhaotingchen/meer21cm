@@ -52,7 +52,6 @@ class Specification:
         ra_range=(-np.inf, np.inf),
         dec_range=(-400, 400),
         beam_model="gaussian",
-        beam_type="isotropic",
         data=None,
         weights_map_pixel=None,
         counts=None,
@@ -119,7 +118,6 @@ class Specification:
         self.weights_map_pixel = weights_map_pixel
         self.counts = counts
         self.beam_model = beam_model
-        self.beam_type = beam_type
         self._beam_image = None
 
     @property
@@ -147,6 +145,10 @@ class Specification:
 
     @property
     def beam_type(self):
+        """
+        The beam type that can be either be
+        isotropic or anisotropic.
+        """
         return self._beam_type
 
     @beam_type.setter
@@ -157,11 +159,18 @@ class Specification:
 
     @property
     def beam_model(self):
+        """
+        The name of the beam function.
+        """
         return self._beam_model
 
     @beam_model.setter
     def beam_model(self, value):
+        beam_func = value + "_beam"
+        if beam_func not in telescope.__dict__.keys():
+            raise ValueError(f"{value} is not a beam model")
         self._beam_model = value
+        self.beam_type = getattr(telescope, value + "_beam").tags[0]
         if "beam_dep_attr" in dir(self):
             self.clean_cache(self.beam_dep_attr)
 
