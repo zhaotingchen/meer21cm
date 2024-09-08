@@ -1,11 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from hiimtool.basic_util import f_21, centre_to_edges
 from astropy import constants, units
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
-from meer21cm.util import check_unit_equiv, get_wcs_coor, radec_to_indx
+from meer21cm.util import (
+    check_unit_equiv,
+    get_wcs_coor,
+    radec_to_indx,
+    f_21,
+    center_to_edges,
+)
 
 
 def weight_source_peaks(
@@ -80,7 +85,7 @@ def weight_source_peaks(
         vel_max_int = step_size * internal_step
         # vel_int_arr centres at the galaxy position along los
         vel_int_arr = np.linspace(-vel_max_int, vel_max_int, num=internal_step)
-        vel_int_edges = centre_to_edges(vel_int_arr)
+        vel_int_edges = center_to_edges(vel_int_arr)
         ## how the profile looks like across the velocities
         # if no_vel:
         #    hiprofile_g = np.zeros_like(vel_int_edges)
@@ -95,7 +100,7 @@ def weight_source_peaks(
         vel_ch_arr = (
             np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1) * vel_resol
         )
-        vel_ch_arr = centre_to_edges(vel_ch_arr)
+        vel_ch_arr = center_to_edges(vel_ch_arr)
         # zero should correspond to the deviation so shifting
         vel_gal_arr = vel_ch_arr[:, None] + vel_start_pos[None, :]
         # which integration step each channel belongs to
@@ -250,12 +255,12 @@ def stack(
             np.linspace(-(len(nu) - 1), (len(nu) - 1), 2 * len(nu) - 1)
             * np.diff(nu).mean()
         )
-        x_edges = centre_to_edges(freq_stack_arr * units.MHz).to(x_unit).value
+        x_edges = center_to_edges(freq_stack_arr * units.MHz).to(x_unit).value
     elif check_unit_equiv(x_unit, constants.c):
         vel_stack_arr = (
             np.linspace(-(len(nu) - 1), (len(nu) - 1), 2 * len(nu) - 1) * vel_resol
         )
-        x_edges = centre_to_edges(vel_stack_arr)
+        x_edges = center_to_edges(vel_stack_arr)
     else:
         raise ValueError("x_unit must be either frequency or velocity")
 
@@ -361,7 +366,7 @@ def stack(
         )
         * ang_resol
     )
-    ang_edges = centre_to_edges(ang_edges)
+    ang_edges = center_to_edges(ang_edges)
     if verbose:
         stack_2D_map = np.nan_to_num(stack_3D_map).sum(axis=(-1))
         plt.pcolormesh(ang_edges, ang_edges, stack_2D_map.T)
