@@ -8,16 +8,7 @@ from scipy.interpolate import interp1d
 matplotlib.rcParams["figure.figsize"] = (18, 9)
 from astropy.cosmology import Planck18
 from numpy.random import default_rng
-from hiimtool.basic_util import busy_function_simple, find_indx_for_subarr
-from hiimtool.basic_util import (
-    himf,
-    himf_pars_jones18,
-    cal_himf,
-    sample_from_dist,
-    tully_fisher,
-)
 from astropy import constants, units
-from hiimtool.basic_util import centre_to_edges
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
 from .stack import stack
@@ -31,6 +22,14 @@ from .util import (
     lamb_21,
     f_21,
     tagging,
+    busy_function_simple,
+    find_indx_for_subarr,
+    himf,
+    himf_pars_jones18,
+    cal_himf,
+    sample_from_dist,
+    center_to_edges,
+    tully_fisher,
 )
 from .plot import plot_map
 from .grid import (
@@ -529,9 +528,9 @@ def gen_clustering_gal_pos(
             b=pb.fourier_b,
             backend=pb.fftbackend,
         )[0].real
-        x_edges = centre_to_edges(pb.x[0] - pb.x[0][0])
-        y_edges = centre_to_edges(pb.x[1] - pb.x[1][0])
-        z_edges = centre_to_edges(pb.x[2] - pb.x[2][0])
+        x_edges = center_to_edges(pb.x[0] - pb.x[0][0])
+        y_edges = center_to_edges(pb.x[1] - pb.x[1][0])
+        z_edges = center_to_edges(pb.x[2] - pb.x[2][0])
         indx_x = np.digitize(halo_pos[:, 0], x_edges) - 1
         indx_y = np.digitize(halo_pos[:, 1], y_edges) - 1
         indx_z = np.digitize(halo_pos[:, 2], z_edges) - 1
