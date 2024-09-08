@@ -8,6 +8,7 @@ Features
 * mock simulation
 * consistent model power to mock to field power
 * explicit dependency checks and cache
+* different beam models
 
 Enhancements
 ++++++++++++
