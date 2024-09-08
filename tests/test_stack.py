@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from meer21cm.mock import gen_random_gal_pos, run_poisson_mock
 from astropy.cosmology import Planck18
-from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
+from meer21cm.util import f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
 from meer21cm.stack import weight_source_peaks, stack, sum_3d_stack

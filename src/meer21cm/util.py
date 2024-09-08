@@ -580,11 +580,12 @@ def jy_to_kelvin(val, omega, freq):
 
 
 def busy_function_simple(xarr, par_a, par_b, par_c, width):
-    """
+    r"""
     The simplified busy function that assumes mirror symmetry around x=0 [1].
 
 
-    .. math:: B_2(x) = \frac{a}{2} \times ({\rm erf}[b(w^2-x^2)]+1) \times (cx^2+1)
+    .. math::
+       B_2(x) = \frac{a}{2} \times ({\rm erf}[b(w^2-x^2)]+1) \times (cx^2+1)
 
 
     Parameters
@@ -648,10 +649,11 @@ def find_indx_for_subarr(subarr, arr):
 
 
 def himf(m, phi_s, m_s, alpha_s):
-    """
+    r"""
     Analytical HIMF function (or any other Schechter function).
 
-    .. math:: \phi = {\rm log}_{10} \phi_* *(m/m_*)^(\alpha_*+1)*e^{-m/m_*}
+    .. math::
+       \phi = {\rm ln}(10) \times \phi_* \times \bigg(\frac{m}{m_*} \bigg)^{\alpha_*+1}\times e^{-m/m_*}
 
     While the units are arbitrary, it is recommended that
     phi_s is in the unit of Mpc:sup:`-3`dex:sup:`-1`,
@@ -724,7 +726,7 @@ def cal_himf(x, mmin, cosmo, mmax=11):
 
 def himf_pars_jones18(h_70):
     """
-    The HIMF parameters measured in [Jones+18](https://arxiv.org/abs/1802.00053).
+    The HIMF parameters measured in Jones+18 [1].
 
     Parameters
     ----------
@@ -741,6 +743,10 @@ def himf_pars_jones18(h_70):
 
         alpha: float.
             The slope of HIMF.
+
+    References
+    ----------
+    .. [1] Jones, M. et al., "The ALFALFA HI mass function: A dichotomy in the low-mass slope and a locally suppressed 'knee' mass", https://ui.adsabs.harvard.edu/abs/arXiv:1802.00053.
     """
     phi_star = 4.5 * 1e-3 * h_70**3  # in Mpc-3 dex-1
     m_star = np.log10(10 ** (9.94) / h_70**2)  # in log10 Msun

@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 from astropy.cosmology import Planck18, WMAP1
-from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from meer21cm.util import *
 import sys
 from scipy.special import erf
