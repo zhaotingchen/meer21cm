@@ -111,6 +111,19 @@ def test_weight_source_peaks(test_wproj, test_W, test_nu):
         velocity_profile="step",
     )
     assert np.allclose(map_gal_weight.sum(), 2)
+    with pytest.raises(ValueError):
+        map_gal_indx, map_gal_weight = weight_source_peaks(
+            map_in,
+            test_wproj,
+            ra_in,
+            dec_in,
+            z_in,
+            test_nu,
+            no_vel=False,
+            no_sel_weight=True,
+            ignore_double_counting=False,
+            velocity_profile="something",
+        )
 
 
 def test_stack(test_wproj, test_W, test_nu):
@@ -259,6 +272,56 @@ def test_stack(test_wproj, test_W, test_nu):
         return_indx_and_weight=False,
     )
     assert stack_3D_map[ang_mid_point, ang_mid_point, freq_mid_point] == 1.0
+    # test different unit
+    (stack_3D_map, stack_3D_weight, x_edges, ang_edges,) = stack(
+        map_in,
+        test_wproj,
+        ra_in,
+        dec_in,
+        z_in,
+        test_nu,
+        W_map_in=None,
+        w_map_in=None,
+        velocity_width_halfmax=250,
+        velocity_profile="gaussian",
+        sigma_beam_in=None,
+        no_vel=False,
+        internal_step=2000,
+        verbose=False,
+        ignore_double_counting=False,
+        project_mat=None,
+        gal_sel_indx=None,
+        no_sel_weight=False,
+        stack_angular_num_nearby_pix=10,
+        x_unit=units.Hz,
+        return_indx_and_weight=False,
+    )
+    assert stack_3D_map[ang_mid_point, ang_mid_point, freq_mid_point] == 1.0
+    # test raise error
+    with pytest.raises(ValueError):
+        (stack_3D_map, stack_3D_weight, x_edges, ang_edges,) = stack(
+            map_in,
+            test_wproj,
+            ra_in,
+            dec_in,
+            z_in,
+            test_nu,
+            W_map_in=None,
+            w_map_in=None,
+            velocity_width_halfmax=250,
+            velocity_profile="gaussian",
+            sigma_beam_in=None,
+            no_vel=False,
+            internal_step=2000,
+            verbose=False,
+            ignore_double_counting=False,
+            project_mat=None,
+            gal_sel_indx=None,
+            no_sel_weight=False,
+            stack_angular_num_nearby_pix=10,
+            x_unit=units.K,
+            return_indx_and_weight=False,
+        )
 
 
 def test_sum_3d_stack():
