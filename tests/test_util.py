@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 from astropy.cosmology import Planck18, WMAP1
-from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
 from meer21cm.util import *
 import sys
+from scipy.special import erf
 
 
 def test_tagging():
@@ -188,3 +188,81 @@ def test_hod_obuljen18():
     mass_1 = np.log10(hod_obuljen18(11.27))
     mass_2 = np.log10(10**9.52 * np.exp(-1) / Planck18.h)
     assert np.allclose(mass_1, mass_2)
+
+
+def test_check_unit_equiv():
+    assert check_unit_equiv(units.m, units.cm)
+    assert not check_unit_equiv(units.m, units.K)
+
+
+def test_jy_to_kelvin():
+    omega = np.random.uniform(0.01, 1)
+    freq = np.random.uniform(0.01, 1) * 1e9
+    test = jy_to_kelvin(1, omega, freq)
+    test2 = (
+        (
+            1
+            * units.Jy
+            / omega
+            * (constants.c / freq / units.Hz) ** 2
+            / 2
+            / constants.k_B
+        )
+        .to("K")
+        .value
+    )
+    assert np.allclose(test, test2)
+
+
+def test_busy_function_simple():
+    xarr = np.linspace(-10, 10, 101)
+    assert np.allclose(busy_function_simple(xarr, 2, 1, 0, 0), erf(-(xarr**2)) + 1)
+
+
+def test_find_indx_for_subarr():
+    arr1 = np.arange(100)
+    arr2 = np.arange(1000)
+    assert np.allclose(find_indx_for_subarr(arr1, arr2), np.arange(100))
+    arr2[0] = 1
+    with pytest.raises(AssertionError):
+        find_indx_for_subarr(arr1, arr2)
+
+
+def test_himf():
+    h_70 = Planck18.h / 0.7
+    mmin = 6
+    himf_pars = himf_pars_jones18(h_70)
+    nhi, omegahi, psn = cal_himf(himf_pars, mmin, Planck18)
+    assert np.allclose(nhi, 0.13980687586146462)
+    assert np.allclose(omegahi, 0.00036495842278914405)
+    assert np.allclose(psn, 150.93927719814297)
+    minput = np.linspace(mmin, 11, 500)
+    nhi_cumu = cumu_nhi_from_himf(minput, mmin, himf_pars)
+    assert np.allclose(nhi_cumu[0], 0.0)
+    assert np.allclose(nhi_cumu[-1], nhi)
+
+
+def uniform_pdf(x):
+    return np.ones_like(x)
+
+
+def uniform_cdf(x):
+    return x
+
+
+def test_sample_from_dist():
+    test_sample = sample_from_dist(uniform_pdf, 0, 1, size=1000000, cdf=False, seed=42)
+    count, _ = np.histogram(test_sample, bins=10)
+    assert (
+        np.abs((count - len(test_sample) / 10) / (len(test_sample) / 10)) > 0.01
+    ).sum() == 0
+    test_sample = sample_from_dist(uniform_cdf, 0, 1, size=1000000, cdf=True, seed=42)
+    count, _ = np.histogram(test_sample, bins=10)
+    assert (
+        np.abs((count - len(test_sample) / 10) / (len(test_sample) / 10)) > 0.01
+    ).sum() == 0
+
+
+def test_tully_fisher():
+    assert np.allclose(tully_fisher(np.ones(100), 0, 2), 1e2)
+    assert np.allclose(tully_fisher(np.ones(100), 1, 2, inv=True), 1e-2)

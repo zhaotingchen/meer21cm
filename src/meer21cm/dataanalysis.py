@@ -25,6 +25,7 @@ from astropy.wcs.utils import proj_plane_pixel_area
 from itertools import chain
 import meer21cm
 from scipy.interpolate import interp1d
+import meer21cm.telescope as telescope
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
@@ -51,6 +52,7 @@ class Specification:
         weighting="counts",
         ra_range=(-np.inf, np.inf),
         dec_range=(-400, 400),
+        beam_model="gaussian",
         data=None,
         weights_map_pixel=None,
         counts=None,
@@ -116,6 +118,9 @@ class Specification:
         self.data = data
         self.weights_map_pixel = weights_map_pixel
         self.counts = counts
+        self.beam_type = None
+        self.beam_model = beam_model
+        self._beam_image = None
 
     @property
     def map_unit_type(self):
@@ -139,6 +144,37 @@ class Specification:
         for att in attr:
             if att in self.__dict__.keys():
                 setattr(self, att, None)
+
+    @property
+    def beam_type(self):
+        """
+        The beam type that can be either be
+        isotropic or anisotropic.
+        """
+        return self._beam_type
+
+    @beam_type.setter
+    def beam_type(self, value):
+        self._beam_type = value
+        if "beam_dep_attr" in dir(self):
+            self.clean_cache(self.beam_dep_attr)
+
+    @property
+    def beam_model(self):
+        """
+        The name of the beam function.
+        """
+        return self._beam_model
+
+    @beam_model.setter
+    def beam_model(self, value):
+        beam_func = value + "_beam"
+        if beam_func not in telescope.__dict__.keys():
+            raise ValueError(f"{value} is not a beam model")
+        self._beam_model = value
+        self.beam_type = getattr(telescope, value + "_beam").tags[0]
+        if "beam_dep_attr" in dir(self):
+            self.clean_cache(self.beam_dep_attr)
 
     @property
     def beam_unit(self):
@@ -498,6 +534,52 @@ class Specification:
         self._ra_gal = self.ra_gal[gal_sel]
         self._dec_gal = self.dec_gal[gal_sel]
         self._z_gal = self.z_gal[gal_sel]
+
+    @property
+    @tagging("beam", "nu")
+    def beam_image(self):
+        if self._beam_image is None:
+            self.get_beam_image()
+        return self._beam_image
+
+    def get_beam_image(self):
+        if self.sigma_beam_ch is None:
+            return None
+        beam_image = np.zeros((self.num_pix_x, self.num_pix_y, len(self.nu)))
+        beam_model = getattr(telescope, self.beam_model + "_beam")
+        if self.beam_type == "isotropic":
+            for i in range(len(self.nu)):
+                beam_image[:, :, i] = telescope.isotropic_beam_profile(
+                    self.num_pix_x,
+                    self.num_pix_y,
+                    self.wproj,
+                    beam_model(self.sigma_beam_ch[i]),
+                )
+        else:
+            beam_image = beam_model(
+                self.nu,
+                self.wproj,
+                self.num_pix_x,
+                self.num_pix_y,
+            )
+            sigma_beam_from_image = (
+                np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * self.pix_resol
+            )
+            self.sigma_beam_ch = sigma_beam_from_image
+        self._beam_image = beam_image
+
+    def convolve_data(self, kernel):
+        """
+        convolve data with an input kernel, and
+        update the corresponding weights.
+        """
+        data, w_HI = telescope.weighted_convolution(
+            self.data,
+            kernel,
+            self.w_HI,
+        )
+        self.data = data
+        self.w_HI = w_HI
 
     def z_as_func_of_comov_dist(self):
         """

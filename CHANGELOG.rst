@@ -8,11 +8,13 @@ Features
 * mock simulation
 * consistent model power to mock to field power
 * explicit dependency checks and cache
+* different beam models
 
 Enhancements
 ++++++++++++
 * gridding now part of PS class
 * consistent tests for sky map to power spectrum
+* remove hiimtool dependency
 
 v0.4.0
 ------

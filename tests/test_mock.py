@@ -10,7 +10,7 @@ from meer21cm.mock import (
 )
 from meer21cm.util import hod_obuljen18
 from astropy.cosmology import Planck18, WMAP1
-from hiimtool.basic_util import himf_pars_jones18, centre_to_edges, f_21
+from meer21cm.util import himf_pars_jones18, center_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
@@ -324,7 +324,7 @@ def test_gal_pos_in_mock(
         ra_range=test_GAMA_range[0],
         dec_range=test_GAMA_range[1],
     )
-    nu_edges = centre_to_edges(test_nu)
+    nu_edges = center_to_edges(test_nu)
     assert np.allclose(himap_g[:, :, 0].shape, test_W[:, :, 0].shape)
     assert himap_g.shape[-1] == len(test_nu)
     assert inside_range.sum() == num_g
@@ -332,7 +332,7 @@ def test_gal_pos_in_mock(
     assert np.mean(ra_g[inside_range] < test_GAMA_range[0][1]) == 1
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
-    # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
+    # test z_g_mock distribution is not needed as the underlying function is tested in util
     assert (f_21 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
     assert (f_21 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
     # ra,dec mapping to index should be tested in util
@@ -511,7 +511,7 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
         dec_range=test_GAMA_range[1],
         fast_ang_pos=False,
     )
-    nu_edges = centre_to_edges(nu)
+    nu_edges = center_to_edges(nu)
 
     assert np.allclose(himap_g[:, :, 0].shape, test_W[:, :, 0].shape)
     assert himap_g.shape[-1] == len(nu)
@@ -520,7 +520,7 @@ def test_mock_healpix(test_wproj, test_W, test_nu, test_GAMA_range):
     assert np.mean(ra_g[inside_range] < test_GAMA_range[0][1]) == 1
     assert np.mean(dec_g[inside_range] > test_GAMA_range[1][0]) == 1
     assert np.mean(dec_g[inside_range] < test_GAMA_range[1][1]) == 1
-    # test z_g_mock distribution is not needed as the underlying function is tested in hiimtool
+    # test z_g_mock distribution is not needed as the underlying function is tested in util
     assert (f_21 / (1 + z_g) >= nu_edges[gal_which_ch]).mean() == 1
     assert (f_21 / (1 + z_g) <= nu_edges[gal_which_ch + 1]).mean() == 1
     # ra,dec mapping to index should be tested in util

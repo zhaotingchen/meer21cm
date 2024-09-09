@@ -5,11 +5,13 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import healpy as hp
 from astropy.io import fits
-from hiimtool.basic_util import check_unit_equiv, jy_to_kelvin
 from astropy.cosmology import Planck18
 import inspect
 import sys
 from powerbox import PowerBox
+from scipy.special import erf
+from scipy.interpolate import interp1d
+from numpy.random import default_rng
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
@@ -528,3 +530,318 @@ def hod_obuljen18(
     marr = 10**logmh * input_h_unit  # in Msun/h
     himass = 10 ** (m0h) * (marr / 10**mminh) ** alpha * np.exp(-(10**mminh) / marr)
     return himass * output_h_unit
+
+
+def check_unit_equiv(u1, u2):
+    """
+    Check if two units are equivelant
+
+    Parameters
+    ----------
+        u1: ``astropy.units.Unit`` object.
+            The first input unit.
+        u2: ``astropy.units.Unit`` object.
+            The second input unit.
+
+    Returns
+    -------
+        result: bool.
+            Whether they are the same unit.
+    """
+    return (1 * u1 / u2).si.unit == units.dimensionless_unscaled
+
+
+def jy_to_kelvin(val, omega, freq):
+    """
+    convert Jy/beam to brightness temperature in Kelvin.
+
+    Parameters
+    ----------
+        val: numpy array.
+            The input value(s) in Jy/beam or Jy/pix
+        omega: float.
+            beam or pixel area in Steradian.
+        freq: float.
+            the frequency for conversion in Hz.
+
+    Returns
+    -------
+        result: float array.
+            The brightness temperature in Kelvin.
+    """
+    freq = freq * units.Hz
+    omega = omega * units.sr
+    result = (
+        (val * units.Jy / omega)
+        .to(units.K, equivalencies=units.brightness_temperature(freq))
+        .value
+    )
+    return result
+
+
+def busy_function_simple(xarr, par_a, par_b, par_c, width):
+    r"""
+    The simplified busy function that assumes mirror symmetry around x=0 [1].
+
+
+    .. math::
+       B_2(x) = \frac{a}{2} \times ({\rm erf}[b(w^2-x^2)]+1) \times (cx^2+1)
+
+
+    Parameters
+    ----------
+        xarr: float array.
+            the input x values
+        par_a: float.
+            amplitude parameter
+        par_b: float.
+            b parameter that controls the sharpness of the double peaks
+        par_c: float.
+            c parameter that controls the height of the double peaks
+        width: float.
+            the width of the profile
+
+    Returns
+    -------
+        b2x: float array.
+            the busy function values at xarr
+
+    References
+    ----------
+    .. [1] Westmeier, T. et al., "The busy function: a new analytic function for describing the integrated 21-cm spectral profile of galaxies",
+           https://ui.adsabs.harvard.edu/abs/arXiv:1311.5308 .
+    """
+    b2x = (
+        par_a
+        / 2
+        * (erf(par_b * (width**2 - xarr**2)) + 1)
+        * (par_c * xarr**2 + 1)
+    )
+    return b2x
+
+
+def find_indx_for_subarr(subarr, arr):
+    """
+    Find the indices of the elements of an array in another array.
+
+    Parameters
+    ----------
+        subarr: numpy array.
+            The sub-array to search for. Elements can be repeated.
+        arr: numpy array.
+            the slope of Tully-Fisher relation.
+        zero_point: float.
+            the intercept of Tully-Fisher relation
+        inv: bool, default False.
+            if True, calculate velocity based on input mass.
+
+    Returns
+    -------
+        out: float array.
+            The output mass if inv=False and velocity if inv=True.
+    """
+    assert np.unique(arr).size == arr.size, "the larger array must be unique"
+    # Actually preform the operation...
+    arrsorted = np.argsort(arr)
+    subpos = np.searchsorted(arr[arrsorted], subarr)
+    indices = arrsorted[subpos]
+    return indices
+
+
+def himf(m, phi_s, m_s, alpha_s):
+    r"""
+    Analytical HIMF function (or any other Schechter function).
+
+    .. math::
+       \phi = {\rm ln}(10) \times \phi_* \times \bigg(\frac{m}{m_*} \bigg)^{\alpha_*+1}\times e^{-m/m_*}
+
+    While the units are arbitrary, it is recommended that
+    phi_s is in the unit of Mpc:sup:`-3`dex:sup:`-1`,
+    m_s is in the unit of M_sun,
+    alpha_s has no unit.
+
+
+    Parameters
+    ----------
+        m: float array.
+            mass
+        phi_s: float.
+            HIMF amplitude
+        m_s: float.
+            knee mass
+        alpha_s: float.
+            slope
+
+    Returns
+    -------
+        out: float array.
+            The HIMF values at m
+    """
+    out = np.log(10) * phi_s * (m / m_s) ** (alpha_s + 1) * np.exp(-m / m_s)
+    return out
+
+
+def cal_himf(x, mmin, cosmo, mmax=11):
+    """
+    Calculate the integrated quantity related to the HIMF.
+
+    Parameters
+    ----------
+        x: list of float.
+            need to be [phi_s,log10(m_s),alpha_s]
+        mmin: float.
+            The minimum mass to integrate from in log10
+        cosmo: an :obj:`astropy.cosmology.Cosmology` object.
+            The cosmology object to calculate critical density
+        mmax: Optional float, default 11.
+            The maximum mass to integrate to in log10.
+
+    Returns
+    -------
+        nhi: float.
+            The number density of HI galaxies, in the units of phi_s * dex
+        omegahi: float.
+            The HI density over the critical density of the present day (assuming the recommended units for x are used)
+        psn: float.
+            The shot noise in the units of Mpc:sup:`3` (assuming the recommended units for x are used)
+    """
+    marr = np.logspace(mmin, mmax, num=500)
+    omegahi = (
+        (
+            np.trapz(himf(marr, x[0], 10 ** x[1], x[2]) * marr, x=np.log10(marr))
+            * units.M_sun
+            / units.Mpc**3
+            / cosmo.critical_density0
+        )
+        .to("")
+        .value
+    )
+    psn = (
+        np.trapz(himf(marr, x[0], 10 ** x[1], x[2]) * marr**2, x=np.log10(marr))
+        / np.trapz(himf(marr, x[0], 10 ** x[1], x[2]) * marr, x=np.log10(marr)) ** 2
+    )
+    nhi = np.trapz(himf(marr, x[0], 10 ** x[1], x[2]), x=np.log10(marr))
+    return nhi, omegahi, psn
+
+
+def himf_pars_jones18(h_70):
+    """
+    The HIMF parameters measured in Jones+18 [1].
+
+    Parameters
+    ----------
+        h_70: float.
+            The Hubble parameter over 70 km/s/Mpc.
+
+    Returns
+    -------
+        phi_star: float.
+            The amplitude of HIMF in Mpc-3 dex-1.
+
+        m_star: float.
+            The knee mass of HIMF in log10 solar mass.
+
+        alpha: float.
+            The slope of HIMF.
+
+    References
+    ----------
+    .. [1] Jones, M. et al., "The ALFALFA HI mass function: A dichotomy in the low-mass slope and a locally suppressed 'knee' mass", https://ui.adsabs.harvard.edu/abs/arXiv:1802.00053.
+    """
+    phi_star = 4.5 * 1e-3 * h_70**3  # in Mpc-3 dex-1
+    m_star = np.log10(10 ** (9.94) / h_70**2)  # in log10 Msun
+    alpha = -1.25
+    return phi_star, m_star, alpha
+
+
+def cumu_nhi_from_himf(m, mmin, x):
+    """
+    The integrated source number density from HIMF.
+
+    Parameters
+    ----------
+        m: float array.
+            The higher end of integration in log10
+        mmin: float.
+            The minimum mass to integrate from in log10
+        x: list of float.
+            need to be [phi_s,log10(m_s),alpha_s]
+
+    Returns
+    -------
+        nhi: float array.
+            The integrated number density of HI galaxies, in the units of phi_s * dex
+    """
+    marr = np.logspace(mmin, m, num=500)
+    nhi = np.trapz(himf(marr, x[0], 10 ** x[1], x[2]), x=np.log10(marr), axis=0)
+    return nhi
+
+
+def sample_from_dist(func, xmin, xmax, size=1, cdf=False, seed=None):
+    """
+    Sample from custom distribution.
+
+    Parameters
+    ----------
+        func: distribution function.
+            The probability distribution function (cdf=False) or the cumulative distribution function (cdf=True).
+        xmin: float.
+            The minimum value to sample from
+        xmax: float.
+            The maximum value to sample from
+        size: int or list of int, default 1.
+            The size of the sample array
+        cdf: bool, default False.
+            Wheter PDF or CDF is used.
+        seed: int, default None.
+            Seed for the random number generator. Fix for reproducible samples.
+
+    Returns
+    -------
+        sample: float array.
+            The random sample following the input distribution function.
+    """
+    xarr = np.linspace(xmin, xmax, 1001)
+    if cdf is False:
+        pdf_arr = func(xarr)
+        cdf_arr = np.cumsum(pdf_arr)
+    else:
+        cdf_arr = func(xarr)
+    cdf_arr -= cdf_arr[0]
+    cdf_arr /= cdf_arr[-1]
+    cdf_inv = interp1d(cdf_arr, xarr)
+    rng = default_rng(seed=seed)
+    sample = cdf_inv(rng.uniform(low=0, high=1, size=size))
+    return sample
+
+
+def tully_fisher(xarr, slope, zero_point, inv=False):
+    """
+    Tully-Fisher relation.
+
+    Note that, **regardless of inv**, the slope and zero_point always refer to the Tully-Fisher relation
+    and **not the inverse**.
+    For example, zero_point is always in the unit of log10 mass.
+
+    Parameters
+    ----------
+        xarr: float array.
+            input velocity if inv=False and mass if inv=True.
+        slope: float.
+            the slope of Tully-Fisher relation.
+        zero_point: float.
+            the intercept of Tully-Fisher relation
+        inv: bool, default False.
+            if True, calculate velocity based on input mass.
+
+    Returns
+    -------
+        out: float array.
+            The output mass if inv=False and velocity if inv=True.
+    """
+
+    if inv:
+        out = 10 ** ((np.log10(xarr) - zero_point) / slope)
+    else:
+        out = 10 ** (slope * np.log10(xarr) + zero_point)
+    return out

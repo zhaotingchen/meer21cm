@@ -3,6 +3,30 @@ import numpy as np
 from astropy import constants, units
 from astropy.cosmology import Planck18
 from meer21cm.util import f_21
+from meer21cm import Specification
+
+
+def test_cos_beam():
+    # input fhmw/2 should give 0.5
+    sigma = 0.5
+    fwhm = 2 * np.sqrt(2 * np.log(2)) * sigma
+
+    assert np.abs(cos_beam(sigma)(fwhm / 2) - 0.5) < 1e-3
+
+
+def test_beam(test_wproj):
+    sp = Specification()
+    beam_image = kat_beam(
+        sp.nu,
+        sp.wproj,
+        sp.num_pix_x,
+        sp.num_pix_y,
+    )
+    sigma_beam_ch = np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * 0.3
+    pars = np.polyfit(sp.nu / 1e6, sigma_beam_ch, 2)
+    assert np.abs(pars[0] / pars[1]) < 1e-3
+    assert np.abs(pars[0] / pars[2]) < 1e-3
+    assert pars[1] < 0
 
 
 def test_weighted_convolution(test_wproj, test_W):
