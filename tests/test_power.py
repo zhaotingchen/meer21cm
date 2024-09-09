@@ -393,6 +393,18 @@ def test_get_independent_fourier_modes():
     assert indep_modes.sum() == np.prod(box_dim) // 2 + 1
 
 
+def test_model_in_real_space():
+    model = PowerSpectrum(kaiser_rsd=False)
+    # have mu=1, but no rsd
+    model.mumode = np.ones_like(model.kmode)
+    model.tracer_bias_1 = 2.0
+    matter_ps_real = model.matter_power_spectrum_fnc(model.kmode)
+    assert np.allclose(model.auto_power_tracer_1_model, matter_ps_real * 4)
+    model.tracer_bias_2 = 3.0
+    assert np.allclose(model.auto_power_tracer_2_model, matter_ps_real * 9)
+    assert np.allclose(model.cross_power_tracer_model, matter_ps_real * 6)
+
+
 def test_ModelPowerSpectrum():
     # test fog
     model = PowerSpectrum()

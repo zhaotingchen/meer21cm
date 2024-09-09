@@ -27,6 +27,7 @@ def test_matter_mock(test_W):
         k1dbins=k1dedges,
         model_k_from_field=True,
         upgrade_sampling_from_gridding=True,
+        kaiser_rsd=False,
     )
     mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
     mock.get_enclosing_box()

@@ -31,6 +31,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         mean_amp_2=1.0,
         sampling_resol=None,
         include_sampling=[True, False],
+        kaiser_rsd=True,
         **params,
     ):
         super().__init__(**params)
@@ -66,6 +67,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 self.los_resol_in_mpc,
             ]
         self.fog_profile = fog_profile
+        self.kaiser_rsd = kaiser_rsd
 
     @property
     def fog_profile(self):
@@ -313,7 +315,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
-        beta_i = self.f_growth / tracer_bias_i
+        if self.kaiser_rsd:
+            beta_i = self.f_growth / tracer_bias_i
+        else:
+            beta_i = 0
         auto_power_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta_i,
@@ -337,8 +342,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         # cross power
         pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
-        beta_1 = self.f_growth / self.tracer_bias_1
-        beta_2 = self.f_growth / self.tracer_bias_2
+        if self.kaiser_rsd:
+            beta_1 = self.f_growth / self.tracer_bias_1
+            beta_2 = self.f_growth / self.tracer_bias_2
+        else:
+            beta_1 = 0
+            beta_2 = 0
         self._cross_power_tracer_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta1=beta_1,
@@ -1056,6 +1065,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         box_buffkick=5,
         compensate=True,
         taper_func=windows.blackmanharris,
+        kaiser_rsd=True,
         **params,
     ):
         if field_1 is None:
@@ -1102,6 +1112,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mean_amp_2=mean_amp_2,
             sampling_resol=sampling_resol,
             include_sampling=include_sampling,
+            kaiser_rsd=kaiser_rsd,
             **params,
         )
         self.k1dbins = k1dbins
