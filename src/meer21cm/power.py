@@ -8,7 +8,13 @@ from meer21cm.grid import (
     project_particle_to_regular_grid,
 )
 from scipy.signal import windows
-from meer21cm.util import tagging
+from meer21cm.util import (
+    tagging,
+    radec_to_indx,
+    find_ch_id,
+    center_to_edges,
+    redshift_to_freq,
+)
 from meer21cm.dataanalysis import Specification
 import healpy as hp
 
@@ -1334,6 +1340,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.box_len,
             self.box_ndim,
             compensate=self.compensate,
+            average=False,
         )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
@@ -1363,3 +1370,30 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         pos_z = self.z_as_func_of_comov_dist()(pos_comov_dist)
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
         return pos_ra, pos_dec, pos_z
+
+    def grid_field_to_sky_map(self, field, average=True):
+        pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
+        pos_xyz = np.array(pos_xyz).T
+        pos_xyz = pos_xyz.reshape((-1, 3))
+        pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
+        indx_1, indx_2 = radec_to_indx(
+            pos_ra,
+            pos_dec,
+            self.wproj,
+        )
+        indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
+        x_bin = center_to_edges(np.arange(self.num_pix_x))
+        y_bin = center_to_edges(np.arange(self.num_pix_y))
+        z_bin = center_to_edges(np.arange(len(self.nu)))
+        map_bin, _, = np.histogramdd(
+            [indx_1, indx_2, indx_z], bins=[x_bin, y_bin, z_bin], weights=field.ravel()
+        )
+        (
+            count_bin,
+            _,
+        ) = np.histogramdd([indx_1, indx_2, indx_z], bins=[x_bin, y_bin, z_bin])
+        if average:
+            map_bin[count_bin > 0] /= count_bin[count_bin > 0]
+        map_bin = np.nan_to_num(map_bin)
+        map_bin *= self.W_HI
+        return map_bin

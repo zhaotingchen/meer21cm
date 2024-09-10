@@ -1,0 +1,137 @@
+import numpy as np
+from meer21cm import PowerSpectrum
+
+
+def test_gaussian_field_map_grid():
+    """
+    Test generating a Gaussian random field,
+    grid it onto the sky map,
+    resample it to a coarser grid as if it was data,
+    and the output power still matches the input.
+    """
+    raminGAMA, ramaxGAMA = 339, 351
+    decminGAMA, decmaxGAMA = -35, -30
+    ps = PowerSpectrum(
+        ra_range=(raminGAMA, ramaxGAMA),
+        dec_range=(decminGAMA, decmaxGAMA),
+        kaiser_rsd=False,
+    )
+    ps.data = np.ones(ps.W_HI.shape)
+    ps.w_HI = np.ones(ps.W_HI.shape)
+    ps.counts = np.ones(ps.W_HI.shape)
+    ps.trim_map_to_range()
+    ps.downres_factor_radial = 1 / 2.0
+    ps.downres_factor_transverse = 1 / 2.0
+    ps.get_enclosing_box()
+    pos_value = np.random.normal(size=ps.box_ndim)
+    k1dedges = np.geomspace(0.05, 1.5, 20)
+    ps.k1dbins = k1dedges
+    ps.propagate_field_k_to_model()
+    ps.field_1 = pos_value
+    pfield, keff, nmodes = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    ps_mod = np.prod(ps.box_resol)
+    avg_deviation = np.sqrt(
+        ((np.abs((pfield - ps_mod) / ps_mod)) ** 2 * nmodes).sum() / nmodes.sum()
+    )
+    assert avg_deviation < 5e-2
+    # grid the field to sky map
+    map_bin = ps.grid_field_to_sky_map(pos_value, average=True)
+    # pass it to the object
+    ps.data = map_bin
+    # regrid the sky map to a regular grid field
+    ps.downres_factor_radial = 2.0
+    ps.downres_factor_transverse = 1.5
+    ps.get_enclosing_box()
+    ps.compensate = False
+    hi_map_rg, hi_weights_rg, pix_counts_hi_rg = ps.grid_data_to_field()
+    taper_hi = ps.taper_func(ps.box_ndim[-1])
+    weights_hi = hi_weights_rg * taper_hi[None, None, :]
+    ps.field_1 = hi_map_rg
+    ps.weights_1 = weights_hi
+    ps.propagate_field_k_to_model()
+    ps.sampling_resol = [
+        ps.pix_resol_in_mpc,
+        ps.pix_resol_in_mpc,
+        ps.los_resol_in_mpc,
+    ]
+    pmap_1, keff, nmodes = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    avg_deviation = np.sqrt(
+        ((np.abs((pmap_1 - ps_mod) / ps_mod)) ** 2 * nmodes).sum() / nmodes.sum()
+    )
+    assert avg_deviation < 1e-1
+
+
+def test_poisson_field_map_grid():
+    """
+    Test generating a Poisson galaxy sample on the field-level,
+    grid it onto the sky map,
+    resample it to a coarser grid as if it was data,
+    and the output power still matches the input.
+    """
+    raminGAMA, ramaxGAMA = 339, 351
+    decminGAMA, decmaxGAMA = -35, -30
+    ps = PowerSpectrum(
+        ra_range=(raminGAMA, ramaxGAMA),
+        dec_range=(decminGAMA, decmaxGAMA),
+        kaiser_rsd=False,
+    )
+    ps.data = np.ones(ps.W_HI.shape)
+    ps.w_HI = np.ones(ps.W_HI.shape)
+    ps.counts = np.ones(ps.W_HI.shape)
+    ps.trim_map_to_range()
+    ps.downres_factor_radial = 1 / 2.0
+    ps.downres_factor_transverse = 1 / 2.0
+    ps.get_enclosing_box()
+    pos_value = np.zeros(ps.box_ndim).ravel()
+    k1dedges = np.geomspace(0.05, 1.5, 20)
+    ps.k1dbins = k1dedges
+    ps.propagate_field_k_to_model()
+    num_g = 10000
+    gal_pix_indx = np.random.choice(
+        np.arange(pos_value.size), size=num_g, replace=False
+    )
+    pos_value[gal_pix_indx] += 1
+    pos_value = pos_value.reshape(ps.box_ndim)
+    ps.field_1 = pos_value
+    ps.mean_center_1 = True
+    ps.unitless_1 = True
+    pfield, keff, nmodes = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    psn = np.prod(ps.box_len) / num_g
+    avg_deviation = np.sqrt(
+        ((np.abs((pfield - psn) / psn)) ** 2 * nmodes).sum() / nmodes.sum()
+    )
+    assert avg_deviation < 5e-2
+    map_bin = ps.grid_field_to_sky_map(pos_value, average=False)
+    ps.data = map_bin
+    ps.downres_factor_radial = 2.0
+    ps.downres_factor_transverse = 1.5
+    ps.get_enclosing_box()
+    ps.compensate = False
+    hi_map_rg, hi_weights_rg, pix_counts_hi_rg = ps.grid_data_to_field()
+    # galaxy counts are total not average
+    hi_map_rg *= hi_weights_rg
+    taper_hi = ps.taper_func(ps.box_ndim[-1])
+    weights_hi = hi_weights_rg * taper_hi[None, None, :]
+    ps.field_1 = hi_map_rg
+    ps.weights_1 = weights_hi
+    ps.unitless_1 = True
+    ps.propagate_field_k_to_model()
+    ps.sampling_resol = [
+        ps.pix_resol_in_mpc,
+        ps.pix_resol_in_mpc,
+        ps.los_resol_in_mpc,
+    ]
+    pmap_1, keff, nmodes = ps.get_1d_power(
+        "auto_power_3d_1",
+    )
+    avg_deviation = np.sqrt(
+        ((np.abs((pmap_1 - psn) / psn)) ** 2 * nmodes).sum() / nmodes.sum()
+    )
+    # maybe this accuracy is too low?
+    assert avg_deviation < 2e-1
