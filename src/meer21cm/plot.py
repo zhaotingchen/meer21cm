@@ -38,7 +38,7 @@ def plot_pixels_along_los(
 
 
 def plot_map(
-    map_in,
+    map_plot,
     wproj,
     W=None,
     title="",
@@ -61,11 +61,13 @@ def plot_map(
     lon.set_ticks_position("b")
     lat.set_ticks_position("l")
     plt.grid(True, color="grey", ls="solid", lw=0.5)
+    map_in = map_plot.copy()
     if len(np.shape(map_in)) == 3:
         map_in = np.mean(
             map_in, 2
         )  # Average along 3rd dimention (LoS) as default if 3D map given
         if W is not None:
+            W = W.copy()
             W = np.mean(W, 2)
     if vmax is not None:
         map_in[map_in > vmax] = vmax

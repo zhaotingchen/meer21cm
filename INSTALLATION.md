@@ -124,7 +124,7 @@ Note that development install `-e` is needed, as this package is in early stage 
 If you are on ilifu, the installation has been tested so you can follow the exact steps listed here.
 
 ```
-git clone https://github.com/zhaotingchen/meer21cm
+git clone git@github.com:zhaotingchen/meer21cm.git
 cd meer21cm
 module load anaconda3
 conda create -n meer21cm python=3.10

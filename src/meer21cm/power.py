@@ -8,8 +8,15 @@ from meer21cm.grid import (
     project_particle_to_regular_grid,
 )
 from scipy.signal import windows
-from meer21cm.util import tagging
+from meer21cm.util import (
+    tagging,
+    radec_to_indx,
+    find_ch_id,
+    center_to_edges,
+    redshift_to_freq,
+)
 from meer21cm.dataanalysis import Specification
+import healpy as hp
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -30,6 +37,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         mean_amp_2=1.0,
         sampling_resol=None,
         include_sampling=[True, False],
+        kaiser_rsd=True,
         **params,
     ):
         super().__init__(**params)
@@ -65,6 +73,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 self.los_resol_in_mpc,
             ]
         self.fog_profile = fog_profile
+        self.kaiser_rsd = kaiser_rsd
 
     @property
     def fog_profile(self):
@@ -312,7 +321,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
-        beta_i = self.f_growth / tracer_bias_i
+        if self.kaiser_rsd:
+            beta_i = self.f_growth / tracer_bias_i
+        else:
+            beta_i = 0
         auto_power_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta_i,
@@ -336,8 +348,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         # cross power
         pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
-        beta_1 = self.f_growth / self.tracer_bias_1
-        beta_2 = self.f_growth / self.tracer_bias_2
+        if self.kaiser_rsd:
+            beta_1 = self.f_growth / self.tracer_bias_1
+            beta_2 = self.f_growth / self.tracer_bias_2
+        else:
+            beta_1 = 0
+            beta_2 = 0
         self._cross_power_tracer_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta1=beta_1,
@@ -1055,12 +1071,16 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         box_buffkick=5,
         compensate=True,
         taper_func=windows.blackmanharris,
+        kaiser_rsd=True,
         **params,
     ):
         if field_1 is None:
-            field_1 = np.ones([10, 10, 10])
+            if "box_ndim" in params.keys():
+                field_1 = np.ones(params["box_ndim"])
+            else:
+                field_1 = np.ones([1, 1, 1])
         if box_len is None:
-            box_len = np.array([10, 10, 10])
+            box_len = np.array([0, 0, 0])
         FieldPowerSpectrum.__init__(
             self,
             field_1,
@@ -1098,6 +1118,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mean_amp_2=mean_amp_2,
             sampling_resol=sampling_resol,
             include_sampling=include_sampling,
+            kaiser_rsd=kaiser_rsd,
             **params,
         )
         self.k1dbins = k1dbins
@@ -1208,7 +1229,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return self.pix_coor_in_cartesian - self.box_origin[None, :]
 
-    def get_enclosing_box(self):
+    def get_enclosing_box(self, rot_mat=None):
         """
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
@@ -1232,6 +1253,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             cosmo=self.cosmo,
             return_coord=True,
             buffkick=self.box_buffkick,
+            rot_mat=rot_mat,
         )
         self.box_len = np.array(
             [
@@ -1319,6 +1341,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.box_len,
             self.box_ndim,
             compensate=self.compensate,
+            average=False,
         )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
@@ -1339,3 +1362,30 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.include_sampling = include_sampling
 
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
+
+    def ra_dec_z_for_coord_in_box(self, pos_in_box):
+        pos_arr = pos_in_box + self.box_origin
+        rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
+        pos_arr = np.einsum("ij,aj->ai", rot_back, pos_arr)
+        pos_comov_dist = np.sqrt(np.sum(pos_arr**2, axis=-1))
+        pos_z = self.z_as_func_of_comov_dist()(pos_comov_dist)
+        pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
+        return pos_ra, pos_dec, pos_z
+
+    def grid_field_to_sky_map(self, field, average=True):
+        pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
+        pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
+        pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, self.wproj)
+        pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
+        indx_bins = [center_to_edges(np.arange(self.W_HI.shape[i])) for i in range(3)]
+        pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
+        map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=field.ravel())
+        count_bin, _ = np.histogramdd(
+            pos_indx,
+            bins=indx_bins,
+        )
+        if average:
+            map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
+        map_bin *= self.W_HI
+        return map_bin
