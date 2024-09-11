@@ -592,5 +592,5 @@ class Specification:
             501,
         )
         xarr = self.comoving_distance(zarr).value
-        func = interp1d(xarr, zarr)
+        func = interp1d(xarr, zarr, bounds_error=False, fill_value="extrapolate")
         return func

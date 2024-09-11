@@ -1229,7 +1229,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return self.pix_coor_in_cartesian - self.box_origin[None, :]
 
-    def get_enclosing_box(self):
+    def get_enclosing_box(self, rot_mat=None):
         """
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
@@ -1253,6 +1253,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             cosmo=self.cosmo,
             return_coord=True,
             buffkick=self.box_buffkick,
+            rot_mat=rot_mat,
         )
         self.box_len = np.array(
             [
@@ -1373,27 +1374,18 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
     def grid_field_to_sky_map(self, field, average=True):
         pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
-        pos_xyz = np.array(pos_xyz).T
-        pos_xyz = pos_xyz.reshape((-1, 3))
+        pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
         pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
-        indx_1, indx_2 = radec_to_indx(
-            pos_ra,
-            pos_dec,
-            self.wproj,
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, self.wproj)
+        pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
+        indx_bins = [center_to_edges(np.arange(self.W_HI.shape[i])) for i in range(3)]
+        pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
+        map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=field.ravel())
+        count_bin, _ = np.histogramdd(
+            pos_indx,
+            bins=indx_bins,
         )
-        indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
-        x_bin = center_to_edges(np.arange(self.num_pix_x))
-        y_bin = center_to_edges(np.arange(self.num_pix_y))
-        z_bin = center_to_edges(np.arange(len(self.nu)))
-        map_bin, _, = np.histogramdd(
-            [indx_1, indx_2, indx_z], bins=[x_bin, y_bin, z_bin], weights=field.ravel()
-        )
-        (
-            count_bin,
-            _,
-        ) = np.histogramdd([indx_1, indx_2, indx_z], bins=[x_bin, y_bin, z_bin])
         if average:
-            map_bin[count_bin > 0] /= count_bin[count_bin > 0]
-        map_bin = np.nan_to_num(map_bin)
+            map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
         map_bin *= self.W_HI
         return map_bin
