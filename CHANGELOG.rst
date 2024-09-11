@@ -3,6 +3,9 @@ Releases
 
 dev
 ---
+
+v0.5.0
+------
 Features
 ++++++++
 * mock simulation
@@ -15,6 +18,7 @@ Enhancements
 * gridding now part of PS class
 * consistent tests for sky map to power spectrum
 * remove hiimtool dependency
+* end-to-end test from input ps to final power spectrum estimation
 
 v0.4.0
 ------
