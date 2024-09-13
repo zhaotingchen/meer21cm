@@ -115,8 +115,14 @@ class Specification:
         self.ra_range = ra_range
         self.dec_range = dec_range
         self._sigma_beam_ch_in_mpc = None
+        if data is None:
+            data = np.zeros(self.map_has_sampling.shape)
         self.data = data
+        if weights_map_pixel is None:
+            weights_map_pixel = np.ones(self.map_has_sampling.shape)
         self.weights_map_pixel = weights_map_pixel
+        if counts is None:
+            counts = np.ones(self.map_has_sampling.shape)
         self.counts = counts
         self.beam_type = None
         self.beam_model = beam_model

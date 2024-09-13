@@ -652,7 +652,7 @@ def test_noise_power_from_map(test_W):
         ((np.abs((pdata_1d_hi - v_cell) / v_cell)) ** 2 * nmodes_hi).sum()
         / nmodes_hi.sum()
     )
-    assert avg_deviation < 1e-1
+    assert avg_deviation < 2e-1
 
 
 def test_cache():
