@@ -1320,9 +1320,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
         taper_HI = self.taper_func(self.box_ndim[-1])
-        weights_hi = (pixel_counts_hi_rg.mean(axis=-1) > 0)[:, :, None] * taper_HI[
-            None, None, :
-        ]
+        weights_hi = hi_weights_rg * taper_HI[None, None, :]
         self.field_1 = hi_map_rg
         self.weights_1 = weights_hi
         self.unitless_1 = False
@@ -1356,14 +1354,22 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             compensate=self.compensate,
             average=False,
         )
+        # get which pixels in the rg box are not covered by the lightcone
+        _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
+            self.pix_coor_in_box,
+            self.box_len,
+            self.box_ndim,
+            particle_value=self.data[self.W_HI].ravel(),
+            particle_weights=self.w_HI[self.W_HI].ravel(),
+            compensate=self.compensate,
+        )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
         self.field_2 = gal_map_rg
         taper_g = self.taper_func(self.box_ndim[-1])
-        weights_g = (pixel_counts_gal_rg.mean(axis=-1) > 0)[:, :, None] * taper_g[
-            None, None, :
-        ]
+        # only pixels sampled by the lightcone is used
+        weights_g = (pixel_counts_hi_rg > 0) * taper_g[None, None, :]
         self.weights_2 = weights_g
         self.mean_center_2 = True
         self.unitless_2 = True
