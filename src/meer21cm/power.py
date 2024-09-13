@@ -76,6 +76,18 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.kaiser_rsd = kaiser_rsd
 
     @property
+    def kaiser_rsd(self):
+        """
+        Whether RSD is included in the field simulation and model calculation.
+        """
+        return self._kaiser_rsd
+
+    @kaiser_rsd.setter
+    def kaiser_rsd(self, value):
+        self._kaiser_rsd = value
+        self.clean_cache(self.rsd_dep_attr)
+
+    @property
     def fog_profile(self):
         return self._fog_profile
 
@@ -202,7 +214,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 self.clean_cache(self.tracer_2_dep_attr)
 
     @property
-    @tagging("cosmo", "nu", "kmode", "mumode")
+    @tagging("cosmo", "nu", "kmode", "mumode", "rsd")
     def auto_power_matter_model(self):
         """
         The model matter power spectrum with RSD effects.
@@ -213,7 +225,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._auto_power_matter_model
 
     @property
-    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam")
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam", "rsd")
     def auto_power_tracer_1_model(self):
         if self._auto_power_tracer_1_model is None:
             self.get_model_power_i(1)
@@ -223,7 +235,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._auto_power_tracer_1_model * mean_amp**2
 
     @property
-    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam")
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam", "rsd")
     def auto_power_tracer_2_model(self):
         if self._auto_power_tracer_2_model is None:
             self.get_model_power_i(2)
@@ -243,6 +255,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         "tracer_2",
         "beam",
         "tracer_1",
+        "rsd",
         "cross_coeff",
     )
     def cross_power_tracer_model(self):

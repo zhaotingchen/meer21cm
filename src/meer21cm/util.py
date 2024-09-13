@@ -18,7 +18,7 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
-def random_sample_indx(tot_len, num_sub_sample, rng=None):
+def random_sample_indx(tot_len, num_sub_sample, seed=None):
     """
     Generate a random sub-sample indices.
 
@@ -30,16 +30,15 @@ def random_sample_indx(tot_len, num_sub_sample, rng=None):
     num_sub_sample: int.
         Number of sub-samples.
 
-    rng: ``numpy.random.Generator``, default None.
-        The random number generator. Default is to use a random instance.
+    seed: int, default None.
+        The seed for the random number generator.
 
     Returns
     -------
     sub_indx: array.
         The sub-sample indices.
     """
-    if rng is None:
-        rng = default_rng()
+    rng = default_rng(seed)
     sub_indx = rng.choice(
         np.arange(tot_len),
         size=num_sub_sample,

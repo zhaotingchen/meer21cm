@@ -3,6 +3,14 @@ Releases
 
 dev
 ---
+Features
+++++++++
+* mock tracer positions
+
+Enhancements
+++++++++++++
+* better RSD routine for lognormal simulation
+
 
 v0.5.0
 ------
