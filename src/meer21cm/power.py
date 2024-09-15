@@ -1082,7 +1082,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         downres_factor_radial=2.0,
         field_from_mapdata=False,
         box_buffkick=5,
-        compensate=True,
+        compensate=False,
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
         **params,
