@@ -76,6 +76,18 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.kaiser_rsd = kaiser_rsd
 
     @property
+    def kaiser_rsd(self):
+        """
+        Whether RSD is included in the field simulation and model calculation.
+        """
+        return self._kaiser_rsd
+
+    @kaiser_rsd.setter
+    def kaiser_rsd(self, value):
+        self._kaiser_rsd = value
+        self.clean_cache(self.rsd_dep_attr)
+
+    @property
     def fog_profile(self):
         return self._fog_profile
 
@@ -202,7 +214,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 self.clean_cache(self.tracer_2_dep_attr)
 
     @property
-    @tagging("cosmo", "nu", "kmode", "mumode")
+    @tagging("cosmo", "nu", "kmode", "mumode", "rsd")
     def auto_power_matter_model(self):
         """
         The model matter power spectrum with RSD effects.
@@ -213,7 +225,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._auto_power_matter_model
 
     @property
-    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam")
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam", "rsd")
     def auto_power_tracer_1_model(self):
         if self._auto_power_tracer_1_model is None:
             self.get_model_power_i(1)
@@ -223,7 +235,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._auto_power_tracer_1_model * mean_amp**2
 
     @property
-    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam")
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam", "rsd")
     def auto_power_tracer_2_model(self):
         if self._auto_power_tracer_2_model is None:
             self.get_model_power_i(2)
@@ -243,6 +255,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         "tracer_2",
         "beam",
         "tracer_1",
+        "rsd",
         "cross_coeff",
     )
     def cross_power_tracer_model(self):
@@ -1060,7 +1073,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
-        model_k_from_field=False,
+        model_k_from_field=True,
         mean_amp_1=1.0,
         mean_amp_2=1.0,
         sampling_resol=None,
@@ -1069,7 +1082,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         downres_factor_radial=2.0,
         field_from_mapdata=False,
         box_buffkick=5,
-        compensate=True,
+        compensate=False,
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
         **params,
@@ -1142,6 +1155,38 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.taper_func = taper_func
         if field_from_mapdata:
             self.get_enclosing_box()
+
+    @property
+    def downres_factor_transverse(self):
+        return self._downres_factor_transverse
+
+    @downres_factor_transverse.setter
+    def downres_factor_transverse(self, value):
+        self._downres_factor_transverse = value
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def downres_factor_radial(self):
+        return self._downres_factor_radial
+
+    @downres_factor_radial.setter
+    def downres_factor_radial(self, value):
+        self._downres_factor_radial = value
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
 
     def propagate_field_k_to_model(self):
         """
@@ -1286,15 +1331,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.box_ndim = ndim_rg
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
-        # self.kmode = self.k_mode
-        # slice_indx = (None,) * (len(self._box_ndim) - 1)
-        # slice_indx += (slice(None, None, None),)
-        # with np.errstate(divide="ignore", invalid="ignore"):
-        #    self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
-        # if self.upgrade_sampling_from_gridding:
-        #    self.sampling_resol = self.box_resol
 
     def grid_data_to_field(self):
+        if self.box_origin[0] is None:
+            self.get_enclosing_box()
         hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(
             self.pix_coor_in_box,
             self.box_len,
@@ -1307,9 +1347,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
         taper_HI = self.taper_func(self.box_ndim[-1])
-        weights_hi = (pixel_counts_hi_rg.mean(axis=-1) > 0)[:, :, None] * taper_HI[
-            None, None, :
-        ]
+        weights_hi = hi_weights_rg * taper_HI[None, None, :]
         self.field_1 = hi_map_rg
         self.weights_1 = weights_hi
         self.unitless_1 = False
@@ -1322,6 +1360,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
     def grid_gal_to_field(self):
+        if self.box_origin[0] is None:
+            self.get_enclosing_box()
         (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
             self.ra_gal,
             self.dec_gal,
@@ -1343,14 +1383,22 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             compensate=self.compensate,
             average=False,
         )
+        # get which pixels in the rg box are not covered by the lightcone
+        _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
+            self.pix_coor_in_box,
+            self.box_len,
+            self.box_ndim,
+            particle_value=self.data[self.W_HI].ravel(),
+            particle_weights=self.w_HI[self.W_HI].ravel(),
+            compensate=self.compensate,
+        )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
         self.field_2 = gal_map_rg
         taper_g = self.taper_func(self.box_ndim[-1])
-        weights_g = (pixel_counts_gal_rg.mean(axis=-1) > 0)[:, :, None] * taper_g[
-            None, None, :
-        ]
+        # only pixels sampled by the lightcone is used
+        weights_g = (pixel_counts_hi_rg > 0) * taper_g[None, None, :]
         self.weights_2 = weights_g
         self.mean_center_2 = True
         self.unitless_2 = True

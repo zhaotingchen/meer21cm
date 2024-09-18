@@ -18,6 +18,35 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
+def random_sample_indx(tot_len, num_sub_sample, seed=None):
+    """
+    Generate a random sub-sample indices.
+
+    Parameters
+    ----------
+    tot_len: int.
+        The total number of data points to sample from.
+
+    num_sub_sample: int.
+        Number of sub-samples.
+
+    seed: int, default None.
+        The seed for the random number generator.
+
+    Returns
+    -------
+    sub_indx: array.
+        The sub-sample indices.
+    """
+    rng = default_rng(seed)
+    sub_indx = rng.choice(
+        np.arange(tot_len),
+        size=num_sub_sample,
+        replace=False,
+    )
+    return sub_indx
+
+
 def find_property_with_tags(obj):
     """
     Retrieve a dictionary for all the properties of a class that has tags.

@@ -266,3 +266,10 @@ def test_sample_from_dist():
 def test_tully_fisher():
     assert np.allclose(tully_fisher(np.ones(100), 0, 2), 1e2)
     assert np.allclose(tully_fisher(np.ones(100), 1, 2, inv=True), 1e-2)
+
+
+def test_random_sample_indx():
+    tot_num = 1000
+    sub_num = 200
+    sub_indx = np.sort(random_sample_indx(tot_num, sub_num))
+    assert np.allclose(sub_indx, np.unique(sub_indx))

@@ -115,9 +115,16 @@ class Specification:
         self.ra_range = ra_range
         self.dec_range = dec_range
         self._sigma_beam_ch_in_mpc = None
+        if data is None:
+            data = np.zeros(self.map_has_sampling.shape)
         self.data = data
+        if weights_map_pixel is None:
+            weights_map_pixel = np.ones(self.map_has_sampling.shape)
         self.weights_map_pixel = weights_map_pixel
+        if counts is None:
+            counts = np.ones(self.map_has_sampling.shape)
         self.counts = counts
+        self.trim_map_to_range()
         self.beam_type = None
         self.beam_model = beam_model
         self._beam_image = None
@@ -519,6 +526,7 @@ class Specification:
         self.data = self.data * map_sel
         self.counts = self.counts * map_sel
         self.map_has_sampling = self.map_has_sampling * map_sel
+        self.weights_map_pixel = self.weights_map_pixel * map_sel
 
     def trim_gal_to_range(self):
         ra_temp = self.ra_gal.copy()

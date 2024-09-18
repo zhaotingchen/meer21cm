@@ -30,6 +30,9 @@ from .util import (
     sample_from_dist,
     center_to_edges,
     tully_fisher,
+    redshift_to_freq,
+    random_sample_indx,
+    find_ch_id,
 )
 from .plot import plot_map
 from .grid import (
@@ -42,6 +45,7 @@ from meer21cm.power import PowerSpectrum
 from powerbox import LogNormalPowerBox
 from halomod import TracerHaloModel as THM
 from powerbox import dft
+import warnings
 
 
 # 20 lines missing before adding in
@@ -50,8 +54,10 @@ class MockSimulation(PowerSpectrum):
         self,
         density="poisson",
         relative_resol_to_pix=0.5,
-        target_relative_to_num_g=2.5,
+        target_relative_to_num_g=1.5,
         seed=None,
+        num_discrete_source=100,
+        discrete_base_field=2,
         **params,
     ):
         super().__init__(**params)
@@ -60,7 +66,6 @@ class MockSimulation(PowerSpectrum):
         if seed is None:
             seed = np.random.randint(0, 2**32)
         self.seed = seed
-        self.rng = default_rng(self.seed)
         init_attr = [
             "_x_start",
             "_y_start",
@@ -75,26 +80,68 @@ class MockSimulation(PowerSpectrum):
             "_box_ndim",
             "_mock_matter_field_r",
             "_mock_matter_field",
-            "_mock_tracer_position",
+            "_mock_tracer_position_in_box",
+            "_mock_tracer_position_in_radecz",
             "_mock_tracer_field_1",
             "_mock_tracer_field_2",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
         self.target_relative_to_num_g = target_relative_to_num_g
-        # self.upgrade_sampling_from_gridding = True
+        self.num_discrete_source = num_discrete_source
+        self.discrete_base_field = discrete_base_field
 
     @property
-    def kaiser_rsd(self):
-        return self._kaiser_rsd
+    def target_relative_to_num_g(self):
+        """
+        The target number of discrete tracers to simulate
+        at the field level comparing to the desired number
+        ``num_discrete_source``. Needs to be larger than 1
+        because some tracers are trimmed off when projecting
+        the field to the sky map.
 
-    @kaiser_rsd.setter
-    def kaiser_rsd(self, value):
-        self._kaiser_rsd = value
-        self.clean_cache(self.mock_dep_attr)
+        Note that the random sampling does not exactly return
+        ``target_relative_to_num_g * num_discrete_source`` number
+        of tracers but a very close value.
+        """
+        return self._target_relative_to_num_g
+
+    @target_relative_to_num_g.setter
+    def target_relative_to_num_g(self, value):
+        self._target_relative_to_num_g = value
+        self.clean_cache(self.discrete_dep_attr)
 
     @property
-    @tagging("cosmo", "nu", "mock", "box")
+    def num_discrete_source(self):
+        """
+        The total number of discrete tracer sources.
+        """
+        return self._num_discrete_source
+
+    @num_discrete_source.setter
+    def num_discrete_source(self, value):
+        self._num_discrete_source = value
+        self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    def discrete_base_field(self):
+        """
+        Which tracer (1 or 2) field to sample the
+        discrete tracer positions.
+        """
+        return self._discrete_base_field
+
+    @discrete_base_field.setter
+    def discrete_base_field(self, value):
+        if isinstance(value, str):
+            value = int(value)
+        if not value in [1, 2]:
+            raise ValueError("discrete_base_field must be 1 or 2")
+        self._discrete_base_field = value
+        self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd")
     def mock_matter_field(self):
         """
         The simulated dark matter density field.
@@ -106,9 +153,10 @@ class MockSimulation(PowerSpectrum):
     def get_mock_matter_field(self):
         self._mock_matter_field = self.get_mock_field(bias=1)
 
-    def get_mock_field(self, bias):
+    def get_mock_field(self, bias, sigma_v=0):
         if self.box_ndim is None:
             self.get_enclosing_box()
+        self.propagate_field_k_to_model()
         pb = LogNormalPowerBox(
             N=self.box_ndim,
             dim=3,
@@ -116,31 +164,31 @@ class MockSimulation(PowerSpectrum):
             boxlength=self.box_len,
             seed=self.seed,
         )
-        if self._mock_matter_field_r is None:
-            self._mock_matter_field_r = pb.delta_x()
-        delta_k = dft.fft(
-            self._mock_matter_field_r,
-            L=pb.boxlength,
-            a=pb.fourier_a,
-            b=pb.fourier_b,
-            backend=pb.fftbackend,
-        )[0]
+        # manually modify powerbox pk to include bias and rsd
+        power_array = self.matter_power_spectrum_fnc(pb.k())
         if self.kaiser_rsd:
             mumode = np.nan_to_num(pb.kvec[-1][None, None, :] / pb.k())
-            delta_k *= bias + mumode**2 * self.f_growth
+            fog = np.fft.fftshift(self.fog_term(sigma_v))
+            power_array *= ((bias + mumode**2 * self.f_growth) * fog) ** 2
         else:
-            delta_k *= bias
-        self._mock_field = dft.ifft(
-            delta_k,
-            L=pb.boxlength,
-            a=pb.fourier_a,
-            b=pb.fourier_b,
-            backend=pb.fftbackend,
-        )[0].real
-        return self._mock_field
+            power_array *= bias**2
+        power_array = power_array[pb.k() != 0]
+        pkfunc = lambda x: power_array
+        del pb
+        # basically a cheat, instead of a function
+        # pkfunc just returns an array of the correct size
+        pb2 = LogNormalPowerBox(
+            N=self.box_ndim,
+            dim=3,
+            pk=pkfunc,
+            boxlength=self.box_len,
+            seed=self.seed,
+        )
+        assert np.allclose(pb2.power_array()[pb2.k() != 0] * pb2.V, power_array)
+        return pb2.delta_x()
 
     @property
-    @tagging("cosmo", "nu", "mock", "box", "tracer_1")
+    @tagging("cosmo", "nu", "mock", "box", "tracer_1", "rsd")
     def mock_tracer_field_1(self):
         """
         The simulated tracer field 1.
@@ -153,7 +201,7 @@ class MockSimulation(PowerSpectrum):
         return self._mock_tracer_field_1 * mean_amp
 
     @property
-    @tagging("cosmo", "nu", "mock", "box", "tracer_2")
+    @tagging("cosmo", "nu", "mock", "box", "tracer_2", "rsd")
     def mock_tracer_field_2(self):
         """
         The simulated tracer field 2.
@@ -166,18 +214,122 @@ class MockSimulation(PowerSpectrum):
         return self._mock_tracer_field_2 * mean_amp
 
     def get_mock_tracer_field_1(self):
-        self._mock_tracer_field_1 = self.get_mock_field(bias=self.tracer_bias_1)
+        self._mock_tracer_field_1 = self.get_mock_field(
+            bias=self.tracer_bias_1, sigma_v=self.sigma_v_1
+        )
 
     def get_mock_tracer_field_2(self):
         if self.tracer_bias_2 is not None:
-            self._mock_tracer_field_2 = self.get_mock_field(bias=self.tracer_bias_2)
+            self._mock_tracer_field_2 = self.get_mock_field(
+                bias=self.tracer_bias_2, sigma_v=self.sigma_v_2
+            )
 
     @property
-    def mock_tracer_position(self):
+    @tagging("cosmo", "nu", "mock", "box", "tracer_1", "tracer_2", "discrete", "rsd")
+    def mock_tracer_position_in_box(self):
         """
-        The simulated tracer positions.
+        The simulated tracer positions in the box.
         """
-        return self._mock_tracer_position
+        if self._mock_tracer_position_in_box is None:
+            self.get_mock_tracer_position_in_box(self.discrete_base_field)
+        return self._mock_tracer_position_in_box
+
+    def get_mock_tracer_position_in_box(self, tracer_i):
+        """
+        Function to retrieve the tracer positions. Modified from ``powerbox``.
+        """
+        rng = default_rng(self.seed)
+        # note that `_mock...` does not have mean amplitude so this is what
+        # we should be using instead of `mock...`, this is just to invoke
+        # the simulation
+        getattr(self, "mock_tracer_field_" + str(tracer_i))
+        # now actually getting the underlying overdensity
+        pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        num_g = self.target_relative_to_num_g * self.num_discrete_source
+        pos_value /= pos_value.sum() / num_g
+        n_per_cell = rng.poisson(pos_value)
+        args = self.x_vec
+        X = np.meshgrid(*args, indexing="ij")
+        tracer_positions = np.array([x.flatten() for x in X]).T
+        tracer_positions = tracer_positions.repeat(n_per_cell.flatten(), axis=0)
+        tracer_positions += (
+            rng.uniform(-0.5, 0.5, size=(np.sum(n_per_cell), len(self.box_ndim)))
+            * self.box_resol[None, :]
+        )
+        self._mock_tracer_position_in_box = tracer_positions
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "tracer_1", "tracer_2", "discrete", "rsd")
+    def mock_tracer_position_in_radecz(self):
+        """
+        The simulated tracer positions projected onto the grid. The tracers outside
+        the binary selection window ``map_has_sampling`` or outside the frequency range
+        can be trimmed off. Furthermore, excess tracers are also excluded. The selection
+        function is stored at ``inside_range``.
+
+        Returns a list in the order of (ra,dec,z,inside_range).
+        """
+        if self._mock_tracer_position_in_radecz is None:
+            self.get_mock_tracer_position_in_radecz()
+        return self._mock_tracer_position_in_radecz
+
+    def get_mock_tracer_position_in_radecz(self):
+        (
+            self.ra_mock_tracer,
+            self.dec_mock_tracer,
+            self.z_mock_tracer,
+        ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
+        freq_tracer = redshift_to_freq(self.z_mock_tracer)
+        tracer_ch_id = find_ch_id(freq_tracer, self.nu)
+        # num_ch id is for tracer outside the frequency range
+        z_sel = tracer_ch_id < len(self.nu)
+        ra_temp = self.ra_mock_tracer.copy()
+        ra_temp[ra_temp > 180] -= 360
+        ra_range = np.array(self.ra_range)
+        ra_range[ra_range > 180] -= 360
+        radec_sel = (
+            (ra_temp > ra_range[0])
+            * (ra_temp < ra_range[1])
+            * (self.dec_mock_tracer > self.dec_range[0])
+            * (self.dec_mock_tracer < self.dec_range[1])
+        )
+        inside_range = z_sel * radec_sel
+        # there may be an excess
+        num_tracer_in = inside_range.sum()
+        if num_tracer_in < self.num_discrete_source:
+            warnings.warn(
+                "Not enough tracers inside the ra, dec, z range. "
+                + "Try increasing target_relative_to_num_g."
+            )
+        else:
+            inside_indx = np.where(inside_range)[0]
+            rand_indx = random_sample_indx(
+                len(inside_indx), self.num_discrete_source, seed=self.seed
+            )
+            inside_range = np.zeros_like(inside_range)
+            inside_range[inside_indx[rand_indx]] = True
+        self.mock_inside_range = inside_range
+        self._mock_tracer_position_in_radecz = (
+            self.ra_mock_tracer,
+            self.dec_mock_tracer,
+            self.z_mock_tracer,
+            self.mock_inside_range,
+        )
+
+    def propagate_mock_tracer_to_gal_cat(self, trim=True):
+        """
+        Propagate the mock tracer positions to the galaxy data catalogue.
+
+        If trim, only specified ``num_discrete_source`` number of tracers
+        inside the ra-dec-z range will be propagated
+        """
+        ra, dec, z, inside_range = self.mock_tracer_position_in_radecz
+        inside_range = inside_range.copy()
+        # if False, inside_range is all True
+        inside_range = (inside_range + 1 - trim) > 0
+        self._ra_gal = ra[inside_range]
+        self._dec_gal = dec[inside_range]
+        self._z_gal = z[inside_range]
 
 
 class HISimulation:
