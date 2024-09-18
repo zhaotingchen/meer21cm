@@ -1073,7 +1073,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
-        model_k_from_field=False,
+        model_k_from_field=True,
         mean_amp_1=1.0,
         mean_amp_2=1.0,
         sampling_resol=None,
@@ -1155,6 +1155,38 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.taper_func = taper_func
         if field_from_mapdata:
             self.get_enclosing_box()
+
+    @property
+    def downres_factor_transverse(self):
+        return self._downres_factor_transverse
+
+    @downres_factor_transverse.setter
+    def downres_factor_transverse(self, value):
+        self._downres_factor_transverse = value
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def downres_factor_radial(self):
+        return self._downres_factor_radial
+
+    @downres_factor_radial.setter
+    def downres_factor_radial(self, value):
+        self._downres_factor_radial = value
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
 
     def propagate_field_k_to_model(self):
         """
@@ -1299,15 +1331,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.box_ndim = ndim_rg
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
-        # self.kmode = self.k_mode
-        # slice_indx = (None,) * (len(self._box_ndim) - 1)
-        # slice_indx += (slice(None, None, None),)
-        # with np.errstate(divide="ignore", invalid="ignore"):
-        #    self.mumode = np.nan_to_num(self.k_para[slice_indx] / self.kmode)
-        # if self.upgrade_sampling_from_gridding:
-        #    self.sampling_resol = self.box_resol
 
     def grid_data_to_field(self):
+        if self.box_origin[0] is None:
+            self.get_enclosing_box()
         hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(
             self.pix_coor_in_box,
             self.box_len,
@@ -1333,6 +1360,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
     def grid_gal_to_field(self):
+        if self.box_origin[0] is None:
+            self.get_enclosing_box()
         (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
             self.ra_gal,
             self.dec_gal,

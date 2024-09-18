@@ -20,14 +20,14 @@ def test_gaussian_field_map_grid():
     ps.data = np.ones(ps.W_HI.shape)
     ps.w_HI = np.ones(ps.W_HI.shape)
     ps.counts = np.ones(ps.W_HI.shape)
-    ps.trim_map_to_range()
+    # ps.trim_map_to_range()
     ps.downres_factor_radial = 1 / 2.0
     ps.downres_factor_transverse = 1 / 2.0
     ps.get_enclosing_box()
     pos_value = np.random.normal(size=ps.box_ndim)
     k1dedges = np.geomspace(0.05, 1.5, 20)
     ps.k1dbins = k1dedges
-    ps.propagate_field_k_to_model()
+    # ps.propagate_field_k_to_model()
     ps.field_1 = pos_value
     pfield, keff, nmodes = ps.get_1d_power(
         "auto_power_3d_1",
@@ -44,14 +44,14 @@ def test_gaussian_field_map_grid():
     # regrid the sky map to a regular grid field
     ps.downres_factor_radial = 2.0
     ps.downres_factor_transverse = 1.5
-    ps.get_enclosing_box()
+    # ps.get_enclosing_box()
     ps.compensate = False
     hi_map_rg, hi_weights_rg, pix_counts_hi_rg = ps.grid_data_to_field()
     taper_hi = ps.taper_func(ps.box_ndim[-1])
     weights_hi = hi_weights_rg * taper_hi[None, None, :]
     ps.field_1 = hi_map_rg
     ps.weights_1 = weights_hi
-    ps.propagate_field_k_to_model()
+    # ps.propagate_field_k_to_model()
     ps.sampling_resol = [
         ps.pix_resol_in_mpc,
         ps.pix_resol_in_mpc,
@@ -83,14 +83,12 @@ def test_poisson_field_map_grid():
     ps.data = np.ones(ps.W_HI.shape)
     ps.w_HI = np.ones(ps.W_HI.shape)
     ps.counts = np.ones(ps.W_HI.shape)
-    ps.trim_map_to_range()
     ps.downres_factor_radial = 1 / 2.0
     ps.downres_factor_transverse = 1 / 2.0
     ps.get_enclosing_box()
     pos_value = np.zeros(ps.box_ndim).ravel()
     k1dedges = np.geomspace(0.05, 1.5, 20)
     ps.k1dbins = k1dedges
-    ps.propagate_field_k_to_model()
     num_g = 10000
     gal_pix_indx = np.random.choice(
         np.arange(pos_value.size), size=num_g, replace=False
@@ -112,7 +110,6 @@ def test_poisson_field_map_grid():
     ps.data = map_bin
     ps.downres_factor_radial = 2.0
     ps.downres_factor_transverse = 1.5
-    ps.get_enclosing_box()
     ps.compensate = False
     hi_map_rg, hi_weights_rg, pix_counts_hi_rg = ps.grid_data_to_field()
     # galaxy counts are total not average
@@ -122,7 +119,6 @@ def test_poisson_field_map_grid():
     ps.field_1 = hi_map_rg
     ps.weights_1 = weights_hi
     ps.unitless_1 = True
-    ps.propagate_field_k_to_model()
     ps.sampling_resol = [
         ps.pix_resol_in_mpc,
         ps.pix_resol_in_mpc,
@@ -164,7 +160,6 @@ def test_mock_field_map_grid():
         mock.data = np.ones(mock.W_HI.shape)
         mock.w_HI = np.ones(mock.W_HI.shape)
         mock.counts = np.ones(mock.W_HI.shape)
-        mock.trim_map_to_range()
         mock.downres_factor_radial = 1 / 2.0
         mock.downres_factor_transverse = 1 / 2.0
         mock.get_enclosing_box()
@@ -175,7 +170,6 @@ def test_mock_field_map_grid():
         mock.data = map_bin
         mock.downres_factor_radial = 1.5
         mock.downres_factor_transverse = 1.5
-        mock.get_enclosing_box()
         mock.compensate = False
         hi_map_rg, hi_weights_rg, pix_counts_hi_rg = mock.grid_data_to_field()
         taper_hi = mock.taper_func(mock.box_ndim[-1])
@@ -267,7 +261,6 @@ def test_mock_tracer_grid():
         mock.data = np.ones(mock.W_HI.shape)
         mock.w_HI = np.ones(mock.W_HI.shape)
         mock.counts = np.ones(mock.W_HI.shape)
-        mock.trim_map_to_range()
         mock.downres_factor_radial = 1 / 2.0
         mock.downres_factor_transverse = 1 / 2.0
         mock.get_enclosing_box()
@@ -277,11 +270,9 @@ def test_mock_tracer_grid():
         mock.propagate_mock_tracer_to_gal_cat()
         mock.downres_factor_radial = 1.5
         mock.downres_factor_transverse = 1.5
-        mock.get_enclosing_box()
-        mock.propagate_field_k_to_model()
-        _, _, pixel_counts_hi_rg = mock.grid_data_to_field()
         mock.compensate = False
         gal_map_rg, gal_weights_rg, pixel_counts_gal_rg = mock.grid_gal_to_field()
+        _, _, pixel_counts_hi_rg = mock.grid_data_to_field()
         # test inrange exactly num_g
         assert gal_map_rg.sum() == mock.num_discrete_source
         taper = mock.taper_func(mock.box_ndim[-1])

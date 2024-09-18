@@ -139,6 +139,7 @@ def test_tracer_position():
         dec_range=dec_range,
         kaiser_rsd=True,
         discrete_base_field=2,
+        target_relative_to_num_g=2.5,
     )
     mock.data = np.ones(mock.W_HI.shape)
     mock.w_HI = np.ones(mock.W_HI.shape)
