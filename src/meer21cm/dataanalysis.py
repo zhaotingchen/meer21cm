@@ -31,6 +31,18 @@ default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
 
 class Specification:
+    """
+    The base class for storing map data and survey specifications of the 21cm intensity map.
+    It can also store a galaxy catalogue for cross-correlation.
+
+    Parameters
+    ----------
+    nu: array, default None.
+       The frequency channels. Default is MeerKLASS L-band deep-field sub-band.
+
+    wproj: :class:`astropy.wcs.WCS` object.
+    """
+
     def __init__(
         self,
         nu=None,
@@ -131,6 +143,10 @@ class Specification:
 
     @property
     def map_unit_type(self):
+        """
+        The dimension of the map unit, either 'F' (flux density)
+        or 'T' (temperature)
+        """
         map_unit = self.map_unit
         if not check_unit_equiv(map_unit, units.K):
             if not check_unit_equiv(map_unit, units.Jy):
@@ -146,7 +162,7 @@ class Specification:
 
     def clean_cache(self, attr):
         """
-        set the input attributes to None
+        Set the attributes of ``self``  in ``attr`` to ``None``.
         """
         for att in attr:
             if att in self.__dict__.keys():
@@ -262,6 +278,11 @@ class Specification:
 
     @property
     def cosmo(self):
+        """
+        The fiducial cosmology. Can either be an
+        ``astropy.cosmology.Cosmology`` object or
+        a string for predefined astropy cosmologies (such as Planck18).
+        """
         return self._cosmo
 
     @cosmo.setter
@@ -479,6 +500,11 @@ class Specification:
         self.trim_gal_to_range()
 
     def read_from_fits(self):
+        """
+        Read a fits file from ``self.map_file`` and propagate to the attributes.
+        The hit counts will be read in as well if ``self.counts_file`` is provided.
+        See ``telescope.read_map`` for details.
+        """
         if self.map_file is None:
             print("no map_file specified")
             return None
@@ -513,6 +539,10 @@ class Specification:
             self.weights_map_pixel = (self.counts > 0).astype("float")
 
     def trim_map_to_range(self):
+        """
+        Trim the data and associated counts and weights to zero outside the
+        specified ``ra_range`` and ``dec_range``.
+        """
         ra_temp = self.ra_map.copy()
         ra_temp[ra_temp > 180] -= 360
         ra_range = np.array(self.ra_range)
@@ -529,6 +559,10 @@ class Specification:
         self.weights_map_pixel = self.weights_map_pixel * map_sel
 
     def trim_gal_to_range(self):
+        """
+        Trim the galaxy catalogue to exclude sources outside the
+        specified ``ra_range``, ``dec_range`` and frequencies.
+        """
         ra_temp = self.ra_gal.copy()
         ra_temp[ra_temp > 180] -= 360
         ra_range = np.array(self.ra_range)
@@ -546,11 +580,17 @@ class Specification:
     @property
     @tagging("beam", "nu")
     def beam_image(self):
+        """
+        The beam in each frequency channel
+        """
         if self._beam_image is None:
             self.get_beam_image()
         return self._beam_image
 
     def get_beam_image(self):
+        """
+        Function to calculate the beam images.
+        """
         if self.sigma_beam_ch is None:
             return None
         beam_image = np.zeros((self.num_pix_x, self.num_pix_y, len(self.nu)))
@@ -592,7 +632,7 @@ class Specification:
     def z_as_func_of_comov_dist(self):
         """
         Returns a function that returns the redshift
-        for input comoving distance.
+        for input comoving distance z(D_c).
         """
         zarr = np.linspace(
             self.z_ch.min() * 0.9,

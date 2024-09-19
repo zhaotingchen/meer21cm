@@ -36,6 +36,7 @@ class CosmologyCalculator(Specification):
         """
         What nonlinear input model to use for camb.
         Set to ``'none'`` for linear matter power
+        and ``'both'`` for nonlinear power.
         """
         return self._nonlinear
 
@@ -115,6 +116,10 @@ class CosmologyCalculator(Specification):
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):
+        """
+        Invoke to calculate the interpolcation function for the matter
+        power spectrum in real space.
+        """
         pars = self.camb_pars
         pars.set_matter_power(
             redshifts=np.unique(np.array([self.z, 0.0])).tolist(),
@@ -135,10 +140,16 @@ class CosmologyCalculator(Specification):
     # weights_1 and weights_2 are later used in power spectrum
     @property
     def weights_1(self):
+        """
+        The weights in real space grids for tracer 1.
+        """
         return self._weights_1
 
     @property
     def weights_2(self):
+        """
+        The weights in real space grids for tracer 2.
+        """
         return self._weights_2
 
     @weights_1.setter

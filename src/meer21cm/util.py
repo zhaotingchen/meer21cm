@@ -177,8 +177,8 @@ def omega_hi_to_average_temp(omega_hi, z=0, cosmo=Planck18):
     z: float, defulat 0.0.
         The redshift
 
-    cosmo: cosmology, default Planck18.
-        The cosmology used
+    cosmo: :class:`astropy.cosmology.Cosmology` object., default Planck18.
+        The cosmology used.
 
     Returns
     -------
@@ -283,6 +283,10 @@ def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
 
 
 def get_default_args(func):
+    """
+    Return a dictionary containing the optional arguments of a function,
+    as well as their default values.
+    """
     signature = inspect.signature(func)
     return {
         k: v.default
@@ -292,6 +296,25 @@ def get_default_args(func):
 
 
 def read_healpix_fits(file):
+    """
+    Read in a healpix fits file
+
+    Parameters
+    ----------
+    file: str.
+        The file name
+
+    Returns
+    -------
+    hp_map: array.
+        The map
+    hp_nside: int.
+        The healpix NSIDE parameter of the map.
+    map_unit: :class:`astropy.units.Unit`.
+        The unit of the map
+    map_freq: float.
+        The frequency of the map in Hz.
+    """
     hp_map = hp.read_map(file)
     hp_nside = hp.get_nside(hp_map)
     with fits.open(file) as hdul:
@@ -468,6 +491,22 @@ def pcaclean(
 
 
 def radec_to_indx(ra_arr, dec_arr, wproj, to_int=True, ang_unit="deg"):
+    """
+    For given angular coordinates, find which pixels they fall into.
+
+    Parameters
+    ----------
+    ra_arr: array.
+        The RA coordinates.
+    dec_arr: array.
+        The Dec coordinates.
+    wproj: :class:`astropy.wcs.WCS` object.
+        The 2D WCS of the pixelised map.
+    to_int: bool, default True.
+        If True, return the integer index.
+    ang_unit: str, default "deg".
+        The angular unit of input coordinates
+    """
     coor = SkyCoord(ra_arr, dec_arr, unit=ang_unit)
     indx_1, indx_2 = wproj.world_to_pixel(coor)
     if to_int:

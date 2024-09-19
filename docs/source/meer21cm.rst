@@ -1,5 +1,5 @@
-meer21cm package
-================
+API Summary
+===========
 
 meer21cm.cosmology module
 -------------------------

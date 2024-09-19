@@ -89,6 +89,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def fog_profile(self):
+        """
+        Type of the FoG profile to use. Currently only ``'lorentz'`` is supported.
+        """
         return self._fog_profile
 
     @fog_profile.setter
@@ -101,6 +104,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def sigma_v_1(self):
+        """
+        FoG parameter for tracer 1.
+        """
         return self._sigma_v_1
 
     @sigma_v_1.setter
@@ -111,6 +117,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def sigma_v_2(self):
+        """
+        FoG parameter for tracer 2.
+        """
         return self._sigma_v_2
 
     @sigma_v_2.setter
@@ -121,6 +130,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def include_beam(self):
+        """
+        A list with two elements to indicate whether the tracers are smoothed by
+        the beam. Default is ``[True,False]``.
+        """
         return self._include_beam
 
     @include_beam.setter
@@ -146,10 +159,16 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return fog
 
     def fog_term(self, sigma_v):
+        r"""
+        The FoG term for a given :math:`\sigma_v` parameter
+        """
         return getattr(self, "fog_" + self.fog_profile)(sigma_v)
 
     @property
     def tracer_bias_1(self):
+        """
+        The linear bias for tracer 1.
+        """
         return self._tracer_bias_1
 
     @tracer_bias_1.setter
@@ -160,6 +179,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def tracer_bias_2(self):
+        """
+        The linear bias for tracer 2.
+        """
         return self._tracer_bias_2
 
     @tracer_bias_2.setter
@@ -170,6 +192,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def cross_coeff(self):
+        r"""
+        The cross-correlation coefficient :math:`r` between the two tracers.
+        """
         return self._cross_coeff
 
     @cross_coeff.setter
@@ -180,6 +205,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def kmode(self):
+        """
+        The k-mode for calculating the model power spectra.
+        """
         return self._kmode
 
     @kmode.setter
@@ -190,6 +218,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def mumode(self):
+        r"""
+        The :math:`\mu` values for the k-modes of the model power spectra.
+        """
         return self._mumode
 
     @mumode.setter
@@ -200,6 +231,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @property
     def sampling_resol(self):
+        """
+        Sampling resolution of the tracers to calculate the windowing effects.
+        """
         return self._sampling_resol
 
     @sampling_resol.setter
@@ -217,7 +251,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @tagging("cosmo", "nu", "kmode", "mumode", "rsd")
     def auto_power_matter_model(self):
         """
-        The model matter power spectrum with RSD effects.
+        The model matter power spectrum.
         The 3D k-modes corrospond to the input ``kmode`` and ``mumode``.
         """
         if self._auto_power_matter_model is None:
@@ -227,6 +261,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam", "rsd")
     def auto_power_tracer_1_model(self):
+        """
+        The model auto power spectrum for tracer 1.
+        """
         if self._auto_power_tracer_1_model is None:
             self.get_model_power_i(1)
         mean_amp = self.mean_amp_1
@@ -237,6 +274,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam", "rsd")
     def auto_power_tracer_2_model(self):
+        """
+        The model auto power spectrum for tracer 2.
+        """
         if self._auto_power_tracer_2_model is None:
             self.get_model_power_i(2)
         mean_amp = self.mean_amp_2
@@ -259,6 +299,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         "cross_coeff",
     )
     def cross_power_tracer_model(self):
+        """
+        The model cross power spectrum between tracer 1 and 2.
+        """
         if self._cross_power_tracer_model is None:
             self.get_model_power_cross()
         mean_amp2 = self.mean_amp_2
@@ -281,6 +324,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     # calculate on the fly, no need for tagging
     def beam_attenuation(self):
+        """
+        The beam attenuation term in the model power spectra.
+        """
         if self.sigma_beam_ch is None:
             return 1.0
         # in the future for asymmetric beam this way
@@ -299,6 +345,47 @@ class ModelPowerSpectrum(CosmologyCalculator):
         sigmav_2=None,
         r=1.0,
     ):
+        r"""
+        Function to calculate the power spectrum in redshift space.
+
+        The power spectrum in redshift space can be written as
+
+        .. math::
+           P_s (k,\mu) = P_r \big(r+(\beta_1+\beta_2)\mu^2 + \beta_1\beta_2 \mu^4 \big)
+           \mathcal{F}_1\mathcal{F}_2,
+
+        where :math:`P_r = b_1b_2 P_m` is the matter power spectrum multiplied by the bias,
+        :math:`r` is the cross-correlation coefficient,
+        :math:`\beta_{1,2}` is the Kaiser term for each tracer,
+        and :math:`\mathcal{F}_{1,2}` is the FoG kernel of each tracer.
+        Note that when 1=2 and r=1, we recover auto power spectrum.
+
+        Parameters
+        ----------
+            power_in_real_space: array
+                The model power spectrum in real space.
+
+            beta1: float
+                The Kaiser term for tracer 1.
+
+            sigmav_1: float
+                The velocity dispersion parameter for FoG for tracer 1.
+
+            beta2: float, default None.
+                The Kaiser term for tracer 2. Default set to beta1.
+
+            sigmav_2: float, default None.
+                The velocity dispersion parameter for FoG for tracer 2.
+                Default set to sigmav_1.
+
+            r: float, default 1.
+                The cross-correlation coefficient.
+
+        Returns
+        -------
+        power_in_redshift_space: array.
+            The model power spectrum in redshift space.
+        """
         if beta2 is None:
             beta2 = beta1
         if sigmav_2 is None:
@@ -316,6 +403,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return power_in_redshift_space
 
     def get_model_matter_power(self):
+        """
+        Function to invoke the calculation of model matter power spectrum.
+        """
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         beta_m = self.f_growth
         self._auto_power_matter_model = self.cal_rsd_power(
@@ -325,6 +415,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
 
     def get_model_power_i(self, i):
+        """
+        Function to invoke the calculation of model tracer power spectrum of tracer i.
+        """
         if getattr(self, "tracer_bias_" + str(i)) is None:
             return None
         B_beam = self.beam_attenuation()
@@ -352,6 +445,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
 
     def get_model_power_cross(self):
+        """
+        Function to invoke the calculation the cross-correlation power spectrum between
+        the tracers.
+        """
         if getattr(self, "tracer_bias_" + str(2)) is None:
             return None
         B_beam = self.beam_attenuation()
@@ -493,6 +590,9 @@ class FieldPowerSpectrum(Specification):
 
     @property
     def x_vec(self):
+        """
+        The position vector along each side of the box
+        """
         return get_x_vector(
             self.box_ndim,
             self.box_resol,
@@ -500,10 +600,16 @@ class FieldPowerSpectrum(Specification):
 
     @property
     def x_mode(self):
+        """
+        The mode of the 3D position vector for each grid point.
+        """
         return get_vec_mode(self.x_vec)
 
     @property
     def k_vec(self):
+        """
+        The wavenumber vector along each side of the Fourier box.
+        """
         return get_k_vector(
             self.box_ndim,
             self.box_resol,
@@ -511,22 +617,37 @@ class FieldPowerSpectrum(Specification):
 
     @property
     def k_perp(self):
+        """
+        The transverse wavenumber for each grid in the Fourier box.
+        """
         return get_vec_mode(self.k_vec[:-1])
 
     @property
     def k_para(self):
+        """
+        The radial wavenumber of each grid in the Fourier box.
+        """
         return self.k_vec[-1]
 
     @property
     def k_mode(self):
+        """
+        The mode of the k-vector for each grid in the Fourier box.
+        """
         return get_vec_mode(self.k_vec)
 
     @property
     def field_1(self):
+        """
+        The gridded overdensity field in the regular grid box for tracer 1.
+        """
         return self._field_1
 
     @property
     def field_2(self):
+        """
+        The gridded overdensity field in the regular grid box for tracer 2.
+        """
         return self._field_2
 
     @field_1.setter
@@ -602,11 +723,17 @@ class FieldPowerSpectrum(Specification):
     @property
     @tagging("box", "field_1")
     def fourier_field_1(self):
+        """
+        The Fourier overdensity field of tracer 1.
+        """
         if self._fourier_field_1 is None:
             self.get_fourier_field_1()
         return self._fourier_field_1
 
     def get_fourier_field_1(self):
+        """
+        Function to invoke the calculation of ``fourier_field_1``.
+        """
         result = get_fourier_density(
             self.field_1,
             weights=self.weights_1,
@@ -618,11 +745,17 @@ class FieldPowerSpectrum(Specification):
     @property
     @tagging("box", "field_2")
     def fourier_field_2(self):
+        """
+        The Fourier overdensity field of tracer 2.
+        """
         if self._fourier_field_2 is None:
             self.get_fourier_field_2()
         return self._fourier_field_2
 
     def get_fourier_field_2(self):
+        """
+        Function to invoke the calculation of ``fourier_field_2``.
+        """
         if self.field_2 is None:
             return None
         result = get_fourier_density(
@@ -636,6 +769,9 @@ class FieldPowerSpectrum(Specification):
     # the calculation of this is not heavy, simply on the fly
     @property
     def auto_power_3d_1(self):
+        """
+        The 3D power spectrum at Fourier grid level for tracer 1.
+        """
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,
@@ -657,6 +793,9 @@ class FieldPowerSpectrum(Specification):
 
     @property
     def auto_power_3d_2(self):
+        """
+        The 3D power spectrum at Fourier grid level for tracer 2.
+        """
         if self.field_2 is None:
             return None
         power_spectrum = get_power_spectrum(
@@ -674,6 +813,9 @@ class FieldPowerSpectrum(Specification):
 
     @property
     def cross_power_3d(self):
+        """
+        The 3D power spectrum at Fourier grid level for cross-correlating tracer 1 and 2.
+        """
         if self.field_2 is None:
             return None
         weights_2 = self.weights_2
@@ -788,6 +930,9 @@ def get_shot_noise(
     box_len,
     weights=None,
 ):
+    """
+    Legacy code. Don't use.
+    """
     box_len = np.array(box_len)
     box_volume = np.prod(box_len)
     if weights is None:
@@ -855,6 +1000,10 @@ def get_power_spectrum(
     field_2=None,
     weights_2=None,
 ):
+    """
+    Cross-correlate two Fourier density fields to calculate the power spectrum,
+    and perform the weights renormalization.
+    """
     box_len = np.array(box_len)
     if field_2 is None:
         field_2 = fourier_field
@@ -874,6 +1023,9 @@ def get_gaussian_noise_floor(
     box_volume=1.0,
     counts=None,
 ):
+    """
+    Calculate the theoretical Gaussian noise floor.
+    """
     box_ndim = np.array(box_ndim)
     if counts is None:
         counts = np.ones(box_ndim.tolist())
@@ -963,6 +1115,9 @@ def bin_3d_to_cy(
     kperpedges,
     weights=None,
 ):
+    """
+    Bin a 3D distribution to cylindrical space.
+    """
     ps3d = np.array(ps3d)
     kperpedges = np.array(kperpedges)
     kperp_i = np.array(kperp_i).ravel()
@@ -1022,8 +1177,8 @@ def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
     The beam attenuation term to be multiplied to model power
     spectrum assuming a Gaussian beam.
 
-    Parameter
-    ---------
+    Parameters
+    ----------
     k_perp: float.
         The transverse k-scale in Mpc^-1
     beam_sigma_in_mpc: float.
@@ -1034,15 +1189,14 @@ def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
 
 def step_window_attenuation(k_dir, step_size_in_mpc):
     """
-    The beam attenuation term to be multiplied to model power
-    spectrum assuming a Gaussian beam.
+    The step function sampling effects on power spectrum.
 
-    Parameter
-    ---------
-    k_perp: float.
-        The transverse k-scale in Mpc^-1
-    beam_sigma_in_mpc: float.
-        The sigma of the Gaussian beam in Mpc.
+    Parameters
+    ----------
+    k_dir: float.
+        The k vector along one direction.
+    step_size_in_mpc: float.
+        The length of the step sampling window along the direction.
     """
     # note np.sinc is sin(pi x)/(pi x)
     return np.sinc(k_dir * step_size_in_mpc / np.pi / 2)
