@@ -33,6 +33,7 @@ from .util import (
     redshift_to_freq,
     random_sample_indx,
     find_ch_id,
+    mass_intflux_coeff,
 )
 from .plot import plot_map
 from .grid import (
@@ -837,6 +838,93 @@ def gen_random_gal_pos(
     return ra_g_mock, dec_g_mock, inside_range
 
 
+def hi_mass_to_flux_profile(
+    loghimass,
+    z_g,
+    nu,
+    tf_slope=None,
+    tf_zero=None,
+    cosmo=Planck18,
+    seed=None,
+    num_ch_ext_on_each_side=5,
+    internal_step=1001,
+    no_vel=True,
+):
+    rng = np.random.default_rng(seed=seed)
+    # internally allowing some extension so galaxies
+    # outside the frequency range can be accurately calculated
+    # so the tail of profile can be correctly distributed into the range
+    nu_ext = nu.copy()
+    for i in range(num_ch_ext_on_each_side * 2):
+        nu_ext = center_to_edges(nu_ext)
+    num_g = loghimass.size
+    lumi_dist_g = cosmo.luminosity_distance(z_g).to("Mpc").value
+    # in Jy Hz
+    hiintflux_g = 10**loghimass / mass_intflux_coeff / lumi_dist_g**2
+    freq_resol = np.diff(nu).mean()
+    # no velocity, just one channel
+    if no_vel:
+        hifluxd_ch = hiintflux_g / freq_resol
+        return hifluxd_ch[None, :]
+    # get w_50
+    hivel_g = tully_fisher(10**loghimass / 1.4, tf_slope, tf_zero, inv=True)
+    incli_g = np.abs(np.sin(rng.uniform(0, 2 * np.pi, size=num_g)))
+    # get width
+    hiwidth_g = incli_g * hivel_g
+    # in km/s/freq
+    dvdf = (constants.c / nu).to("km/s").value.mean()
+    vel_resol = dvdf * np.diff(nu).mean()
+    # get the number of channels needed to plot the profile
+    num_ch_vel = (int(hiwidth_g.max() / vel_resol)) // 2 + 2
+    # in terms of frequency offset
+    freq_ch_arr = np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1) * freq_resol
+    # busy function parameters
+    busy_c = 10 ** (rng.uniform(-3, -2, size=num_g))
+    busy_b = 10 ** (rng.uniform(-2, 0, size=num_g))
+    # fine resolution velocity offset points for calculating the profile
+    vel_int_arr = np.linspace(-hiwidth_g.max(), hiwidth_g.max(), num=internal_step)
+    hiprofile_g = busy_function_simple(
+        vel_int_arr[:, None],
+        1,
+        busy_b,
+        (busy_c / hiwidth_g)[None, :] * 2,
+        hiwidth_g[None, :] / 2,
+    )
+    # the sum over profile should give the integrated flux
+    hiprofile_g = (
+        hiprofile_g / (np.sum(hiprofile_g, axis=0))[None, :] * hiintflux_g[None, :]
+    )
+    gal_freq = redshift_to_freq(z_g)
+    gal_which_ch = find_ch_id(gal_freq, nu_ext)
+    # the fine resolution point in Hz
+    freq_int_arr = (
+        vel_int_arr[None, :] * gal_freq[:, None] / constants.c.to("km/s").value
+    )
+    hicumflux_g = np.cumsum(hiprofile_g, axis=0)
+    # central freq of a galaxy relative to the frequency channel
+    freq_start_pos = np.zeros_like(gal_freq)
+    inrange_sel = gal_which_ch < nu_ext.size
+    freq_start_pos[inrange_sel] = (
+        nu_ext[gal_which_ch[inrange_sel]] - gal_freq[inrange_sel] - freq_resol / 2
+    )
+    freq_gal_arr = freq_ch_arr[:, None] - freq_start_pos[None, :]
+    freq_indx = np.argmin(
+        np.abs(freq_gal_arr[:, :, None] - freq_int_arr[None, :, :]).reshape(
+            (-1, freq_int_arr.shape[-1])
+        ),
+        axis=1,
+    )
+    freq_indx = freq_indx.reshape(freq_gal_arr.shape)
+    hifluxd_ch = np.zeros(freq_indx.shape)
+    for i in range(num_g):
+        hifluxd_ch[:, i] = hicumflux_g[:, i][freq_indx[:, i]]
+    hifluxd_ch = np.diff(hifluxd_ch, axis=0)
+    hifluxd_ch = np.concatenate((np.zeros(num_g)[None, :], hifluxd_ch), axis=0)
+    # from Jy Hz to Jy
+    hifluxd_ch /= freq_resol
+    return hifluxd_ch
+
+
 def generate_hi_flux(
     nu,
     ra_g_mock,
@@ -1025,6 +1113,7 @@ def flux_to_sky_map(
         # throw away edge bits
         indx_z[indx_z < 0] = 0
         indx_z[indx_z >= sky_map.shape[-1]] = sky_map.shape[-1] - 1
+        # this is wrong actually, if multiple galaxies are in one indx
         if fast_ang_pos:
             sky_map[indx_1_g, indx_2_g, indx_z] += sourceflux_ch[i]
         else:

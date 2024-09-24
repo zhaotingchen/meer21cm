@@ -16,6 +16,21 @@ from numpy.random import default_rng
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
+# for HI galaxy
+nhi_per_jyhzdl2 = 16 * np.pi / 3 / constants.h / (f_21 * units.Hz) / A_10
+nhi_per_jyhzdl2 = nhi_per_jyhzdl2.to("Mpc-2 Jy-1 Hz-1")
+# correct coeff for eq 45 in 1705.04210
+mass_intflux_coeff = (
+    (
+        nhi_per_jyhzdl2
+        * (constants.m_e + constants.m_p)
+        * units.Mpc**2
+        * units.Jy
+        * units.Hz
+    )
+    .to("Msun")
+    .value
+)
 
 
 def random_sample_indx(tot_len, num_sub_sample, seed=None):

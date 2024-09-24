@@ -7,6 +7,7 @@ from meer21cm.mock import (
     run_lognormal_mock,
     gen_clustering_gal_pos,
     MockSimulation,
+    hi_mass_to_flux_profile,
 )
 from meer21cm.util import hod_obuljen18
 from astropy.cosmology import Planck18, WMAP1
@@ -162,6 +163,73 @@ def test_tracer_position():
     mock.target_relative_to_num_g = 0.1
     with pytest.warns(UserWarning):
         mock.propagate_mock_tracer_to_gal_cat()
+
+
+def test_hi_mass_to_flux():
+    raminMK, ramaxMK = 334, 357
+    decminMK, decmaxMK = -35, -26.5
+    ra_range_MK = (raminMK, ramaxMK)
+    dec_range_MK = (decminMK, decmaxMK)
+    num_g = 10000
+    mock = MockSimulation(
+        ra_range=ra_range_MK,
+        dec_range=dec_range_MK,
+        tracer_bias_1=1.5,
+        tracer_bias_2=1.9,
+        num_discrete_source=num_g,
+        target_relative_to_num_g=1.1,
+    )
+    mock.propagate_mock_tracer_to_gal_cat()
+    # some random galaxies
+    himass_g = np.random.uniform(9, 11, mock.z_mock_tracer.size)
+    hifluxd_ch = hi_mass_to_flux_profile(
+        himass_g,
+        mock.z_mock_tracer,
+        mock.nu,
+        cosmo=mock.cosmo,
+        seed=mock.seed,
+    )
+    # approximate from 1705.04210
+    approx_mass = (
+        hifluxd_ch.sum(0)
+        * mock.freq_resol
+        * mock.luminosity_distance(mock.z_mock_tracer).value ** 2
+        * 49.7
+    )
+    ratio = approx_mass / 10**himass_g
+    # scaling should be exact
+    assert np.allclose(ratio.std(), 0)
+    # mean is about 1
+    assert np.abs(1 - ratio.mean()) < 5e-2
+    # now with velocity
+    hifluxd_ch = hi_mass_to_flux_profile(
+        himass_g,
+        mock.z_mock_tracer,
+        mock.nu,
+        cosmo=mock.cosmo,
+        seed=mock.seed,
+        tf_slope=3.66,
+        tf_zero=1.6,
+        no_vel=False,
+    )
+    # approximate from 1705.04210
+    approx_mass = (
+        hifluxd_ch.sum(0)
+        * mock.freq_resol
+        * mock.luminosity_distance(mock.z_mock_tracer).value ** 2
+        * 49.7
+    )
+    ratio = approx_mass / 10**himass_g
+    # scaling should be exact
+    assert np.allclose(ratio.std(), 0)
+    # mean is about 1
+    assert np.abs(1 - ratio.mean()) < 5e-2
+    # with enough galaxy should be symmetric
+    average_profile = hifluxd_ch.mean(-1)
+    # mid point should be peak
+    assert np.argmax(average_profile) == average_profile.size // 2
+    # symmetric
+    assert np.max(np.abs(average_profile[::-1] - average_profile)) < 1e-5
 
 
 def test_auto_mmin(test_wproj, test_nu, test_W, test_GAMA_range):
