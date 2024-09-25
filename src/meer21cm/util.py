@@ -12,6 +12,7 @@ from powerbox import PowerBox
 from scipy.special import erf
 from scipy.interpolate import interp1d
 from numpy.random import default_rng
+from halomod.hod import HODBulk
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
@@ -889,3 +890,27 @@ def tully_fisher(xarr, slope, zero_point, inv=False):
     else:
         out = 10 ** (slope * np.log10(xarr) + zero_point)
     return out
+
+
+class Obuljen18(HODBulk):
+    """
+    A :class:`halomod.hod.HODBulk` object for the HI-halo mass relation
+    reported in Obuljen et al. (2018) [1].
+    """
+
+    _defaults = {
+        "m0h": 9.52,
+        "mminh": 11.27,
+        "alpha": 0.44,
+        "M_min": 9.0,
+    }
+
+    def _satellite_occupation(self, m):
+        m0h = self.params["m0h"]
+        mminh = self.params["mminh"]
+        alpha = self.params["alpha"]
+        himass = 10 ** (m0h) * (m / 10**mminh) ** alpha * np.exp(-(10**mminh) / m)
+        return himass
+
+    def sigma_satellite(self, m):
+        return np.zeros_like(m)

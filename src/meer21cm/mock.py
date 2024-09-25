@@ -850,6 +850,59 @@ def hi_mass_to_flux_profile(
     internal_step=1001,
     no_vel=True,
 ):
+    r"""
+    Convert HI mass to emission line profile.
+
+    The relation between mass and flux (flux density integrated) of a HI source can be written as [1]
+
+    .. math::
+        M_{\rm HI} = \frac{16\pi m_H}{3 h f_{21} A_{10}}\, D_L^2\, S,
+
+    where :math:`M_{\rm HI}` is the HI mass, :math:`m_H` is the mass of neutral hydrogen atom,
+    :math:`h` is the Planck constant, :math:`f_{21}` is the rest frequency of 21cm line,
+    :math:`A_{10}` is the spontaneous emission rate of 21cm line,
+    :math:`D_L` is the luminosity distance of the source, and
+    :math:`S` is the flux.
+
+    If ``no_vel`` is set to ``False``, the w50 parameters of the HI sources are calculated using
+    a Tully-Fisher relation. Random inclinations and busy function parameters are assigned to the sources.
+    The busy functions are then used as the emission profiles. The profiles are gridded into frequency channels.
+    The gridded profile, ``hifluxd_ch`` has the shape of (ch_offset,num_source), with the zeroth axis corresponding
+    to the channel offset, and varies from (-N,-N+1,...,0,...,N-1,N).
+
+    Parameters
+    ----------
+    loghimass: array
+        The HI mass of sources in log10 solmar mass (**no h**).
+    z_g: array
+        The redshifts of the sources
+    nu: array
+        The frequency channels in Hz.
+    tf_slope: float, default None.
+        The slope of the T-F relation. See :func:`meer21cm.util.tully_fisher`.
+    tf_zero: float, default None.
+        The intercept of the T-F relation. See :func:`meer21cm.util.tully_fisher`.
+    cosmo: optional, default Planck18.
+        The cosmology used.
+    seed: optional, default None.
+        The seed number for rng.
+    num_ch_ext_on_each_side: optional, default 5.
+        Internal parameter, no need to change.
+    internal_step: optional, default 1001.
+        Internal parameter, decrease for less accuracy.
+        Can be lower when velocity resolution is low.
+    no_vel: optional, default True.
+        If True, source will have no emission line profile and just a delta peak.
+
+    Returns
+    -------
+    hifluxd_ch: array
+        The flux density of each source in Jy.
+
+    References
+    ----------
+    .. [1] Meyer et al., "Tracing HI Beyond the Local Universe", https://arxiv.org/abs/1705.04210
+    """
     rng = np.random.default_rng(seed=seed)
     # internally allowing some extension so galaxies
     # outside the frequency range can be accurately calculated

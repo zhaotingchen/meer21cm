@@ -4,6 +4,7 @@ from astropy.cosmology import Planck18, WMAP1
 from meer21cm.util import *
 import sys
 from scipy.special import erf
+from halomod import TracerHaloModel
 
 
 def test_tagging():
@@ -273,3 +274,10 @@ def test_random_sample_indx():
     sub_num = 200
     sub_indx = np.sort(random_sample_indx(tot_num, sub_num))
     assert np.allclose(sub_indx, np.unique(sub_indx))
+
+
+def test_Obuljen18():
+    hm = TracerHaloModel(hod_model=Obuljen18)
+    assert np.allclose(
+        hod_obuljen18(10, output_has_h=True), hm.hod.total_occupation(1e10)
+    )
