@@ -34,6 +34,7 @@ from .util import (
     random_sample_indx,
     find_ch_id,
     mass_intflux_coeff,
+    Obuljen18,
 )
 from .plot import plot_map
 from .grid import (
@@ -331,6 +332,212 @@ class MockSimulation(PowerSpectrum):
         self._ra_gal = ra[inside_range]
         self._dec_gal = dec[inside_range]
         self._z_gal = z[inside_range]
+
+
+class HIGalaxySimulation(MockSimulation):
+    def __init__(
+        self,
+        no_vel=True,
+        tf_slope=None,
+        tf_zero=None,
+        halo_model=None,
+        hi_mass_from="hod",
+        himf_pars=None,
+        **params,
+    ):
+        super().__init__(**params)
+        # has to have tracer 2 for sim
+        if self.tracer_bias_2 is None:
+            self.tracer_bias_2 = 1.0
+        self.no_vel = no_vel
+        self.tf_slope = tf_slope
+        self.tf_zero = tf_zero
+        if halo_model is None:
+            halo_model = THM(
+                cosmo_model=self.cosmo,
+                z=self.z,
+                hod_model=Obuljen18,
+            )
+        self.halo_model = halo_model
+        self.hi_mass_from = hi_mass_from.lower()
+        if himf_pars is None:
+            himf_pars = himf_pars_jones18(self.h / 0.7)
+        self.himf_pars = himf_pars
+        init_attr = [
+            "_halo_mass_mock_tracer",
+            "_hi_mass_mock_tracer",
+            "_hi_profile_mock_tracer",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def hi_mass_from(self):
+        """
+        Methods for calculating HI mass.
+        Can either be 'hod' or 'himf'.
+        """
+        return self._hi_mass_from
+
+    @hi_mass_from.setter
+    def hi_mass_from(self, value):
+        self._hi_mass_from = value
+        if "himass_dep_attr" in dir(self):
+            self.clean_cache(self.himass_dep_attr)
+
+    @property
+    def no_vel(self):
+        """
+        If True, HI sources will have no velocity width.
+        """
+        return self._no_vel
+
+    @no_vel.setter
+    def no_vel(self, value):
+        self._no_vel = value
+        if "hivel_dep_attr" in dir(self):
+            self.clean_cache(self.hivel_dep_attr)
+
+    @property
+    def tf_slope(self):
+        """
+        Slope of Tully-Fisher relation.
+        See :func:`meer21cm.util.tully_fisher`.
+        """
+        return self._tf_slope
+
+    @tf_slope.setter
+    def tf_slope(self, value):
+        self._tf_slope = value
+        if "hivel_dep_attr" in dir(self):
+            self.clean_cache(self.hivel_dep_attr)
+
+    @property
+    def tf_zero(self):
+        """
+        The intercept of the T-F relation. See :func:`meer21cm.util.tully_fisher`.
+        """
+        return self._tf_zero
+
+    @tf_zero.setter
+    def tf_zero(self, value):
+        self._tf_zero = value
+        if "hivel_dep_attr" in dir(self):
+            self.clean_cache(self.hivel_dep_attr)
+
+    @property
+    def halo_model(self):
+        """
+        A :class:`halomod.TracerHaloModel` object for storing the halo model.
+        """
+        return self._halo_model
+
+    @halo_model.setter
+    def halo_model(self, value):
+        self._halo_model = value
+        if "hm_dep_attr" in dir(self):
+            self.clean_cache(self.hm_dep_attr)
+
+    @property
+    @tagging(
+        "hm", "cosmo", "nu", "mock", "box", "tracer_1", "tracer_2", "discrete", "rsd"
+    )
+    def halo_mass_mock_tracer(self):
+        """
+        The halo mass of the mock tracers in log10 M_sun/h.
+        """
+        if self._halo_mass_mock_tracer is None:
+            self.get_halo_mass_mock_tracer()
+        return self._halo_mass_mock_tracer
+
+    def get_halo_mass_mock_tracer(self):
+        # propagate mock catalogue to galaxy catalogue
+        self.propagate_mock_tracer_to_gal_cat()
+        num_g_tot_in_mockrange = self.ra_gal.size
+        num_g_tot_in_map = self.ra_mock_tracer.size
+        hm = self.halo_model
+        dlog10m = hm.dlog10m
+        m_arr_inv = hm.m[::-1]
+        # in (Mpc/h)^-3
+        n_halo = np.cumsum((hm.dndlog10m * dlog10m)[::-1])
+        # in Mpc^-3
+        n_halo *= self.h**3
+        dV_pix = self.pix_resol_in_mpc**2 * self.los_resol_in_mpc
+        m_indx_mock = np.where(
+            (n_halo * dV_pix * self.W_HI.sum()) < num_g_tot_in_mockrange
+        )[0].max()
+        logm_halo_min = np.log10(m_arr_inv)[m_indx_mock]
+        dndlog10_fnc = interp1d(np.log10(hm.m), hm.dndlog10m)
+        self._halo_mass_mock_tracer = sample_from_dist(
+            dndlog10_fnc,
+            logm_halo_min,
+            np.log10(hm.m.max()),
+            size=num_g_tot_in_map,
+            seed=self.seed,
+        )
+
+    @property
+    @tagging(
+        "hm",
+        "cosmo",
+        "nu",
+        "mock",
+        "box",
+        "tracer_1",
+        "tracer_2",
+        "discrete",
+        "rsd",
+        "himass",
+    )
+    def hi_mass_mock_tracer(self):
+        """
+        The HI mass of the mock tracers in log10 M_sun.
+        """
+        if self._hi_mass_mock_tracer is None:
+            getattr(self, "get_hi_mass_mock_tracer" + "_" + self.hi_mass_from)()
+        return self._hi_mass_mock_tracer
+
+    def get_hi_mass_mock_tracer_hod(self):
+        himass_g = (
+            self.halo_model.hod.total_occupation(10**self.halo_mass_mock_tracer)
+            / self.h
+        )  # no h
+        self._hi_mass_mock_tracer = np.log10(himass_g)
+
+    @property
+    @tagging(
+        "hm",
+        "cosmo",
+        "nu",
+        "mock",
+        "box",
+        "tracer_1",
+        "tracer_2",
+        "discrete",
+        "rsd",
+        "himass",
+        "hivel",
+    )
+    def hi_profile_mock_tracer(self):
+        """
+        The emission line profiles of the mock tracers in Jansky
+        """
+        if self._hi_profile_mock_tracer is None:
+            self.get_hi_profile_mock_tracer()
+        return self._hi_profile_mock_tracer
+
+    def get_hi_profile_mock_tracer(self):
+        hifluxd_ch = hi_mass_to_flux_profile(
+            self.hi_mass_mock_tracer,
+            self.z_mock_tracer,
+            self.nu,
+            self.tf_slope,
+            self.tf_zero,
+            cosmo=self.cosmo,
+            seed=self.seed,
+            no_vel=self.no_vel,
+        )
+        self._hi_profile_mock_tracer = hifluxd_ch
 
 
 class HISimulation:
