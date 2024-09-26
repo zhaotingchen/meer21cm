@@ -8,6 +8,18 @@ from meer21cm.util import freq_to_redshift, center_to_edges, f_21
 from meer21cm.telescope import dish_beam_sigma
 
 
+def test_volume():
+    spec = Specification()
+    diff = np.abs(
+        spec.pix_resol_in_mpc**2
+        * spec.los_resol_in_mpc
+        * spec.W_HI.sum()
+        / spec.survey_volume
+        - 1
+    )
+    assert diff < 1e-2
+
+
 def test_cosmo():
     spec = Specification()
     assert spec.h == Planck18.h

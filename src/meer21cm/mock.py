@@ -343,6 +343,7 @@ class HIGalaxySimulation(MockSimulation):
         halo_model=None,
         hi_mass_from="hod",
         himf_pars=None,
+        num_ch_ext_on_each_side=5,
         **params,
     ):
         super().__init__(**params)
@@ -363,6 +364,7 @@ class HIGalaxySimulation(MockSimulation):
         if himf_pars is None:
             himf_pars = himf_pars_jones18(self.h / 0.7)
         self.himf_pars = himf_pars
+        self.num_ch_ext_on_each_side = num_ch_ext_on_each_side
         init_attr = [
             "_halo_mass_mock_tracer",
             "_hi_mass_mock_tracer",
@@ -536,6 +538,7 @@ class HIGalaxySimulation(MockSimulation):
             cosmo=self.cosmo,
             seed=self.seed,
             no_vel=self.no_vel,
+            num_ch_ext_on_each_side=self.num_ch_ext_on_each_side,
         )
         self._hi_profile_mock_tracer = hifluxd_ch
 

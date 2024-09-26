@@ -243,10 +243,13 @@ def test_HIGalaxySimulation():
         ra_range=ra_range_MK,
         dec_range=dec_range_MK,
         tracer_bias_1=1.5,
-        tracer_bias_2=1.9,
+        # tracer_bias_2=1.9,
         num_discrete_source=num_g,
         target_relative_to_num_g=1.1,
     )
+    # test initialization
+    assert hisim.tracer_bias_2 == 1.0
+    hisim.tracer_bias_2 = 1.9
     hifluxd_ch = hisim.hi_profile_mock_tracer
     approx_mass = (
         hifluxd_ch.sum(0)
