@@ -793,11 +793,13 @@ def get_shot_noise(
     if weights is None:
         weights = np.ones(real_field.shape)
     weights = np.array(weights)
+    weights_renorm = power_weights_renorm(weights)
     shot_noise = (
         box_volume
         * np.sum((weights * real_field) ** 2)
         / np.sum(weights * real_field) ** 2
-        * (np.sum(weights) / weights.size) ** 2
+        * weights_renorm
+        * np.mean(weights) ** 2
     )
     return shot_noise
 
