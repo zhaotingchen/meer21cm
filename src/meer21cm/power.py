@@ -1087,6 +1087,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         compensate=True,
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
+        grid_scheme="nnb",
         **params,
     ):
         if field_1 is None:
@@ -1157,6 +1158,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.taper_func = taper_func
         if field_from_mapdata:
             self.get_enclosing_box()
+        self.grid_scheme = grid_scheme
 
     @property
     def downres_factor_transverse(self):
@@ -1341,6 +1343,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
+            window=self.grid_scheme,
             particle_value=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
             compensate=self.compensate,
@@ -1382,6 +1385,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_pos_in_box,
             self.box_len,
             self.box_ndim,
+            window=self.grid_scheme,
             compensate=self.compensate,
             average=False,
         )
@@ -1390,6 +1394,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
+            window=self.grid_scheme,
             particle_value=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
             compensate=self.compensate,
@@ -1439,3 +1444,17 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
         map_bin *= self.W_HI
         return map_bin
+
+    # def gen_random_poisson_galaxy(self,num_g_rand=None,seed=None):
+    #    if seed is None:
+    #        seed = self.seed
+    #    if num_g_rand is None:
+    #        num_g_rand = self.ra_gal.size
+    #    rng = np.random.default_rng(seed=seed)
+    #    ra_rand = self.ra_map[self.W_HI[:,:,0]]
+    #    dec_rand = self.dec_map[self.W_HI[:,:,0]]
+    #    ra_rand = rng.choice(ra_rand,size=num_g_rand,replace=True)
+    #    dec_rand = rng.choice(dec_rand,size=num_g_rand,replace=True)
+    #    ra_rand += rng.uniform(-self.pix_resol/2, self.pix_resol/2,size=num_g_rand)
+    #    dec_rand += rng.uniform(-self.pix_resol/2, self.pix_resol/2,size=num_g_rand)
+    #    z_rand = rng.uniform(self.z_ch.min(),self.z_ch.max(),size=num_g_rand)
