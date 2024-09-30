@@ -1364,13 +1364,19 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.include_sampling = include_sampling
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
-    def grid_gal_to_field(self):
+    def grid_gal_to_field(self, radecfreq=None):
         if self.box_origin[0] is None:
             self.get_enclosing_box()
+        if radecfreq is None:
+            ra_gal = self.ra_gal
+            dec_gal = self.dec_gal
+            freq_gal = self.freq_gal
+        else:
+            ra_gal, dec_gal, freq_gal = radecfreq
         (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
-            self.ra_gal,
-            self.dec_gal,
-            self.freq_gal,
+            ra_gal,
+            dec_gal,
+            freq_gal,
             cosmo=self.cosmo,
             return_coord=True,
             tile=False,
@@ -1445,16 +1451,17 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         map_bin *= self.W_HI
         return map_bin
 
-    # def gen_random_poisson_galaxy(self,num_g_rand=None,seed=None):
-    #    if seed is None:
-    #        seed = self.seed
-    #    if num_g_rand is None:
-    #        num_g_rand = self.ra_gal.size
-    #    rng = np.random.default_rng(seed=seed)
-    #    ra_rand = self.ra_map[self.W_HI[:,:,0]]
-    #    dec_rand = self.dec_map[self.W_HI[:,:,0]]
-    #    ra_rand = rng.choice(ra_rand,size=num_g_rand,replace=True)
-    #    dec_rand = rng.choice(dec_rand,size=num_g_rand,replace=True)
-    #    ra_rand += rng.uniform(-self.pix_resol/2, self.pix_resol/2,size=num_g_rand)
-    #    dec_rand += rng.uniform(-self.pix_resol/2, self.pix_resol/2,size=num_g_rand)
-    #    z_rand = rng.uniform(self.z_ch.min(),self.z_ch.max(),size=num_g_rand)
+    def gen_random_poisson_galaxy(self, num_g_rand=None, seed=None):
+        if num_g_rand is None:
+            num_g_rand = self.ra_gal.size
+        rng = np.random.default_rng(seed=seed)
+        ra_rand = self.ra_map[self.W_HI[:, :, 0]]
+        dec_rand = self.dec_map[self.W_HI[:, :, 0]]
+        ra_rand = rng.choice(ra_rand, size=num_g_rand, replace=True)
+        dec_rand = rng.choice(dec_rand, size=num_g_rand, replace=True)
+        ra_rand += rng.uniform(-self.pix_resol / 2, self.pix_resol / 2, size=num_g_rand)
+        dec_rand += rng.uniform(
+            -self.pix_resol / 2, self.pix_resol / 2, size=num_g_rand
+        )
+        z_rand = rng.uniform(self.z_ch.min(), self.z_ch.max(), size=num_g_rand)
+        return ra_rand, dec_rand, redshift_to_freq(z_rand)
