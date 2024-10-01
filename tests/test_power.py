@@ -173,7 +173,7 @@ def test_FieldPowerSpectrum():
 def test_get_shot_noise():
     # test poisson galaxies
     delta_x = np.zeros(100**3)
-    num_g = 1000
+    num_g = 10000
     rand_choice = np.random.choice(np.arange(100**3), num_g, replace=False)
     delta_x[rand_choice] += 1.0
     delta_x = delta_x.reshape((100, 100, 100))
@@ -184,6 +184,15 @@ def test_get_shot_noise():
     )
     power_sn = 1e6 / num_g
     assert power == power_sn
+    # give weights
+    weights = np.random.uniform(0, 1, size=delta_x.shape)
+    power = get_shot_noise(
+        delta_x,
+        box_len,
+        weights=weights,
+    )
+    # accuracy depends of num_g
+    assert np.abs(power - power_sn) / power_sn < 2e-2
 
 
 def test_raise_error():
@@ -818,3 +827,40 @@ def test_rot_back():
     assert np.allclose(z_test[0], ps.z_ch)
     assert np.allclose(ps.ra_map.ravel(), ra_test[:, 0])
     assert np.allclose(ps.dec_map.ravel(), dec_test[:, 0])
+
+
+def test_poisson_gal_gen():
+    raminMK, ramaxMK = 334, 357
+    decminMK, decmaxMK = -35, -26.5
+    ra_range = (raminMK, ramaxMK)
+    dec_range = (decminMK, decmaxMK)
+    ps = PowerSpectrum(
+        ra_range=ra_range,
+        dec_range=dec_range,
+        omegahi=5.4e-4,
+        mean_amp_1="average_hi_temp",
+        tracer_bias_1=1.5,
+        tracer_bias_2=1.9,
+        # seed=42,
+        kmax=10.0,
+    )
+    ps._ra_gal = np.ones(40000)
+    ps._dec_gal = np.ones(40000)
+    ps._z_gal = np.ones(40000)
+    radecfreq = ps.gen_random_poisson_galaxy()
+    ps.compensate = False
+    ps.grid_gal_to_field(radecfreq)
+    volume = (
+        (ps.W_HI[:, :, 0].sum() * ps.pixel_area * (np.pi / 180) ** 2)
+        / 3
+        * (
+            ps.comoving_distance(ps.z_ch.max()) ** 3
+            - ps.comoving_distance(ps.z_ch.min()) ** 3
+        ).value
+    )
+    k1dedges = np.geomspace(0.05, 1, 21)
+    ps.k1dbins = k1dedges
+    psn = volume / ps.ra_gal.size
+    psn1d, _, _ = ps.get_1d_power("auto_power_3d_2")
+    plateau = psn1d[-5:].mean()
+    assert np.abs(plateau - psn) / psn < 2e-1
