@@ -1084,7 +1084,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         downres_factor_radial=2.0,
         field_from_mapdata=False,
         box_buffkick=5,
-        compensate=True,
+        compensate=[True, True],
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
         grid_scheme="nnb",
@@ -1159,6 +1159,20 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if field_from_mapdata:
             self.get_enclosing_box()
         self.grid_scheme = grid_scheme
+
+    @property
+    def compensate(self):
+        """
+        Whether the gridded fields are compensated
+        according to the mass assignment scheme.
+        """
+        return self._compensate
+
+    @compensate.setter
+    def compensate(self, value):
+        if isinstance(value, bool):
+            value = (value, value)
+        self._compensate = value
 
     @property
     def downres_factor_transverse(self):
@@ -1346,7 +1360,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             window=self.grid_scheme,
             particle_value=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
-            compensate=self.compensate,
+            compensate=self.compensate[0],
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
@@ -1392,7 +1406,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.box_len,
             self.box_ndim,
             window=self.grid_scheme,
-            compensate=self.compensate,
+            compensate=self.compensate[1],
             average=False,
         )
         # get which pixels in the rg box are not covered by the lightcone
@@ -1403,7 +1417,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             window=self.grid_scheme,
             particle_value=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
-            compensate=self.compensate,
+            compensate=self.compensate[0],
         )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
