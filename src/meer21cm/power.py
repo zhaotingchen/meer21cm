@@ -510,6 +510,10 @@ class FieldPowerSpectrum(Specification):
         )
 
     @property
+    def k_nyquist(self):
+        return np.pi / self.box_resol
+
+    @property
     def k_perp(self):
         return get_vec_mode(self.k_vec[:-1])
 

@@ -7,6 +7,21 @@ from meer21cm import PowerSpectrum, Specification
 from meer21cm.util import center_to_edges, f_21
 
 
+def test_nyquist_k():
+    box_len = np.array([100, 200, 60])
+    box_dim = np.array([10, 20, 6])
+    delta_x = np.zeros(box_dim)
+    ps = FieldPowerSpectrum(
+        delta_x,
+        box_len,
+        remove_sn_1=True,
+        unitless_1=True,
+        mean_center_1=True,
+    )
+    k_1 = [np.abs(ps.k_vec[i]).max() for i in range(3)]
+    assert np.allclose(k_1, ps.k_nyquist)
+
+
 def test_get_x_vector():
     box_len = np.array([100, 200, 60])
     box_dim = np.array([10, 20, 6])
