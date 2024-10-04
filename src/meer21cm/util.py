@@ -691,16 +691,11 @@ def find_indx_for_subarr(subarr, arr):
         subarr: numpy array.
             The sub-array to search for. Elements can be repeated.
         arr: numpy array.
-            the slope of Tully-Fisher relation.
-        zero_point: float.
-            the intercept of Tully-Fisher relation
-        inv: bool, default False.
-            if True, calculate velocity based on input mass.
-
+            The larger array that contains all elements of subarr.
     Returns
     -------
-        out: float array.
-            The output mass if inv=False and velocity if inv=True.
+        indices: int array.
+            The position of the elements of subarr in arr.
     """
     assert np.unique(arr).size == arr.size, "the larger array must be unique"
     # Actually preform the operation...

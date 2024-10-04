@@ -1038,7 +1038,7 @@ def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
     return np.exp(-(k_perp**2) * beam_sigma_in_mpc**2 / 2)
 
 
-def step_window_attenuation(k_dir, step_size_in_mpc):
+def step_window_attenuation(k_dir, step_size_in_mpc, p=1):
     """
     The beam attenuation term to be multiplied to model power
     spectrum assuming a Gaussian beam.
@@ -1049,9 +1049,11 @@ def step_window_attenuation(k_dir, step_size_in_mpc):
         The transverse k-scale in Mpc^-1
     beam_sigma_in_mpc: float.
         The sigma of the Gaussian beam in Mpc.
+    p: int, default 1
+        The index of assignment scheme.
     """
     # note np.sinc is sin(pi x)/(pi x)
-    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2)
+    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** p
 
 
 class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
@@ -1248,17 +1250,18 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return power1d, k1deff, nmodes
 
     # calculate on-the-fly, no cache
-    def step_sampling(self):
+    def step_sampling(self, sampling_resol=None, p=1):
         if not self.has_resol:
             return 1.0
         k_x = self.k_vec[0][:, None, None]
         k_y = self.k_vec[1][None, :, None]
         k_para = self.k_mode * self.mumode
-        sampling_resol = self.sampling_resol
+        if sampling_resol is None:
+            sampling_resol = self.sampling_resol
         B_sampling = np.nan_to_num(
-            step_window_attenuation(k_x, sampling_resol[0])
-            * step_window_attenuation(k_y, sampling_resol[1])
-            * step_window_attenuation(k_para, sampling_resol[2])
+            step_window_attenuation(k_x, sampling_resol[0], p)
+            * step_window_attenuation(k_y, sampling_resol[1], p)
+            * step_window_attenuation(k_para, sampling_resol[2], p)
         )
         return B_sampling
 
