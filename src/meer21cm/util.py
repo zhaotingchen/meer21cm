@@ -18,6 +18,39 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
+def super_sample_array(arr_in, super_factor):
+    """
+    Super-sample an array along each direction by a factor
+
+    Parameters
+    ----------
+    arr_in: array.
+        The input array to sample from.
+
+    super_factor: list of int.
+        super sample factor along each axis.
+
+    Returns
+    -------
+    arr_out: array.
+        The super-sampled array.
+    """
+    if arr_in is None:
+        return None
+    assert len(arr_in.shape) == len(super_factor)
+    # maybe a faster approach is to use np.repeat
+    arr_shape_in = arr_in.shape
+    arr_shape_out = ()
+    slice_indx = ()
+    for i, dim in enumerate(arr_shape_in):
+        arr_shape_out += (dim, super_factor[i])
+        slice_indx += (slice(None), None)
+    arr_out = np.zeros(arr_shape_out)
+    arr_out += arr_in[slice_indx]
+    arr_out = arr_out.reshape(np.array(arr_shape_in) * super_factor)
+    return arr_out
+
+
 def random_sample_indx(tot_len, num_sub_sample, seed=None):
     """
     Generate a random sub-sample indices.

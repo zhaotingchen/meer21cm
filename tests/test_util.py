@@ -6,6 +6,16 @@ import sys
 from scipy.special import erf
 
 
+def test_super_sample_array():
+    arr_in = np.random.normal(size=[100, 50, 20])
+    super_factor = [3, 3, 3]
+    arr_out = super_sample_array(arr_in, super_factor)
+    assert np.allclose(arr_out[::3, ::3, ::3], arr_in)
+    assert np.allclose(arr_out[1::3, 1::3, 1::3], arr_in)
+    assert np.allclose(arr_out[2::3, 2::3, 2::3], arr_in)
+    assert super_sample_array(None, super_factor) is None
+
+
 def test_tagging():
     @tagging("test")
     def foo():
