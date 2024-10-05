@@ -6,6 +6,7 @@ from meer21cm.cosmology import CosmologyCalculator
 from meer21cm.grid import (
     minimum_enclosing_box_of_lightcone,
     project_particle_to_regular_grid,
+    interlace_two_fields,
 )
 from scipy.signal import windows
 from meer21cm.util import (
@@ -1094,6 +1095,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
         grid_scheme="nnb",
+        interlace_shift=0.0,
         **params,
     ):
         if field_1 is None:
@@ -1165,6 +1167,20 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if field_from_mapdata:
             self.get_enclosing_box()
         self.grid_scheme = grid_scheme
+        self.interlace_shift = interlace_shift
+
+    @property
+    def interlace_shift(self):
+        """
+        The length in the unit of grid cell size for
+        shifting the gridded field for interlacing.
+        0 corresponds to no interlacing.
+        """
+        return self._interlace_shift
+
+    @interlace_shift.setter
+    def interlace_shift(self, value):
+        self._interlace_shift = value
 
     @property
     def compensate(self):
@@ -1369,6 +1385,22 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             particle_weights=self.w_HI[self.W_HI].ravel(),
             compensate=self.compensate[0],
         )
+        hi_map_rg2, _, _ = project_particle_to_regular_grid(
+            self.pix_coor_in_box,
+            self.box_len,
+            self.box_ndim,
+            window=self.grid_scheme,
+            particle_value=self.data[self.W_HI].ravel(),
+            particle_weights=self.w_HI[self.W_HI].ravel(),
+            compensate=self.compensate[0],
+            shift=self.interlace_shift,
+        )
+        hi_map_rg = interlace_two_fields(
+            hi_map_rg,
+            hi_map_rg2,
+            self.interlace_shift,
+            self.box_resol,
+        )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
@@ -1415,6 +1447,21 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             window=self.grid_scheme,
             compensate=self.compensate[1],
             average=False,
+        )
+        (gal_map_rg2, _, _,) = project_particle_to_regular_grid(
+            gal_pos_in_box,
+            self.box_len,
+            self.box_ndim,
+            window=self.grid_scheme,
+            compensate=self.compensate[1],
+            average=False,
+            shift=self.interlace_shift,
+        )
+        gal_map_rg = interlace_two_fields(
+            gal_map_rg,
+            gal_map_rg2,
+            self.interlace_shift,
+            self.box_resol,
         )
         # get which pixels in the rg box are not covered by the lightcone
         _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(

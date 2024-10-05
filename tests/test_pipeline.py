@@ -274,7 +274,7 @@ def test_mock_tracer_grid():
         gal_map_rg, gal_weights_rg, pixel_counts_gal_rg = mock.grid_gal_to_field()
         _, _, pixel_counts_hi_rg = mock.grid_data_to_field()
         # test inrange exactly num_g
-        assert gal_map_rg.sum() == mock.num_discrete_source
+        assert np.allclose(gal_map_rg.sum(), mock.num_discrete_source)
         taper = mock.taper_func(mock.box_ndim[-1])
         mock.weights_2 = (pixel_counts_hi_rg > 0) * taper[None, None, :]
         shot_noise_g = (

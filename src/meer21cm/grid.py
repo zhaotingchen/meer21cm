@@ -290,11 +290,13 @@ def project_particle_to_regular_grid(
         particle_pos,
         mass=(particle_value * particle_weights).ravel(),
         resampler=window,
+        transform=shifted,
     )
     projected_weights = pm.paint(
         particle_pos,
         mass=particle_weights.ravel(),
         resampler=window,
+        transform=shifted,
     )
     if average:
         projected_map[projected_weights > 0] = (
@@ -339,6 +341,6 @@ def interlace_two_fields(
     c2 = real_field_2.r2c()
     for k, s1, s2 in zip(c1.slabs.x, c1.slabs, c2.slabs):
         kH = sum(k[i] * box_resol[i] for i in range(3))
-        s1[...] = s1[...] * 0.5 + s2[...] * 0.5 * np.exp(0.5 * 1j * kH)
+        s1[...] = s1[...] * 0.5 + s2[...] * 0.5 * np.exp(shift * 1j * kH)
     interlaced_field = c1.c2r()
     return interlaced_field
