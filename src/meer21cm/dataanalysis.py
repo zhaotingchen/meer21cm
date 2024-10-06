@@ -602,3 +602,18 @@ class Specification:
         xarr = self.comoving_distance(zarr).value
         func = interp1d(xarr, zarr, bounds_error=False, fill_value="extrapolate")
         return func
+
+    @property
+    def survey_volume(self):
+        """
+        Total survey volume in Mpc^3
+        """
+        volume = (
+            (self.W_HI[:, :, 0].sum() * self.pixel_area * (np.pi / 180) ** 2)
+            / 3
+            * (
+                self.comoving_distance(self.z_ch.max()) ** 3
+                - self.comoving_distance(self.z_ch.min()) ** 3
+            ).value
+        )
+        return volume
