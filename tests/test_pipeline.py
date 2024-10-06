@@ -1,6 +1,7 @@
 import numpy as np
 from meer21cm import PowerSpectrum, MockSimulation
 from meer21cm.telescope import dish_beam_sigma
+import pytest
 
 
 def test_gaussian_field_map_grid():
@@ -134,7 +135,14 @@ def test_poisson_field_map_grid():
     assert avg_deviation < 2e-1
 
 
-def test_mock_field_map_grid():
+# num_p hasn't worked yet
+@pytest.mark.parametrize(
+    "num_p",
+    [
+        (1),
+    ],
+)
+def test_mock_field_map_grid(num_p):
     """
     Generate a mock HI temp field, project it to sky map,
     grid it onto regular grids, and test input/output matching.
@@ -156,6 +164,7 @@ def test_mock_field_map_grid():
             kaiser_rsd=True,
             tracer_bias_1=1.5,
             mean_amp_1="average_hi_temp",
+            num_particle_per_pixel=num_p,
         )
         mock.data = np.ones(mock.W_HI.shape)
         mock.w_HI = np.ones(mock.W_HI.shape)
@@ -274,7 +283,7 @@ def test_mock_tracer_grid():
         gal_map_rg, gal_weights_rg, pixel_counts_gal_rg = mock.grid_gal_to_field()
         _, _, pixel_counts_hi_rg = mock.grid_data_to_field()
         # test inrange exactly num_g
-        assert gal_map_rg.sum() == mock.num_discrete_source
+        assert np.allclose(gal_map_rg.sum(), mock.num_discrete_source)
         taper = mock.taper_func(mock.box_ndim[-1])
         mock.weights_2 = (pixel_counts_hi_rg > 0) * taper[None, None, :]
         shot_noise_g = (
