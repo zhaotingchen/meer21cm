@@ -55,7 +55,6 @@ class MockSimulation(PowerSpectrum):
         density="poisson",
         relative_resol_to_pix=0.5,
         target_relative_to_num_g=1.5,
-        seed=None,
         num_discrete_source=100,
         discrete_base_field=2,
         **params,
@@ -63,9 +62,6 @@ class MockSimulation(PowerSpectrum):
         super().__init__(**params)
         self.density = density.lower()
         self.relative_resol_to_pix = relative_resol_to_pix
-        if seed is None:
-            seed = np.random.randint(0, 2**32)
-        self.seed = seed
         init_attr = [
             "_x_start",
             "_y_start",
