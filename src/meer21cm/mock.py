@@ -57,6 +57,8 @@ class MockSimulation(PowerSpectrum):
         target_relative_to_num_g=1.5,
         num_discrete_source=100,
         discrete_base_field=2,
+        strict_num_source=True,
+        auto_relative=False,
         **params,
     ):
         super().__init__(**params)
@@ -86,6 +88,58 @@ class MockSimulation(PowerSpectrum):
         self.target_relative_to_num_g = target_relative_to_num_g
         self.num_discrete_source = num_discrete_source
         self.discrete_base_field = discrete_base_field
+        self.strict_num_source = strict_num_source
+        self.auto_relative = auto_relative
+
+    @property
+    def strict_num_source(self):
+        """
+        Whether the number of galaxies simulated in the galaxy catalogue,
+        i.e. the size of ``self.ra_gal.size``, strictly equals to
+        ``self.num_discrete_source``. Note that due to Poisson sampling and
+        the fact that survey volume is smaller than the enclosing box,
+        the number of mock tracers will be larger than the input
+        ``self.num_discrete_source``. The exact number is determined by
+        ``self.num_discrete_source * self.target_relative_to_num_g``.
+
+        The mock tracers inside the specified ``self.W_HI`` range will be counted
+        and propagate into the galaxy catalogue. If ``strict_num_source`` is true,
+        and if number of tracers inside the range is larger than
+        ``self.num_discrete_source``, a random sampling is performed to trim off
+        the excess number of sources. Doing this may result in small mismatch between
+        the input and output power spectrum.
+        """
+        return self._strict_num_source
+
+    @strict_num_source.setter
+    def strict_num_source(self, value):
+        self._strict_num_source = value
+        self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    def auto_relative(self):
+        """
+        Whether the number of galaxies simulated in the galaxy catalogue,
+        i.e. the size of ``self.ra_gal.size``, strictly equals to
+        ``self.num_discrete_source``. Note that due to Poisson sampling and
+        the fact that survey volume is smaller than the enclosing box,
+        the number of mock tracers will be larger than the input
+        ``self.num_discrete_source``. The exact number is determined by
+        ``self.num_discrete_source * self.target_relative_to_num_g``.
+
+        The mock tracers inside the specified ``self.W_HI`` range will be counted
+        and propagate into the galaxy catalogue. If ``strict_num_source`` is true,
+        and if number of tracers inside the range is larger than
+        ``self.num_discrete_source``, a random sampling is performed to trim off
+        the excess number of sources. Doing this may result in small mismatch between
+        the input and output power spectrum.
+        """
+        return self._auto_relative
+
+    @auto_relative.setter
+    def auto_relative(self, value):
+        self._auto_relative = value
+        self.clean_cache(self.discrete_dep_attr)
 
     @property
     def target_relative_to_num_g(self):
@@ -269,7 +323,7 @@ class MockSimulation(PowerSpectrum):
             self.get_mock_tracer_position_in_radecz()
         return self._mock_tracer_position_in_radecz
 
-    def get_mock_tracer_position_in_radecz(self):
+    def get_mock_tracer_position_in_radecz(self, strict_num=None):
         (
             self.ra_mock_tracer,
             self.dec_mock_tracer,
