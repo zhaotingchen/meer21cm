@@ -12,10 +12,40 @@ from powerbox import PowerBox
 from scipy.special import erf
 from scipy.interpolate import interp1d
 from numpy.random import default_rng
+from astropy.wcs import WCS
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
+
+
+def create_udres_wproj(
+    wproj,
+    udres_scale,
+):
+    """
+    Take an input wcs and create a wcs object that upgrades/downgrades the resolution.
+    The ratio between the output resolution and input is determined by
+    ``udres_scale``.
+
+    Parameters
+    ----------
+    wproj: :class:`astropy.wcs.WCS` object.
+        The input wcs.
+    udres_scale: float
+        The ratio between input and output resolution
+
+    Returns
+    -------
+    w: :class:`astropy.wcs.WCS` object.
+        The output wcs.
+    """
+    w = WCS(naxis=2)
+    w.wcs.crpix = wproj.wcs.crpix
+    w.wcs.cdelt = wproj.wcs.cdelt / udres_scale
+    w.wcs.crval = wproj.wcs.crval
+    w.wcs.ctype = wproj.wcs.ctype
+    return w
 
 
 def super_sample_array(arr_in, super_factor):

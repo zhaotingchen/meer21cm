@@ -4,6 +4,20 @@ from astropy.cosmology import Planck18, WMAP1
 from meer21cm.util import *
 import sys
 from scipy.special import erf
+from meer21cm import Specification
+
+
+def test_create_udres_wproj():
+    mock = Specification()
+    w = create_udres_wproj(mock.wproj, 3)
+    mock2 = Specification(
+        wproj=w,
+        num_pix_x=mock.num_pix_x * 3,
+        num_pix_y=mock.num_pix_y * 3,
+    )
+    assert mock2.ra_map[0, 0] == mock.ra_map[0, 0]
+    assert mock2.dec_map[0, 0] == mock.dec_map[0, 0]
+    assert np.allclose(mock.survey_volume, mock2.survey_volume)
 
 
 def test_super_sample_array():
