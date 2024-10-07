@@ -136,17 +136,13 @@ def test_poisson_field_map_grid():
 
 
 # num_p hasn't worked yet
-@pytest.mark.parametrize(
-    "num_p",
-    [
-        (1),
-    ],
-)
-def test_mock_field_map_grid(num_p):
+# @pytest.mark.parametrize("num_p", [(1),])
+def test_mock_field_map_grid():
     """
     Generate a mock HI temp field, project it to sky map,
     grid it onto regular grids, and test input/output matching.
     """
+    num_p = 1
     raminGAMA, ramaxGAMA = 339, 351
     decminGAMA, decmaxGAMA = -35, -30
     ra_range = (raminGAMA, ramaxGAMA)
@@ -245,7 +241,8 @@ def test_mock_field_map_grid(num_p):
     assert np.abs(avg_deviation) < 3
 
 
-def test_mock_tracer_grid():
+@pytest.mark.parametrize("strict", [(True), (False)])
+def test_mock_tracer_grid(strict):
     """
     Generate a mock galaxy caralogue,
     grid it onto regular grids, and test input/output matching.
@@ -266,6 +263,8 @@ def test_mock_tracer_grid():
             discrete_base_field=2,
             k1dbins=k1dedges,
             target_relative_to_num_g=2.0,
+            strict_num_source=strict,
+            auto_relative=(not strict),
         )
         mock.data = np.ones(mock.W_HI.shape)
         mock.w_HI = np.ones(mock.W_HI.shape)
@@ -282,8 +281,10 @@ def test_mock_tracer_grid():
         mock.compensate = False
         gal_map_rg, gal_weights_rg, pixel_counts_gal_rg = mock.grid_gal_to_field()
         _, _, pixel_counts_hi_rg = mock.grid_data_to_field()
+        mock.get_n_bar_correction()
         # test inrange exactly num_g
-        assert np.allclose(gal_map_rg.sum(), mock.num_discrete_source)
+        if strict:
+            assert np.allclose(gal_map_rg.sum(), mock.num_discrete_source)
         taper = mock.taper_func(mock.box_ndim[-1])
         mock.weights_2 = (pixel_counts_hi_rg > 0) * taper[None, None, :]
         shot_noise_g = (

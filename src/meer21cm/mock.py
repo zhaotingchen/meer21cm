@@ -119,20 +119,9 @@ class MockSimulation(PowerSpectrum):
     @property
     def auto_relative(self):
         """
-        Whether the number of galaxies simulated in the galaxy catalogue,
-        i.e. the size of ``self.ra_gal.size``, strictly equals to
-        ``self.num_discrete_source``. Note that due to Poisson sampling and
-        the fact that survey volume is smaller than the enclosing box,
-        the number of mock tracers will be larger than the input
-        ``self.num_discrete_source``. The exact number is determined by
-        ``self.num_discrete_source * self.target_relative_to_num_g``.
-
-        The mock tracers inside the specified ``self.W_HI`` range will be counted
-        and propagate into the galaxy catalogue. If ``strict_num_source`` is true,
-        and if number of tracers inside the range is larger than
-        ``self.num_discrete_source``, a random sampling is performed to trim off
-        the excess number of sources. Doing this may result in small mismatch between
-        the input and output power spectrum.
+        Whether ``target_relative_to_num_g`` is automatically calculated.
+        If True, it will be set to the ratio between the volume of the
+        enclosing box and the survey volume.
         """
         return self._auto_relative
 
@@ -295,8 +284,12 @@ class MockSimulation(PowerSpectrum):
         getattr(self, "mock_tracer_field_" + str(tracer_i))
         # now actually getting the underlying overdensity
         pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        if self.auto_relative:
+            print("automatically reset target_relative_to_num_g")
+            self.target_relative_to_num_g = np.prod(self.box_len) / self.survey_volume
         num_g = self.target_relative_to_num_g * self.num_discrete_source
         pos_value /= pos_value.sum() / num_g
+        # taken from powerbox
         n_per_cell = rng.poisson(pos_value)
         args = self.x_vec
         X = np.meshgrid(*args, indexing="ij")
@@ -323,7 +316,7 @@ class MockSimulation(PowerSpectrum):
             self.get_mock_tracer_position_in_radecz()
         return self._mock_tracer_position_in_radecz
 
-    def get_mock_tracer_position_in_radecz(self, strict_num=None):
+    def get_mock_tracer_position_in_radecz(self):
         (
             self.ra_mock_tracer,
             self.dec_mock_tracer,
@@ -351,7 +344,7 @@ class MockSimulation(PowerSpectrum):
                 "Not enough tracers inside the ra, dec, z range. "
                 + "Try increasing target_relative_to_num_g."
             )
-        else:
+        elif self.strict_num_source:
             inside_indx = np.where(inside_range)[0]
             rand_indx = random_sample_indx(
                 len(inside_indx), self.num_discrete_source, seed=self.seed

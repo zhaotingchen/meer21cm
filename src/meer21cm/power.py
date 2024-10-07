@@ -1554,6 +1554,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
 
+    def get_n_bar_correction(self):
+        n_bar = self.ra_gal.size / self.survey_volume
+        n_bar2 = (
+            (self.field_2 * self.weights_2).sum()
+            / self.weights_2.sum()
+            / np.prod(self.box_resol)
+        )
+        return n_bar2 / n_bar
+
     def ra_dec_z_for_coord_in_box(self, pos_in_box):
         pos_arr = pos_in_box + self.box_origin
         rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
