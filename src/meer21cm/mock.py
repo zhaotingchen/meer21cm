@@ -33,6 +33,8 @@ from .util import (
     redshift_to_freq,
     random_sample_indx,
     find_ch_id,
+    create_udres_wproj,
+    sample_map_from_highres,
 )
 from .plot import plot_map
 from .grid import (
@@ -40,8 +42,8 @@ from .grid import (
     minimum_enclosing_box_of_lightcone,
 )
 import healpy as hp
-from meer21cm.power import PowerSpectrum
-
+from meer21cm.power import PowerSpectrum, Specification
+from meer21cm.telescope import weighted_convolution
 from powerbox import LogNormalPowerBox
 from halomod import TracerHaloModel as THM
 from powerbox import dft
@@ -59,6 +61,7 @@ class MockSimulation(PowerSpectrum):
         discrete_base_field=2,
         strict_num_source=True,
         auto_relative=False,
+        highres_sim=None,
         **params,
     ):
         super().__init__(**params)
@@ -90,6 +93,21 @@ class MockSimulation(PowerSpectrum):
         self.discrete_base_field = discrete_base_field
         self.strict_num_source = strict_num_source
         self.auto_relative = auto_relative
+        self.highres_sim = highres_sim
+
+    @property
+    def highres_sim(self):
+        """
+        If not None, the mock field will first be gridded to a high resolution
+        sky map, convolved with the beam and then gridded to the resolution
+        specified by ``self.wproj``. The ratio of the angular resolution between
+        the high-res map and the target map is specified by this ``highres_sim``.
+        """
+        return self._highres_sim
+
+    @highres_sim.setter
+    def highres_sim(self, value):
+        self._highres_sim = value
 
     @property
     def strict_num_source(self):
@@ -373,6 +391,58 @@ class MockSimulation(PowerSpectrum):
         self._ra_gal = ra[inside_range]
         self._dec_gal = dec[inside_range]
         self._z_gal = z[inside_range]
+
+    def propagate_mock_field_to_data(self, field, beam=True, highres=None):
+        """
+        Grid the mock tracer field onto the sky map and
+        """
+        if highres is None:
+            highres = self.highres_sim
+        if self.sigma_beam_ch is None:
+            beam = False
+        if highres is None:
+            wproj_hires = self.wproj
+            num_pix_x = self.num_pix_x
+            num_pix_y = self.num_pix_y
+        else:
+            wproj_hires = create_udres_wproj(self.wproj, highres)
+            num_pix_x = self.num_pix_x * highres
+            num_pix_y = self.num_pix_y * highres
+        map_highres = self.grid_field_to_sky_map(
+            field,
+            average=True,
+            mask=False,
+            wproj=wproj_hires,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        if highres is None and not beam:
+            return map_highres
+        if beam:
+            beam_image = self.get_beam_image(
+                wproj_hires, num_pix_x, num_pix_y, cache=False
+            )
+            map_highres, _ = weighted_convolution(
+                map_highres, beam_image, np.ones_like(map_highres)
+            )
+        if highres is None:
+            return map_highres
+        spec = Specification(
+            wproj=wproj_hires,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        ra_map = spec.ra_map
+        dec_map = spec.dec_map
+        map_highres = sample_map_from_highres(
+            map_highres,
+            ra_map,
+            dec_map,
+            self.wproj,
+            self.num_pix_x,
+            self.num_pix_y,
+        )
+        return map_highres
 
 
 class HISimulation:

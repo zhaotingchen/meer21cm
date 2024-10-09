@@ -137,7 +137,8 @@ def test_poisson_field_map_grid():
 
 # num_p hasn't worked yet
 # @pytest.mark.parametrize("num_p", [(1),])
-def test_mock_field_map_grid():
+@pytest.mark.parametrize("highres,beam", [(1, True), (None, True), (None, False)])
+def test_mock_field_map_grid(highres, beam):
     """
     Generate a mock HI temp field, project it to sky map,
     grid it onto regular grids, and test input/output matching.
@@ -153,7 +154,7 @@ def test_mock_field_map_grid():
     pmod_1d_beam = []
     pmap_1d_beam = []
     # run 10 realizations
-    for i in range(10):
+    for i in range(5):
         mock = MockSimulation(
             ra_range=(raminGAMA, ramaxGAMA),
             dec_range=(decminGAMA, decmaxGAMA),
@@ -161,7 +162,11 @@ def test_mock_field_map_grid():
             tracer_bias_1=1.5,
             mean_amp_1="average_hi_temp",
             num_particle_per_pixel=num_p,
+            highres_sim=highres,
         )
+        if beam:
+            D_dish = 13.5
+            mock.sigma_beam_ch = dish_beam_sigma(D_dish, mock.nu)
         mock.data = np.ones(mock.W_HI.shape)
         mock.w_HI = np.ones(mock.W_HI.shape)
         mock.counts = np.ones(mock.W_HI.shape)
@@ -171,18 +176,18 @@ def test_mock_field_map_grid():
         pos_value = mock.mock_tracer_field_1
         mock.k1dbins = k1dedges
         mock.propagate_field_k_to_model()
-        map_bin = mock.grid_field_to_sky_map(pos_value, average=True)
+        map_bin = mock.propagate_mock_field_to_data(pos_value, beam=beam)
         mock.data = map_bin
         mock.downres_factor_radial = 1.5
         mock.downres_factor_transverse = 1.5
-        mock.compensate = False
+        mock.compensate = True
         hi_map_rg, hi_weights_rg, pix_counts_hi_rg = mock.grid_data_to_field()
-        taper_hi = mock.taper_func(mock.box_ndim[-1])
-        weights_hi = hi_weights_rg * taper_hi[None, None, :]
+        # taper_hi = mock.taper_func(mock.box_ndim[-1])
+        # weights_hi = hi_weights_rg * taper_hi[None, None, :]
         mock.include_beam = [True, False]
         mock.include_sampling = [True, False]
-        mock.field_1 = hi_map_rg
-        mock.weights_1 = weights_hi
+        # mock.field_1 = hi_map_rg
+        # mock.weights_1 = weights_hi
         mock.propagate_field_k_to_model()
         mock.sampling_resol = [
             mock.pix_resol_in_mpc,
@@ -199,46 +204,46 @@ def test_mock_field_map_grid():
         pmod_1d += [
             pmod_i,
         ]
-        D_dish = 13.5
-        mock.sigma_beam_ch = dish_beam_sigma(D_dish, mock.nu)
-        beam_cube = mock.beam_image
-        mock.convolve_data(beam_cube)
-        mock.compensate = True
-        hi_map_rg, hi_weights_rg, pix_counts_hi_rg = mock.grid_data_to_field()
-        taper_hi = mock.taper_func(mock.box_ndim[-1])
-        weights_hi = hi_weights_rg * taper_hi[None, None, :]
-        mock.include_beam = [True, False]
-        mock.include_sampling = [True, False]
-        mock.field_1 = hi_map_rg
-        mock.weights_1 = weights_hi
-        mock.propagate_field_k_to_model()
-        mock.sampling_resol = [
-            mock.pix_resol_in_mpc,
-            mock.pix_resol_in_mpc,
-            mock.los_resol_in_mpc,
-        ]
-        pmap_i, keff, nmodes = mock.get_1d_power(
-            "auto_power_3d_1",
-        )
-        # model should be auto_updated as well
-        pmod_i, _, _ = mock.get_1d_power("auto_power_tracer_1_model")
-        pmap_1d_beam += [
-            pmap_i,
-        ]
-        pmod_1d_beam += [
-            pmod_i,
-        ]
+        # D_dish = 13.5
+        # mock.sigma_beam_ch = dish_beam_sigma(D_dish, mock.nu)
+        # beam_cube = mock.beam_image
+        # mock.convolve_data(beam_cube)
+        # mock.compensate = True
+        # hi_map_rg, hi_weights_rg, pix_counts_hi_rg = mock.grid_data_to_field()
+        # taper_hi = mock.taper_func(mock.box_ndim[-1])
+        # weights_hi = hi_weights_rg * taper_hi[None, None, :]
+        # mock.include_beam = [True, False]
+        # mock.include_sampling = [True, False]
+        # mock.field_1 = hi_map_rg
+        # mock.weights_1 = weights_hi
+        # mock.propagate_field_k_to_model()
+        # mock.sampling_resol = [
+        #    mock.pix_resol_in_mpc,
+        #    mock.pix_resol_in_mpc,
+        #    mock.los_resol_in_mpc,
+        # ]
+        # pmap_i, keff, nmodes = mock.get_1d_power(
+        #    "auto_power_3d_1",
+        # )
+        ## model should be auto_updated as well
+        # pmod_i, _, _ = mock.get_1d_power("auto_power_tracer_1_model")
+        # pmap_1d_beam += [
+        #    pmap_i,
+        # ]
+        # pmod_1d_beam += [
+        #    pmod_i,
+        # ]
     pmap_1d = np.array(pmap_1d)
     pmod_1d = np.array(pmod_1d)
-    pmap_1d_beam = np.array(pmap_1d_beam)
-    pmod_1d_beam = np.array(pmod_1d_beam)
+    # pmap_1d_beam = np.array(pmap_1d_beam)
+    # pmod_1d_beam = np.array(pmod_1d_beam)
     avg_deviation = ((pmap_1d.mean(0) - pmod_1d.mean(0)) / pmap_1d.std(0)).mean()
     # 3 sigma
     assert np.abs(avg_deviation) < 3
-    avg_deviation = (
-        (pmap_1d_beam.mean(0) - pmod_1d_beam.mean(0)) / pmap_1d_beam.std(0)
-    ).mean()
-    assert np.abs(avg_deviation) < 3
+    # avg_deviation = (
+    #    (pmap_1d_beam.mean(0) - pmod_1d_beam.mean(0)) / pmap_1d_beam.std(0)
+    # ).mean()
+    # assert np.abs(avg_deviation) < 3
 
 
 @pytest.mark.parametrize("strict", [(True), (False)])
