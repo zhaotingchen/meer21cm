@@ -19,6 +19,49 @@ A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
 
 
+def sample_map_from_highres(
+    map_highres, ra_map, dec_map, wproj_lowres, num_pix_x, num_pix_y, average=True
+):
+    """
+    grid a highres map into lowres.
+
+    Parameters
+    ----------
+    map_highres: array
+        The input high-res map.
+    ra_map: array
+        The RA coordinates of the input map pixels.
+    dec_map: array
+        The Dec coordinates of the input map pixels.
+    wproj_lowres: :class:`astropy.wcs.WCS` object.
+        The wcs object for the low-res map.
+    num_pix_x: int
+        The number of pixels along the first axis for the low-res map.
+    num_pix_y: int
+        The number of pixels along the second axis for the low-res map.
+    average: bool, default True.
+        Whether the sampling is an average of the high-res pixels (True)
+        or the sum (False).
+    """
+    indx_1, indx_2 = radec_to_indx(ra_map, dec_map, wproj_lowres)
+    indx_1 = indx_1.ravel()
+    indx_2 = indx_2.ravel()
+    map_lowres = np.zeros((num_pix_x, num_pix_y, map_highres.shape[-1]))
+    indx_num = [num_pix_x, num_pix_y]
+    indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(2)]
+    for indx_z in range(map_highres.shape[-1]):
+        count, _ = np.histogramdd(np.array([indx_1, indx_2]).T, bins=indx_bins)
+        map_i, _ = np.histogramdd(
+            np.array([indx_1, indx_2]).T,
+            bins=indx_bins,
+            weights=map_highres[:, :, indx_z].ravel(),
+        )
+        if average:
+            map_i /= count
+        map_lowres[:, :, indx_z] = map_i
+    return map_lowres
+
+
 def create_udres_wproj(
     wproj,
     udres_scale,

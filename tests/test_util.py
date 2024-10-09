@@ -7,6 +7,29 @@ from scipy.special import erf
 from meer21cm import Specification
 
 
+def test_sample_map_from_highres():
+    mock = Specification()
+    w = create_udres_wproj(mock.wproj, 3)
+    mock2 = Specification(
+        wproj=w,
+        num_pix_x=mock.num_pix_x * 3,
+        num_pix_y=mock.num_pix_y * 3,
+    )
+    map_hires = np.ones((mock.num_pix_x * 3, mock.num_pix_y * 3, 1))
+    map_lowres = sample_map_from_highres(
+        map_hires,
+        mock2.ra_map,
+        mock2.dec_map,
+        mock.wproj,
+        mock2.num_pix_x,
+        mock2.num_pix_y,
+        average=True,
+    )
+    # get rid of nan
+    map_lowres = map_lowres[map_lowres == map_lowres]
+    assert np.allclose(map_lowres, np.ones_like(map_lowres))
+
+
 def test_create_udres_wproj():
     mock = Specification()
     w = create_udres_wproj(mock.wproj, 3)
