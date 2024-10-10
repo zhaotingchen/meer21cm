@@ -1,12 +1,21 @@
 import pytest
 import numpy as np
 from meer21cm.io import *
+from meer21cm.telescope import (
+    meerkat_L_4k_delta_nu,
+    meerkat_L_band_nu_max,
+    meerkat_L_band_nu_min,
+    meerkat_UHF_band_nu_max,
+    meerkat_UHF_band_nu_min,
+)
 
 
 def test_cal_freq(test_nu):
-    assert np.diff(test_nu).mean() == meerkat_4k_delta_nu
+    assert np.diff(test_nu).mean() == meerkat_L_4k_delta_nu
     assert cal_freq(0) == meerkat_L_band_nu_min
     assert cal_freq(4096) == meerkat_L_band_nu_max
+    assert cal_freq(0, band="UHF") == meerkat_UHF_band_nu_min
+    assert cal_freq(4096, band="UHF") == meerkat_UHF_band_nu_max
 
 
 def test_filter_incomplete_los():

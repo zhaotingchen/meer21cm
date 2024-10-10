@@ -7,20 +7,14 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import os
 from .util import get_wcs_coor
-
-meerkat_L_band_nu_min = 856.0 * 1e6  # in Hz
-meerkat_L_band_nu_max = 1712.0 * 1e6  # in Hz
-meerkat_4k_delta_nu = 0.208984375 * 1e6  # in Hz
-
-meerklass_L_deep_nu_min = 971 * 1e6
-meerklass_L_deep_nu_max = 1023.8 * 1e6
+import meer21cm.telescope as telescope
 
 
 def cal_freq(
     ch_id,
-    nu_min=meerkat_L_band_nu_min,
-    nu_max=meerkat_L_band_nu_max,
-    delta_nu=meerkat_4k_delta_nu,
+    band="L",
+    nu_min=None,
+    delta_nu=None,
 ):
     """
     returns the centre of the frequency channel for channel id `ch_id`.
@@ -29,10 +23,13 @@ def cal_freq(
     ----------
         ch_id: int.
             The channel id.
+        band: str, default 'L'.
+            Frequency band, can either be 'L' or 'UHF'.
+            Retrieves default MeerKAT setting.
+            If `nu_min` and `delta_nu` are passed,
+            the default settings are overridden.
         nu_min: float, default 856.0*1e6 Hz.
             The lower end of the frequency range.
-        nu_max: float, default 1712.0*1e6 Hz.
-            The higher end of the frequency range.
         delta_nu: float, default 0.208984375*1e6 Hz.
             The channel bandwidth.
 
@@ -41,6 +38,10 @@ def cal_freq(
         freq: float.
            The frequency of the channel.
     """
+    if nu_min is None:
+        nu_min = getattr(telescope, f"meerkat_{band}_band_nu_min")
+    if delta_nu is None:
+        delta_nu = getattr(telescope, f"meerkat_{band}_4k_delta_nu")
     return ch_id * delta_nu + nu_min
 
 
@@ -117,6 +118,7 @@ def read_map(
     nu_max=np.inf,
     ch_start=1,
     los_axis=-1,
+    band="L",
 ):
     """
     Read fits files of MeerKAT 4k L-band data into arrays.
@@ -155,7 +157,10 @@ def read_map(
     """
     map_data = fits.open(map_file)[0].data
     num_ch = map_data.shape[los_axis]
-    nu_data = cal_freq(np.arange(ch_start, ch_start + num_ch))
+    nu_data = cal_freq(
+        np.arange(ch_start, ch_start + num_ch),
+        band=band,
+    )
     nu_sel = np.where((nu_data > nu_min) & (nu_data < nu_max))[0]
     nu_sel_min, nu_sel_max = nu_sel.min(), nu_sel.max()
     sel_indx = [
