@@ -67,7 +67,10 @@ def test_velocity(test_nu, test_wproj):
 
 
 def test_read_fits(test_fits):
-    sp = Specification()
+    sp = Specification(
+        nu_min=-np.inf,
+        nu_max=np.inf,
+    )
     # should be None
     sp.read_from_fits()
     sp.read_gal_cat()
