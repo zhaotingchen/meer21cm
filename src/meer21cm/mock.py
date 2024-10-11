@@ -35,6 +35,8 @@ from .util import (
     find_ch_id,
     mass_intflux_coeff,
     Obuljen18,
+    create_udres_wproj,
+    sample_map_from_highres,
 )
 from .plot import plot_map
 from .grid import (
@@ -42,8 +44,8 @@ from .grid import (
     minimum_enclosing_box_of_lightcone,
 )
 import healpy as hp
-from meer21cm.power import PowerSpectrum
-
+from meer21cm.power import PowerSpectrum, Specification
+from meer21cm.telescope import weighted_convolution
 from powerbox import LogNormalPowerBox
 from halomod import TracerHaloModel as THM
 from powerbox import dft
@@ -57,17 +59,16 @@ class MockSimulation(PowerSpectrum):
         density="poisson",
         relative_resol_to_pix=0.5,
         target_relative_to_num_g=1.5,
-        seed=None,
         num_discrete_source=100,
         discrete_base_field=2,
+        strict_num_source=True,
+        auto_relative=False,
+        highres_sim=None,
         **params,
     ):
         super().__init__(**params)
         self.density = density.lower()
         self.relative_resol_to_pix = relative_resol_to_pix
-        if seed is None:
-            seed = np.random.randint(0, 2**32)
-        self.seed = seed
         init_attr = [
             "_x_start",
             "_y_start",
@@ -92,6 +93,62 @@ class MockSimulation(PowerSpectrum):
         self.target_relative_to_num_g = target_relative_to_num_g
         self.num_discrete_source = num_discrete_source
         self.discrete_base_field = discrete_base_field
+        self.strict_num_source = strict_num_source
+        self.auto_relative = auto_relative
+        self.highres_sim = highres_sim
+
+    @property
+    def highres_sim(self):
+        """
+        If not None, the mock field will first be gridded to a high resolution
+        sky map, convolved with the beam and then gridded to the resolution
+        specified by ``self.wproj``. The ratio of the angular resolution between
+        the high-res map and the target map is specified by this ``highres_sim``.
+        """
+        return self._highres_sim
+
+    @highres_sim.setter
+    def highres_sim(self, value):
+        self._highres_sim = value
+
+    @property
+    def strict_num_source(self):
+        """
+        Whether the number of galaxies simulated in the galaxy catalogue,
+        i.e. the size of ``self.ra_gal.size``, strictly equals to
+        ``self.num_discrete_source``. Note that due to Poisson sampling and
+        the fact that survey volume is smaller than the enclosing box,
+        the number of mock tracers will be larger than the input
+        ``self.num_discrete_source``. The exact number is determined by
+        ``self.num_discrete_source * self.target_relative_to_num_g``.
+
+        The mock tracers inside the specified ``self.W_HI`` range will be counted
+        and propagate into the galaxy catalogue. If ``strict_num_source`` is true,
+        and if number of tracers inside the range is larger than
+        ``self.num_discrete_source``, a random sampling is performed to trim off
+        the excess number of sources. Doing this may result in small mismatch between
+        the input and output power spectrum.
+        """
+        return self._strict_num_source
+
+    @strict_num_source.setter
+    def strict_num_source(self, value):
+        self._strict_num_source = value
+        self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    def auto_relative(self):
+        """
+        Whether ``target_relative_to_num_g`` is automatically calculated.
+        If True, it will be set to the ratio between the volume of the
+        enclosing box and the survey volume.
+        """
+        return self._auto_relative
+
+    @auto_relative.setter
+    def auto_relative(self, value):
+        self._auto_relative = value
+        self.clean_cache(self.discrete_dep_attr)
 
     @property
     def target_relative_to_num_g(self):
@@ -247,8 +304,12 @@ class MockSimulation(PowerSpectrum):
         getattr(self, "mock_tracer_field_" + str(tracer_i))
         # now actually getting the underlying overdensity
         pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        if self.auto_relative:
+            print("automatically reset target_relative_to_num_g")
+            self.target_relative_to_num_g = np.prod(self.box_len) / self.survey_volume
         num_g = self.target_relative_to_num_g * self.num_discrete_source
         pos_value /= pos_value.sum() / num_g
+        # taken from powerbox
         n_per_cell = rng.poisson(pos_value)
         args = self.x_vec
         X = np.meshgrid(*args, indexing="ij")
@@ -303,7 +364,7 @@ class MockSimulation(PowerSpectrum):
                 "Not enough tracers inside the ra, dec, z range. "
                 + "Try increasing target_relative_to_num_g."
             )
-        else:
+        elif self.strict_num_source:
             inside_indx = np.where(inside_range)[0]
             rand_indx = random_sample_indx(
                 len(inside_indx), self.num_discrete_source, seed=self.seed
@@ -332,6 +393,58 @@ class MockSimulation(PowerSpectrum):
         self._ra_gal = ra[inside_range]
         self._dec_gal = dec[inside_range]
         self._z_gal = z[inside_range]
+
+    def propagate_mock_field_to_data(self, field, beam=True, highres=None):
+        """
+        Grid the mock tracer field onto the sky map and
+        """
+        if highres is None:
+            highres = self.highres_sim
+        if self.sigma_beam_ch is None:
+            beam = False
+        if highres is None:
+            wproj_hires = self.wproj
+            num_pix_x = self.num_pix_x
+            num_pix_y = self.num_pix_y
+        else:
+            wproj_hires = create_udres_wproj(self.wproj, highres)
+            num_pix_x = self.num_pix_x * highres
+            num_pix_y = self.num_pix_y * highres
+        map_highres = self.grid_field_to_sky_map(
+            field,
+            average=True,
+            mask=False,
+            wproj=wproj_hires,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        if highres is None and not beam:
+            return map_highres
+        if beam:
+            beam_image = self.get_beam_image(
+                wproj_hires, num_pix_x, num_pix_y, cache=False
+            )
+            map_highres, _ = weighted_convolution(
+                map_highres, beam_image, np.ones_like(map_highres)
+            )
+        if highres is None:
+            return map_highres
+        spec = Specification(
+            wproj=wproj_hires,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        ra_map = spec.ra_map
+        dec_map = spec.dec_map
+        map_highres = sample_map_from_highres(
+            map_highres,
+            ra_map,
+            dec_map,
+            self.wproj,
+            self.num_pix_x,
+            self.num_pix_y,
+        )
+        return map_highres
 
 
 class HIGalaxySimulation(MockSimulation):

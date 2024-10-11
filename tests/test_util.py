@@ -5,6 +5,53 @@ from meer21cm.util import *
 import sys
 from scipy.special import erf
 from halomod import TracerHaloModel
+from meer21cm import Specification
+
+
+def test_sample_map_from_highres():
+    mock = Specification()
+    w = create_udres_wproj(mock.wproj, 3)
+    mock2 = Specification(
+        wproj=w,
+        num_pix_x=mock.num_pix_x * 3,
+        num_pix_y=mock.num_pix_y * 3,
+    )
+    map_hires = np.ones((mock.num_pix_x * 3, mock.num_pix_y * 3, 1))
+    map_lowres = sample_map_from_highres(
+        map_hires,
+        mock2.ra_map,
+        mock2.dec_map,
+        mock.wproj,
+        mock2.num_pix_x,
+        mock2.num_pix_y,
+        average=True,
+    )
+    # get rid of nan
+    map_lowres = map_lowres[map_lowres == map_lowres]
+    assert np.allclose(map_lowres, np.ones_like(map_lowres))
+
+
+def test_create_udres_wproj():
+    mock = Specification()
+    w = create_udres_wproj(mock.wproj, 3)
+    mock2 = Specification(
+        wproj=w,
+        num_pix_x=mock.num_pix_x * 3,
+        num_pix_y=mock.num_pix_y * 3,
+    )
+    assert mock2.ra_map[0, 0] == mock.ra_map[0, 0]
+    assert mock2.dec_map[0, 0] == mock.dec_map[0, 0]
+    assert np.allclose(mock.survey_volume, mock2.survey_volume)
+
+
+def test_super_sample_array():
+    arr_in = np.random.normal(size=[100, 50, 20])
+    super_factor = [3, 3, 3]
+    arr_out = super_sample_array(arr_in, super_factor)
+    assert np.allclose(arr_out[::3, ::3, ::3], arr_in)
+    assert np.allclose(arr_out[1::3, 1::3, 1::3], arr_in)
+    assert np.allclose(arr_out[2::3, 2::3, 2::3], arr_in)
+    assert super_sample_array(None, super_factor) is None
 
 
 def test_tagging():

@@ -6,6 +6,7 @@ from meer21cm.cosmology import CosmologyCalculator
 from meer21cm.grid import (
     minimum_enclosing_box_of_lightcone,
     project_particle_to_regular_grid,
+    interlace_two_fields,
 )
 from scipy.signal import windows
 from meer21cm.util import (
@@ -508,6 +509,10 @@ class FieldPowerSpectrum(Specification):
             self.box_ndim,
             self.box_resol,
         )
+
+    @property
+    def k_nyquist(self):
+        return np.pi / self.box_resol
 
     @property
     def k_perp(self):
@@ -1034,7 +1039,7 @@ def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
     return np.exp(-(k_perp**2) * beam_sigma_in_mpc**2 / 2)
 
 
-def step_window_attenuation(k_dir, step_size_in_mpc):
+def step_window_attenuation(k_dir, step_size_in_mpc, p=1):
     """
     The beam attenuation term to be multiplied to model power
     spectrum assuming a Gaussian beam.
@@ -1045,9 +1050,11 @@ def step_window_attenuation(k_dir, step_size_in_mpc):
         The transverse k-scale in Mpc^-1
     beam_sigma_in_mpc: float.
         The sigma of the Gaussian beam in Mpc.
+    p: int, default 1
+        The index of assignment scheme.
     """
     # note np.sinc is sin(pi x)/(pi x)
-    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2)
+    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** p
 
 
 class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
@@ -1088,8 +1095,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
         grid_scheme="nnb",
+        interlace_shift=0.0,
+        num_particle_per_pixel=1,
+        seed=None,
         **params,
     ):
+        if seed is None:
+            seed = np.random.randint(0, 2**32)
+        self.seed = seed
+        self.num_particle_per_pixel = num_particle_per_pixel
         if field_1 is None:
             if "box_ndim" in params.keys():
                 field_1 = np.ones(params["box_ndim"])
@@ -1159,6 +1173,31 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if field_from_mapdata:
             self.get_enclosing_box()
         self.grid_scheme = grid_scheme
+        self.interlace_shift = interlace_shift
+
+    @property
+    def num_particle_per_pixel(self):
+        """
+        The number of random sampling particles for each sky map pixel.
+        """
+        return self._num_particle_per_pixel
+
+    @num_particle_per_pixel.setter
+    def num_particle_per_pixel(self, value):
+        self._num_particle_per_pixel = int(value)
+
+    @property
+    def interlace_shift(self):
+        """
+        The length in the unit of grid cell size for
+        shifting the gridded field for interlacing.
+        0 corresponds to no interlacing.
+        """
+        return self._interlace_shift
+
+    @interlace_shift.setter
+    def interlace_shift(self, value):
+        self._interlace_shift = value
 
     @property
     def compensate(self):
@@ -1244,17 +1283,18 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return power1d, k1deff, nmodes
 
     # calculate on-the-fly, no cache
-    def step_sampling(self):
+    def step_sampling(self, sampling_resol=None, p=1):
         if not self.has_resol:
             return 1.0
         k_x = self.k_vec[0][:, None, None]
         k_y = self.k_vec[1][None, :, None]
         k_para = self.k_mode * self.mumode
-        sampling_resol = self.sampling_resol
+        if sampling_resol is None:
+            sampling_resol = self.sampling_resol
         B_sampling = np.nan_to_num(
-            step_window_attenuation(k_x, sampling_resol[0])
-            * step_window_attenuation(k_y, sampling_resol[1])
-            * step_window_attenuation(k_para, sampling_resol[2])
+            step_window_attenuation(k_x, sampling_resol[0], p)
+            * step_window_attenuation(k_y, sampling_resol[1], p)
+            * step_window_attenuation(k_para, sampling_resol[2], p)
         )
         return B_sampling
 
@@ -1297,9 +1337,11 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
         """
-        ra = self.ra_map
-        dec = self.dec_map
+        ra = self.ra_map.copy()
+        dec = self.dec_map.copy()
         map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
+        ra = ra[map_mask]
+        dec = dec[map_mask]
         (
             self._x_start,
             self._y_start,
@@ -1310,8 +1352,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             rot_back,
             pos_arr,
         ) = minimum_enclosing_box_of_lightcone(
-            ra[map_mask],
-            dec[map_mask],
+            ra,
+            dec,
             self.nu,
             cosmo=self.cosmo,
             return_coord=True,
@@ -1326,6 +1368,34 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             ]
         )
         self._rot_mat_sky_to_box = np.linalg.inv(rot_back)
+        # random sample
+        num_p = self.num_particle_per_pixel
+        ra_sample = [
+            ra,
+        ] * num_p
+        dec_sample = [
+            dec,
+        ] * num_p
+        ra_sample = np.array(ra_sample)
+        dec_sample = np.array(dec_sample)
+        rng = np.random.default_rng(seed=self.seed)
+        rand_angle = rng.uniform(
+            -self.pix_resol, self.pix_resol, size=(2,) + ra_sample[1:].shape
+        )
+        ra_sample[1:] += rand_angle[0]
+        dec_sample[1:] += rand_angle[1]
+        ra_sample = ra_sample.ravel()
+        dec_sample = dec_sample.ravel()
+        (_, _, _, _, _, _, _, pos_arr) = minimum_enclosing_box_of_lightcone(
+            ra_sample,
+            dec_sample,
+            self.nu,
+            cosmo=self.cosmo,
+            return_coord=True,
+            buffkick=self.box_buffkick,
+            rot_mat=self.rot_mat_sky_to_box,
+        )
+
         self._pix_coor_in_cartesian = pos_arr
         downres = np.array(
             [
@@ -1353,18 +1423,46 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     def grid_data_to_field(self):
         if self.box_origin[0] is None:
             self.get_enclosing_box()
+        data_particle = self.data[self.W_HI].ravel()
+        weights_particle = self.w_HI[self.W_HI].ravel()
+        num_p = self.num_particle_per_pixel
+        data_particle = [
+            data_particle,
+        ] * num_p
+        weights_particle = [
+            weights_particle,
+        ] * num_p
+        data_particle = np.array(data_particle).ravel()
+        weights_particle = np.array(weights_particle).ravel()
         hi_map_rg, hi_weights_rg, pixel_counts_hi_rg = project_particle_to_regular_grid(
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
             window=self.grid_scheme,
-            particle_value=self.data[self.W_HI].ravel(),
-            particle_weights=self.w_HI[self.W_HI].ravel(),
+            particle_value=data_particle,
+            particle_weights=weights_particle,
             compensate=self.compensate[0],
+        )
+        hi_map_rg2, _, _ = project_particle_to_regular_grid(
+            self.pix_coor_in_box,
+            self.box_len,
+            self.box_ndim,
+            window=self.grid_scheme,
+            particle_value=data_particle,
+            particle_weights=weights_particle,
+            compensate=self.compensate[0],
+            shift=self.interlace_shift,
+        )
+        hi_map_rg = interlace_two_fields(
+            hi_map_rg,
+            hi_map_rg2,
+            self.interlace_shift,
+            self.box_resol,
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
+        self.pixel_counts_hi_rg = pixel_counts_hi_rg
         taper_HI = self.taper_func(self.box_ndim[-1])
         weights_hi = hi_weights_rg * taper_HI[None, None, :]
         self.field_1 = hi_map_rg
@@ -1409,9 +1507,27 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             compensate=self.compensate[1],
             average=False,
         )
+        (gal_map_rg2, _, _,) = project_particle_to_regular_grid(
+            gal_pos_in_box,
+            self.box_len,
+            self.box_ndim,
+            window=self.grid_scheme,
+            compensate=self.compensate[1],
+            average=False,
+            shift=self.interlace_shift,
+        )
+        gal_map_rg = interlace_two_fields(
+            gal_map_rg,
+            gal_map_rg2,
+            self.interlace_shift,
+            self.box_resol,
+        )
+        pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
+            0
+        ]
         # get which pixels in the rg box are not covered by the lightcone
         _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
-            self.pix_coor_in_box,
+            pix_coor_orig,
             self.box_len,
             self.box_ndim,
             window=self.grid_scheme,
@@ -1438,6 +1554,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
 
+    def get_n_bar_correction(self):
+        n_bar = self.ra_gal.size / self.survey_volume
+        n_bar2 = (
+            (self.field_2 * self.weights_2).sum()
+            / self.weights_2.sum()
+            / np.prod(self.box_resol)
+        )
+        return n_bar2 / n_bar
+
     def ra_dec_z_for_coord_in_box(self, pos_in_box):
         pos_arr = pos_in_box + self.box_origin
         rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
@@ -1447,13 +1572,28 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
         return pos_ra, pos_dec, pos_z
 
-    def grid_field_to_sky_map(self, field, average=True):
+    def grid_field_to_sky_map(
+        self,
+        field,
+        average=True,
+        mask=True,
+        wproj=None,
+        num_pix_x=None,
+        num_pix_y=None,
+    ):
+        if wproj is None:
+            wproj = self.wproj
+        if num_pix_x is None:
+            num_pix_x = self.num_pix_x
+        if num_pix_y is None:
+            num_pix_y = self.num_pix_y
         pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
         pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
         pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
-        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, self.wproj)
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj)
         pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
-        indx_bins = [center_to_edges(np.arange(self.W_HI.shape[i])) for i in range(3)]
+        indx_num = [num_pix_x, num_pix_y, len(self.nu)]
+        indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(3)]
         pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
         map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=field.ravel())
         count_bin, _ = np.histogramdd(
@@ -1462,7 +1602,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         if average:
             map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
-        map_bin *= self.W_HI
+        if mask:
+            map_bin *= self.W_HI
         return map_bin
 
     def gen_random_poisson_galaxy(self, num_g_rand=None, seed=None):
@@ -1473,9 +1614,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         dec_rand = self.dec_map[self.W_HI[:, :, 0]]
         ra_rand = rng.choice(ra_rand, size=num_g_rand, replace=True)
         dec_rand = rng.choice(dec_rand, size=num_g_rand, replace=True)
-        ra_rand += rng.uniform(-self.pix_resol / 2, self.pix_resol / 2, size=num_g_rand)
-        dec_rand += rng.uniform(
-            -self.pix_resol / 2, self.pix_resol / 2, size=num_g_rand
+        rand_disp = rng.uniform(
+            -self.pix_resol / 2, self.pix_resol / 2, size=num_g_rand * 2
         )
+        ra_rand += rand_disp[:num_g_rand]
+        dec_rand += rand_disp[num_g_rand:]
         z_rand = rng.uniform(self.z_ch.min(), self.z_ch.max(), size=num_g_rand)
         return ra_rand, dec_rand, redshift_to_freq(z_rand)

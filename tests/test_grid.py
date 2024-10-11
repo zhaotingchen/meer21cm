@@ -87,11 +87,11 @@ def test_uniform_grids(window):
         shift=0.5,
     )
     field_interlaced = interlace_two_fields(
-        test_map_1, test_map_1, 0.0, [1.0, 1.0, 1, 0]
+        test_map_1, test_map_1, 0.0, [1.0, 1.0, 1.0]
     )
     assert np.allclose(field_interlaced, np.ones_like(test_map))
     field_interlaced = interlace_two_fields(
-        test_map_1, test_map_2, 0.5, [1.0, 1.0, 1, 0]
+        test_map_1, test_map_2, 0.5, [1.0, 1.0, 1.0]
     )
     assert np.allclose(field_interlaced, np.ones_like(test_map))
 

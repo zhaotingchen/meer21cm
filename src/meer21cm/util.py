@@ -13,6 +13,7 @@ from scipy.special import erf
 from scipy.interpolate import interp1d
 from numpy.random import default_rng
 from halomod.hod import HODBulk
+from astropy.wcs import WCS
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
@@ -32,6 +33,111 @@ mass_intflux_coeff = (
     .to("Msun")
     .value
 )
+
+
+def sample_map_from_highres(
+    map_highres, ra_map, dec_map, wproj_lowres, num_pix_x, num_pix_y, average=True
+):
+    """
+    grid a highres map into lowres.
+
+    Parameters
+    ----------
+    map_highres: array
+        The input high-res map.
+    ra_map: array
+        The RA coordinates of the input map pixels.
+    dec_map: array
+        The Dec coordinates of the input map pixels.
+    wproj_lowres: :class:`astropy.wcs.WCS` object.
+        The wcs object for the low-res map.
+    num_pix_x: int
+        The number of pixels along the first axis for the low-res map.
+    num_pix_y: int
+        The number of pixels along the second axis for the low-res map.
+    average: bool, default True.
+        Whether the sampling is an average of the high-res pixels (True)
+        or the sum (False).
+    """
+    indx_1, indx_2 = radec_to_indx(ra_map, dec_map, wproj_lowres)
+    indx_1 = indx_1.ravel()
+    indx_2 = indx_2.ravel()
+    map_lowres = np.zeros((num_pix_x, num_pix_y, map_highres.shape[-1]))
+    indx_num = [num_pix_x, num_pix_y]
+    indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(2)]
+    for indx_z in range(map_highres.shape[-1]):
+        count, _ = np.histogramdd(np.array([indx_1, indx_2]).T, bins=indx_bins)
+        map_i, _ = np.histogramdd(
+            np.array([indx_1, indx_2]).T,
+            bins=indx_bins,
+            weights=map_highres[:, :, indx_z].ravel(),
+        )
+        if average:
+            map_i /= count
+        map_lowres[:, :, indx_z] = map_i
+    return map_lowres
+
+
+def create_udres_wproj(
+    wproj,
+    udres_scale,
+):
+    """
+    Take an input wcs and create a wcs object that upgrades/downgrades the resolution.
+    The ratio between the output resolution and input is determined by
+    ``udres_scale``.
+
+    Parameters
+    ----------
+    wproj: :class:`astropy.wcs.WCS` object.
+        The input wcs.
+    udres_scale: float
+        The ratio between input and output resolution
+
+    Returns
+    -------
+    w: :class:`astropy.wcs.WCS` object.
+        The output wcs.
+    """
+    w = WCS(naxis=2)
+    w.wcs.crpix = wproj.wcs.crpix
+    w.wcs.cdelt = wproj.wcs.cdelt / udres_scale
+    w.wcs.crval = wproj.wcs.crval
+    w.wcs.ctype = wproj.wcs.ctype
+    return w
+
+
+def super_sample_array(arr_in, super_factor):
+    """
+    Super-sample an array along each direction by a factor
+
+    Parameters
+    ----------
+    arr_in: array.
+        The input array to sample from.
+
+    super_factor: list of int.
+        super sample factor along each axis.
+
+    Returns
+    -------
+    arr_out: array.
+        The super-sampled array.
+    """
+    if arr_in is None:
+        return None
+    assert len(arr_in.shape) == len(super_factor)
+    # maybe a faster approach is to use np.repeat
+    arr_shape_in = arr_in.shape
+    arr_shape_out = ()
+    slice_indx = ()
+    for i, dim in enumerate(arr_shape_in):
+        arr_shape_out += (dim, super_factor[i])
+        slice_indx += (slice(None), None)
+    arr_out = np.zeros(arr_shape_out)
+    arr_out += arr_in[slice_indx]
+    arr_out = arr_out.reshape(np.array(arr_shape_in) * super_factor)
+    return arr_out
 
 
 def random_sample_indx(tot_len, num_sub_sample, seed=None):
@@ -674,16 +780,11 @@ def find_indx_for_subarr(subarr, arr):
         subarr: numpy array.
             The sub-array to search for. Elements can be repeated.
         arr: numpy array.
-            the slope of Tully-Fisher relation.
-        zero_point: float.
-            the intercept of Tully-Fisher relation
-        inv: bool, default False.
-            if True, calculate velocity based on input mass.
-
+            The larger array that contains all elements of subarr.
     Returns
     -------
-        out: float array.
-            The output mass if inv=False and velocity if inv=True.
+        indices: int array.
+            The position of the elements of subarr in arr.
     """
     assert np.unique(arr).size == arr.size, "the larger array must be unique"
     # Actually preform the operation...

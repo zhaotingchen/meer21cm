@@ -565,31 +565,46 @@ class Specification:
             self.get_beam_image()
         return self._beam_image
 
-    def get_beam_image(self):
+    def get_beam_image(
+        self,
+        wproj=None,
+        num_pix_x=None,
+        num_pix_y=None,
+        cache=True,
+    ):
         if self.sigma_beam_ch is None:
             return None
-        beam_image = np.zeros((self.num_pix_x, self.num_pix_y, len(self.nu)))
+        if wproj is None:
+            wproj = self.wproj
+        if num_pix_x is None:
+            num_pix_x = self.num_pix_x
+        if num_pix_y is None:
+            num_pix_y = self.num_pix_y
+        pix_resol = np.sqrt(proj_plane_pixel_area(wproj))
+        beam_image = np.zeros((num_pix_x, num_pix_y, len(self.nu)))
         beam_model = getattr(telescope, self.beam_model + "_beam")
         if self.beam_type == "isotropic":
             for i in range(len(self.nu)):
                 beam_image[:, :, i] = telescope.isotropic_beam_profile(
-                    self.num_pix_x,
-                    self.num_pix_y,
-                    self.wproj,
+                    num_pix_x,
+                    num_pix_y,
+                    wproj,
                     beam_model(self.sigma_beam_ch[i]),
                 )
         else:
             beam_image = beam_model(
                 self.nu,
-                self.wproj,
-                self.num_pix_x,
-                self.num_pix_y,
+                wproj,
+                num_pix_x,
+                num_pix_y,
             )
             sigma_beam_from_image = (
-                np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * self.pix_resol
+                np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * pix_resol
             )
             self.sigma_beam_ch = sigma_beam_from_image
-        self._beam_image = beam_image
+        if cache:
+            self._beam_image = beam_image
+        return beam_image
 
     def convolve_data(self, kernel):
         """
@@ -617,3 +632,18 @@ class Specification:
         xarr = self.comoving_distance(zarr).value
         func = interp1d(xarr, zarr, bounds_error=False, fill_value="extrapolate")
         return func
+
+    @property
+    def survey_volume(self):
+        """
+        Total survey volume in Mpc^3
+        """
+        volume = (
+            (self.W_HI[:, :, 0].sum() * self.pixel_area * (np.pi / 180) ** 2)
+            / 3
+            * (
+                self.comoving_distance(self.z_ch.max()) ** 3
+                - self.comoving_distance(self.z_ch.min()) ** 3
+            ).value
+        )
+        return volume
