@@ -7,6 +7,20 @@ from astropy.cosmology import Planck18
 import healpy as hp
 from katbeam import JimBeam
 
+meerkat_L_band_nu_min = 856.0 * 1e6  # in Hz
+meerkat_L_band_nu_max = 1712.0 * 1e6  # in Hz
+meerkat_L_4k_delta_nu = 0.208984375 * 1e6  # in Hz
+
+meerklass_L_deep_nu_min = 971 * 1e6
+meerklass_L_deep_nu_max = 1023.8 * 1e6
+
+meerkat_UHF_band_nu_min = 544.0 * 1e6  # in Hz
+meerkat_UHF_band_nu_max = 1088.0 * 1e6  # in Hz
+meerkat_UHF_4k_delta_nu = 0.1328125 * 1e6  # in Hz
+
+meerklass_UHF_deep_nu_min = 610.0 * 1e6
+meerklass_UHF_deep_nu_max = 929.2 * 1e6
+
 
 def weighted_convolution(
     signal,

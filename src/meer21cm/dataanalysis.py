@@ -16,8 +16,6 @@ from astropy import constants, units
 import astropy
 from meer21cm.io import (
     cal_freq,
-    meerklass_L_deep_nu_min,
-    meerklass_L_deep_nu_max,
     read_map,
     filter_incomplete_los,
 )
@@ -26,6 +24,10 @@ from itertools import chain
 import meer21cm
 from scipy.interpolate import interp1d
 import meer21cm.telescope as telescope
+from meer21cm.telescope import (
+    meerklass_L_deep_nu_min,
+    meerklass_L_deep_nu_max,
+)
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
@@ -45,8 +47,8 @@ class Specification:
         map_file=None,
         counts_file=None,
         los_axis=-1,
-        nu_min=-np.inf,
-        nu_max=np.inf,
+        nu_min=None,
+        nu_max=None,
         filter_map_los=True,
         gal_file=None,
         weighting="counts",
@@ -56,8 +58,10 @@ class Specification:
         data=None,
         weights_map_pixel=None,
         counts=None,
+        band="L",
         **kwparams,
     ):
+        self.band = band
         self.dependency_dict = find_property_with_tags(self)
         funcs = list(chain.from_iterable(list(self.dependency_dict.values())))
         for func_i in np.unique(np.array(funcs)):
@@ -81,14 +85,19 @@ class Specification:
         self.map_file = map_file
         self.counts_file = counts_file
         self.los_axis = los_axis
-        self.nu_min = nu_min
-        self.nu_max = nu_max
         if nu is None:
             nu = cal_freq(
                 np.arange(4096) + 1,
+                band=self.band,
             )
-            nu_sel = (nu > meerklass_L_deep_nu_min) * (nu < meerklass_L_deep_nu_max)
+            if nu_min is None:
+                nu_min = getattr(telescope, f"meerklass_{self.band}_deep_nu_min")
+            if nu_max is None:
+                nu_max = getattr(telescope, f"meerklass_{self.band}_deep_nu_max")
+            nu_sel = (nu > nu_min) * (nu < nu_max)
             nu = nu[nu_sel]
+        self.nu_min = nu_min
+        self.nu_max = nu_max
         self._nu = np.array(nu)
         if wproj is None:
             map_file = default_data_dir + "test_fits.fits"
@@ -353,21 +362,6 @@ class Specification:
         return los_resol_in_mpc
 
     @property
-    def survey_volume(self):
-        """
-        Total survey volume in Mpc^3
-        """
-        volume = (
-            (self.W_HI[:, :, 0].sum() * self.pixel_area * (np.pi / 180) ** 2)
-            / 3
-            * (
-                self.comoving_distance(self.z_ch.max()) ** 3
-                - self.comoving_distance(self.z_ch.min()) ** 3
-            ).value
-        )
-        return volume
-
-    @property
     def data(self):
         """
         The map data
@@ -511,6 +505,7 @@ class Specification:
             nu_min=self.nu_min,
             nu_max=self.nu_max,
             los_axis=self.los_axis,
+            band=self.band,
         )
         self.num_pix_x, self.num_pix_y = self._ra_map.shape
         if self.filter_map_los:
@@ -520,12 +515,12 @@ class Specification:
                 self.counts,
                 self.counts,
             )
-        self.trim_map_to_range()
 
         if self.weighting.lower()[:5] == "count":
             self.weights_map_pixel = self.counts
         elif self.weighting.lower()[:7] == "uniform":
             self.weights_map_pixel = (self.counts > 0).astype("float")
+        self.trim_map_to_range()
 
     def trim_map_to_range(self):
         ra_temp = self.ra_map.copy()
@@ -597,6 +592,7 @@ class Specification:
                 wproj,
                 num_pix_x,
                 num_pix_y,
+                band=self.band,
             )
             sigma_beam_from_image = (
                 np.sqrt(beam_image.sum(axis=(0, 1)) / 2 / np.pi) * pix_resol

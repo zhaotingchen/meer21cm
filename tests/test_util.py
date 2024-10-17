@@ -328,3 +328,4 @@ def test_Obuljen18():
     assert np.allclose(
         hod_obuljen18(10, output_has_h=True), hm.hod.total_occupation(1e10)
     )
+    assert hm.hod.sigma_satellite(1e10) == 0
