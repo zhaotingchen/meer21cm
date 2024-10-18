@@ -10,13 +10,15 @@ from meer21cm.mock import (
     hi_mass_to_flux_profile,
     HIGalaxySimulation,
 )
-from meer21cm.util import hod_obuljen18
+from meer21cm import Specification
+from meer21cm.util import hod_obuljen18, create_udres_wproj
 from astropy.cosmology import Planck18, WMAP1
 from meer21cm.util import himf_pars_jones18, center_to_edges, f_21
 from unittest.mock import patch
 import matplotlib.pyplot as plt
 import sys
 from meer21cm.power import PowerSpectrum
+from meer21cm.util import radec_to_indx, find_ch_id, redshift_to_freq
 
 
 def test_matter_mock(test_W):
@@ -119,6 +121,7 @@ def test_tracer_mock(test_W, tracer_i):
         )
         # the accuracy is not good due to large variance of a single realization
         # multiple realizations are tested in test_pipeline.py
+        # maybe this should be removed
         assert avg_deviation < 1
 
 
@@ -233,7 +236,7 @@ def test_hi_mass_to_flux():
     assert np.max(np.abs(average_profile[::-1] - average_profile)) < 2e-5
 
 
-def test_HIGalaxySimulation():
+def test_mock_hi_profile():
     raminMK, ramaxMK = 334, 357
     decminMK, decmaxMK = -35, -26.5
     ra_range_MK = (raminMK, ramaxMK)
@@ -290,6 +293,94 @@ def test_HIGalaxySimulation():
     assert np.argmax(average_profile) == average_profile.size // 2
     # symmetric
     assert np.max(np.abs(average_profile[::-1] - average_profile)) < 2e-5
+
+
+@pytest.mark.parametrize("highres", [(None), (3)])
+def test_project_hi_profile(highres):
+    raminMK, ramaxMK = 334, 357
+    decminMK, decmaxMK = -35, -26.5
+    ra_range_MK = (raminMK, ramaxMK)
+    dec_range_MK = (decminMK, decmaxMK)
+    D_dish = 13.5
+    # tests
+    hisim = HIGalaxySimulation(
+        ra_range=ra_range_MK,
+        dec_range=dec_range_MK,
+        tracer_bias_1=1.5,
+        tracer_bias_2=1.9,
+        num_discrete_source=10,
+        target_relative_to_num_g=1.0,
+        downres_factor_radial=1 / 3,
+        downres_factor_transverse=1 / 3,
+        kmax=20,
+        nonlinear="both",
+        tf_slope=3.66,
+        tf_zero=1.6,
+        no_vel=False,
+        highres_sim=highres,
+    )
+    if highres is not None:
+        wproj_hires = create_udres_wproj(hisim.wproj, highres)
+    else:
+        wproj_hires = hisim.wproj
+    hifluxd_ch = hisim.hi_profile_mock_tracer
+    hi_map_in_jy = hisim.propagate_hi_profile_to_map(return_highres=False, beam=True)
+    # extremely rarely, the galaxies are exactly at the edge of the grid so highres
+    # down to lowres and directly from lowres will have a misplacement of one pixel
+    # this is to avoid that
+    if highres is None:
+        indx_0, indx_1 = radec_to_indx(
+            hisim.ra_mock_tracer, hisim.dec_mock_tracer, hisim.wproj
+        )
+    else:
+        sp_hires = Specification(
+            wproj=wproj_hires,
+            num_pix_x=hisim.num_pix_x * highres,
+            num_pix_y=hisim.num_pix_y * highres,
+        )
+        indx_test = radec_to_indx(
+            hisim.ra_mock_tracer,
+            hisim.dec_mock_tracer,
+            wproj_hires,
+        )
+        ratest, dectest = sp_hires.ra_map[indx_test], sp_hires.dec_map[indx_test]
+        indx_0, indx_1 = radec_to_indx(ratest, dectest, hisim.wproj)
+    indx_z = find_ch_id(redshift_to_freq(hisim.z_mock_tracer), hisim.nu)
+    num_ch_vel = hifluxd_ch.shape[0] // 2
+    sel = (
+        ((indx_z - num_ch_vel) >= 0)
+        * ((indx_z + num_ch_vel + 1) < hisim.nu.size)
+        * (indx_0 >= 0)
+        * (indx_0 < hi_map_in_jy.shape[0])
+        * (indx_1 >= 0)
+        * (indx_1 < hi_map_in_jy.shape[1])
+    )
+    if sel.sum() == 0:
+        return 1.0
+    profile_in_map = hi_map_in_jy[
+        indx_0[sel],
+        indx_1[sel],
+    ]
+    for i in range(len(profile_in_map)):
+        test1 = profile_in_map[i][
+            indx_z[sel][i] - num_ch_vel : indx_z[sel][i] + num_ch_vel + 1
+        ]
+        test2 = hifluxd_ch[:, sel][:, i]
+        assert np.allclose(test1, test2)
+    # add in an extremely small beam just to trigger the tests
+    hisim.sigma_beam_ch = np.zeros(hisim.nu.size) + 1e-5
+    hi_map_in_jy = hisim.propagate_hi_profile_to_map(return_highres=False, beam=True)
+    profile_in_map = hi_map_in_jy[
+        indx_0,
+        indx_1,
+    ]
+    for i in range(len(profile_in_map)):
+        if sel[i]:
+            test1 = profile_in_map[i][
+                indx_z[i] - num_ch_vel : indx_z[i] + num_ch_vel + 1
+            ]
+            test2 = hifluxd_ch[:, i]
+            assert np.allclose(test1, test2)
 
 
 def test_auto_mmin(test_wproj, test_nu, test_W, test_GAMA_range):

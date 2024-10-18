@@ -59,7 +59,7 @@ def sample_map_from_highres(
         Whether the sampling is an average of the high-res pixels (True)
         or the sum (False).
     """
-    indx_1, indx_2 = radec_to_indx(ra_map, dec_map, wproj_lowres)
+    indx_1, indx_2 = radec_to_indx(ra_map, dec_map, wproj_lowres, to_int=False)
     indx_1 = indx_1.ravel()
     indx_2 = indx_2.ravel()
     map_lowres = np.zeros((num_pix_x, num_pix_y, map_highres.shape[-1]))
@@ -92,7 +92,7 @@ def create_udres_wproj(
     wproj: :class:`astropy.wcs.WCS` object.
         The input wcs.
     udres_scale: float
-        The ratio between input and output resolution
+        The ratio between input and output resolution.
 
     Returns
     -------
@@ -365,7 +365,11 @@ def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     """
     vec1 = hp.ang2vec(ra1, dec1, lonlat=True)
     vec2 = hp.ang2vec(ra2, dec2, lonlat=True)
-    result = (np.arccos((vec1 * vec2).sum(axis=-1)) * units.rad).to(unit).value
+    # extremely rarely, due to precision errors vec1*vec2 can be bigger than 1
+    # triggering a nan in arccos
+    v1v2cross = (vec1 * vec2).sum(axis=-1)
+    v1v2cross[v1v2cross > 1] = 1
+    result = (np.arccos(v1v2cross) * units.rad).to(unit).value
     return result.T
 
 

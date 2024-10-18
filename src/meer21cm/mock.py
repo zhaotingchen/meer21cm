@@ -655,6 +655,80 @@ class HIGalaxySimulation(MockSimulation):
         )
         self._hi_profile_mock_tracer = hifluxd_ch
 
+    def propagate_hi_profile_to_map(self, return_highres=False, beam=True):
+        """
+        Project the ``hi_profile_mock_tracer`` onto sky maps and convolve with the beam (if ``beam``).
+        If ``return_highres``, the returned map is the higher resolution map
+        specified by ``highres_sim``. If not, the map will be downsampled to the original resolution.
+        """
+        if self.sigma_beam_ch is None:
+            beam = False
+        highres = self.highres_sim
+        num_pix_x = self.num_pix_x
+        num_pix_y = self.num_pix_y
+        hifluxd_ch = self.hi_profile_mock_tracer
+        if highres is None:
+            # no need for downsampling
+            return_highres = True
+            wproj = self.wproj
+        else:
+            wproj = create_udres_wproj(self.wproj, highres)
+            num_pix_x *= highres
+            num_pix_y *= highres
+
+        indx_0, indx_1 = radec_to_indx(
+            self.ra_mock_tracer, self.dec_mock_tracer, wproj, to_int=False
+        )
+        nu_ext = self.nu.copy()
+        for i in range(self.num_ch_ext_on_each_side * 2):
+            nu_ext = center_to_edges(nu_ext)
+        indx_z = find_ch_id(redshift_to_freq(self.z_mock_tracer), nu_ext)
+        num_ch_vel = hifluxd_ch.shape[0] // 2
+        hi_map_ext_in_jy = np.zeros((num_pix_x, num_pix_y, len(nu_ext)))
+        for i, indx_diff in enumerate(
+            np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1).astype("int")
+        ):
+            hiflux_i = hifluxd_ch[i]
+            indx_2 = indx_z + indx_diff
+            indx_bins = [
+                np.arange(hi_map_ext_in_jy.shape[i] + 1) - 0.5 for i in range(3)
+            ]
+            map_i, _ = np.histogramdd(
+                np.array([indx_0, indx_1, indx_2]).T,
+                bins=indx_bins,
+                weights=hiflux_i,
+            )
+            hi_map_ext_in_jy += map_i
+        # remove the excess channels used for taking into account of galaxies
+        # whose centres are outside the frequency range but the profile tails are inside
+        hi_map_in_jy = hi_map_ext_in_jy[
+            :, :, self.num_ch_ext_on_each_side : -self.num_ch_ext_on_each_side
+        ]
+        if beam:
+            beam_image = self.get_beam_image(wproj, num_pix_x, num_pix_y, cache=False)
+            hi_map_in_jy, _ = weighted_convolution(
+                hi_map_in_jy, beam_image, np.ones_like(hi_map_in_jy)
+            )
+        if return_highres:
+            return hi_map_in_jy
+        spec = Specification(
+            wproj=wproj,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        ra_map = spec.ra_map
+        dec_map = spec.dec_map
+        hi_map_in_jy = sample_map_from_highres(
+            hi_map_in_jy,
+            ra_map,
+            dec_map,
+            self.wproj,
+            self.num_pix_x,
+            self.num_pix_y,
+            average=False,
+        )
+        return hi_map_in_jy
+
 
 class HISimulation:
     def __init__(
