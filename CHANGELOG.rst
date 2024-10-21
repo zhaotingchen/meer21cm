@@ -6,6 +6,7 @@ dev
 Features
 ++++++++
 * mock tracer positions
+* new HI galaxy simulation class
 
 Enhancements
 ++++++++++++

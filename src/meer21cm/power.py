@@ -1554,6 +1554,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
 
+    def get_n_bar_correction(self):
+        n_bar = self.ra_gal.size / self.survey_volume
+        n_bar2 = (
+            (self.field_2 * self.weights_2).sum()
+            / self.weights_2.sum()
+            / np.prod(self.box_resol)
+        )
+        return n_bar2 / n_bar
+
     def ra_dec_z_for_coord_in_box(self, pos_in_box):
         pos_arr = pos_in_box + self.box_origin
         rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
@@ -1563,13 +1572,28 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
         return pos_ra, pos_dec, pos_z
 
-    def grid_field_to_sky_map(self, field, average=True):
+    def grid_field_to_sky_map(
+        self,
+        field,
+        average=True,
+        mask=True,
+        wproj=None,
+        num_pix_x=None,
+        num_pix_y=None,
+    ):
+        if wproj is None:
+            wproj = self.wproj
+        if num_pix_x is None:
+            num_pix_x = self.num_pix_x
+        if num_pix_y is None:
+            num_pix_y = self.num_pix_y
         pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
         pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
         pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
-        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, self.wproj)
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj)
         pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
-        indx_bins = [center_to_edges(np.arange(self.W_HI.shape[i])) for i in range(3)]
+        indx_num = [num_pix_x, num_pix_y, len(self.nu)]
+        indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(3)]
         pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
         map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=field.ravel())
         count_bin, _ = np.histogramdd(
@@ -1578,7 +1602,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         if average:
             map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
-        map_bin *= self.W_HI
+        if mask:
+            map_bin *= self.W_HI
         return map_bin
 
     def gen_random_poisson_galaxy(self, num_g_rand=None, seed=None):

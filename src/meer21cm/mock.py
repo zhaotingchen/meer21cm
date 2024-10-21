@@ -33,6 +33,10 @@ from .util import (
     redshift_to_freq,
     random_sample_indx,
     find_ch_id,
+    mass_intflux_coeff,
+    Obuljen18,
+    create_udres_wproj,
+    sample_map_from_highres,
 )
 from .plot import plot_map
 from .grid import (
@@ -40,8 +44,8 @@ from .grid import (
     minimum_enclosing_box_of_lightcone,
 )
 import healpy as hp
-from meer21cm.power import PowerSpectrum
-
+from meer21cm.power import PowerSpectrum, Specification
+from meer21cm.telescope import weighted_convolution
 from powerbox import LogNormalPowerBox
 from halomod import TracerHaloModel as THM
 from powerbox import dft
@@ -57,6 +61,9 @@ class MockSimulation(PowerSpectrum):
         target_relative_to_num_g=1.5,
         num_discrete_source=100,
         discrete_base_field=2,
+        strict_num_source=True,
+        auto_relative=False,
+        highres_sim=None,
         **params,
     ):
         super().__init__(**params)
@@ -86,6 +93,62 @@ class MockSimulation(PowerSpectrum):
         self.target_relative_to_num_g = target_relative_to_num_g
         self.num_discrete_source = num_discrete_source
         self.discrete_base_field = discrete_base_field
+        self.strict_num_source = strict_num_source
+        self.auto_relative = auto_relative
+        self.highres_sim = highres_sim
+
+    @property
+    def highres_sim(self):
+        """
+        If not None, the mock field will first be gridded to a high resolution
+        sky map, convolved with the beam and then gridded to the resolution
+        specified by ``self.wproj``. The ratio of the angular resolution between
+        the high-res map and the target map is specified by this ``highres_sim``.
+        """
+        return self._highres_sim
+
+    @highres_sim.setter
+    def highres_sim(self, value):
+        self._highres_sim = value
+
+    @property
+    def strict_num_source(self):
+        """
+        Whether the number of galaxies simulated in the galaxy catalogue,
+        i.e. the size of ``self.ra_gal.size``, strictly equals to
+        ``self.num_discrete_source``. Note that due to Poisson sampling and
+        the fact that survey volume is smaller than the enclosing box,
+        the number of mock tracers will be larger than the input
+        ``self.num_discrete_source``. The exact number is determined by
+        ``self.num_discrete_source * self.target_relative_to_num_g``.
+
+        The mock tracers inside the specified ``self.W_HI`` range will be counted
+        and propagate into the galaxy catalogue. If ``strict_num_source`` is true,
+        and if number of tracers inside the range is larger than
+        ``self.num_discrete_source``, a random sampling is performed to trim off
+        the excess number of sources. Doing this may result in small mismatch between
+        the input and output power spectrum.
+        """
+        return self._strict_num_source
+
+    @strict_num_source.setter
+    def strict_num_source(self, value):
+        self._strict_num_source = value
+        self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    def auto_relative(self):
+        """
+        Whether ``target_relative_to_num_g`` is automatically calculated.
+        If True, it will be set to the ratio between the volume of the
+        enclosing box and the survey volume.
+        """
+        return self._auto_relative
+
+    @auto_relative.setter
+    def auto_relative(self, value):
+        self._auto_relative = value
+        self.clean_cache(self.discrete_dep_attr)
 
     @property
     def target_relative_to_num_g(self):
@@ -241,8 +304,12 @@ class MockSimulation(PowerSpectrum):
         getattr(self, "mock_tracer_field_" + str(tracer_i))
         # now actually getting the underlying overdensity
         pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        if self.auto_relative:
+            print("automatically reset target_relative_to_num_g")
+            self.target_relative_to_num_g = np.prod(self.box_len) / self.survey_volume
         num_g = self.target_relative_to_num_g * self.num_discrete_source
         pos_value /= pos_value.sum() / num_g
+        # taken from powerbox
         n_per_cell = rng.poisson(pos_value)
         args = self.x_vec
         X = np.meshgrid(*args, indexing="ij")
@@ -297,7 +364,7 @@ class MockSimulation(PowerSpectrum):
                 "Not enough tracers inside the ra, dec, z range. "
                 + "Try increasing target_relative_to_num_g."
             )
-        else:
+        elif self.strict_num_source:
             inside_indx = np.where(inside_range)[0]
             rand_indx = random_sample_indx(
                 len(inside_indx), self.num_discrete_source, seed=self.seed
@@ -326,6 +393,341 @@ class MockSimulation(PowerSpectrum):
         self._ra_gal = ra[inside_range]
         self._dec_gal = dec[inside_range]
         self._z_gal = z[inside_range]
+
+    def propagate_mock_field_to_data(self, field, beam=True, highres=None):
+        """
+        Grid the mock tracer field onto the sky map and
+        """
+        if highres is None:
+            highres = self.highres_sim
+        if self.sigma_beam_ch is None:
+            beam = False
+        if highres is None:
+            wproj_hires = self.wproj
+            num_pix_x = self.num_pix_x
+            num_pix_y = self.num_pix_y
+        else:
+            wproj_hires = create_udres_wproj(self.wproj, highres)
+            num_pix_x = self.num_pix_x * highres
+            num_pix_y = self.num_pix_y * highres
+        map_highres = self.grid_field_to_sky_map(
+            field,
+            average=True,
+            mask=False,
+            wproj=wproj_hires,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        if highres is None and not beam:
+            return map_highres
+        if beam:
+            beam_image = self.get_beam_image(
+                wproj_hires, num_pix_x, num_pix_y, cache=False
+            )
+            map_highres, _ = weighted_convolution(
+                map_highres, beam_image, np.ones_like(map_highres)
+            )
+        if highres is None:
+            return map_highres
+        spec = Specification(
+            wproj=wproj_hires,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        ra_map = spec.ra_map
+        dec_map = spec.dec_map
+        map_highres = sample_map_from_highres(
+            map_highres,
+            ra_map,
+            dec_map,
+            self.wproj,
+            self.num_pix_x,
+            self.num_pix_y,
+        )
+        return map_highres
+
+
+class HIGalaxySimulation(MockSimulation):
+    def __init__(
+        self,
+        no_vel=True,
+        tf_slope=None,
+        tf_zero=None,
+        halo_model=None,
+        hi_mass_from="hod",
+        himf_pars=None,
+        num_ch_ext_on_each_side=5,
+        **params,
+    ):
+        super().__init__(**params)
+        # has to have tracer 2 for sim
+        if self.tracer_bias_2 is None:
+            self.tracer_bias_2 = 1.0
+        self.no_vel = no_vel
+        self.tf_slope = tf_slope
+        self.tf_zero = tf_zero
+        if halo_model is None:
+            halo_model = THM(
+                cosmo_model=self.cosmo,
+                z=self.z,
+                hod_model=Obuljen18,
+            )
+        self.halo_model = halo_model
+        self.hi_mass_from = hi_mass_from.lower()
+        if himf_pars is None:
+            himf_pars = himf_pars_jones18(self.h / 0.7)
+        self.himf_pars = himf_pars
+        self.num_ch_ext_on_each_side = num_ch_ext_on_each_side
+        init_attr = [
+            "_halo_mass_mock_tracer",
+            "_hi_mass_mock_tracer",
+            "_hi_profile_mock_tracer",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def hi_mass_from(self):
+        """
+        Methods for calculating HI mass.
+        Can either be 'hod' or 'himf'.
+        """
+        return self._hi_mass_from
+
+    @hi_mass_from.setter
+    def hi_mass_from(self, value):
+        self._hi_mass_from = value
+        if "himass_dep_attr" in dir(self):
+            self.clean_cache(self.himass_dep_attr)
+
+    @property
+    def no_vel(self):
+        """
+        If True, HI sources will have no velocity width.
+        """
+        return self._no_vel
+
+    @no_vel.setter
+    def no_vel(self, value):
+        self._no_vel = value
+        if "hivel_dep_attr" in dir(self):
+            self.clean_cache(self.hivel_dep_attr)
+
+    @property
+    def tf_slope(self):
+        """
+        Slope of Tully-Fisher relation.
+        See :func:`meer21cm.util.tully_fisher`.
+        """
+        return self._tf_slope
+
+    @tf_slope.setter
+    def tf_slope(self, value):
+        self._tf_slope = value
+        if "hivel_dep_attr" in dir(self):
+            self.clean_cache(self.hivel_dep_attr)
+
+    @property
+    def tf_zero(self):
+        """
+        The intercept of the T-F relation. See :func:`meer21cm.util.tully_fisher`.
+        """
+        return self._tf_zero
+
+    @tf_zero.setter
+    def tf_zero(self, value):
+        self._tf_zero = value
+        if "hivel_dep_attr" in dir(self):
+            self.clean_cache(self.hivel_dep_attr)
+
+    @property
+    def halo_model(self):
+        """
+        A :class:`halomod.TracerHaloModel` object for storing the halo model.
+        """
+        return self._halo_model
+
+    @halo_model.setter
+    def halo_model(self, value):
+        self._halo_model = value
+        if "hm_dep_attr" in dir(self):
+            self.clean_cache(self.hm_dep_attr)
+
+    @property
+    @tagging(
+        "hm", "cosmo", "nu", "mock", "box", "tracer_1", "tracer_2", "discrete", "rsd"
+    )
+    def halo_mass_mock_tracer(self):
+        """
+        The halo mass of the mock tracers in log10 M_sun/h.
+        """
+        if self._halo_mass_mock_tracer is None:
+            self.get_halo_mass_mock_tracer()
+        return self._halo_mass_mock_tracer
+
+    def get_halo_mass_mock_tracer(self):
+        # propagate mock catalogue to galaxy catalogue
+        self.propagate_mock_tracer_to_gal_cat()
+        num_g_tot_in_mockrange = self.ra_gal.size
+        num_g_tot_in_map = self.ra_mock_tracer.size
+        hm = self.halo_model
+        dlog10m = hm.dlog10m
+        m_arr_inv = hm.m[::-1]
+        # in (Mpc/h)^-3
+        n_halo = np.cumsum((hm.dndlog10m * dlog10m)[::-1])
+        # in Mpc^-3
+        n_halo *= self.h**3
+        dV_pix = self.pix_resol_in_mpc**2 * self.los_resol_in_mpc
+        m_indx_mock = np.where(
+            (n_halo * dV_pix * self.W_HI.sum()) < num_g_tot_in_mockrange
+        )[0].max()
+        logm_halo_min = np.log10(m_arr_inv)[m_indx_mock]
+        dndlog10_fnc = interp1d(np.log10(hm.m), hm.dndlog10m)
+        self._halo_mass_mock_tracer = sample_from_dist(
+            dndlog10_fnc,
+            logm_halo_min,
+            np.log10(hm.m.max()),
+            size=num_g_tot_in_map,
+            seed=self.seed,
+        )
+
+    @property
+    @tagging(
+        "hm",
+        "cosmo",
+        "nu",
+        "mock",
+        "box",
+        "tracer_1",
+        "tracer_2",
+        "discrete",
+        "rsd",
+        "himass",
+    )
+    def hi_mass_mock_tracer(self):
+        """
+        The HI mass of the mock tracers in log10 M_sun.
+        """
+        if self._hi_mass_mock_tracer is None:
+            getattr(self, "get_hi_mass_mock_tracer" + "_" + self.hi_mass_from)()
+        return self._hi_mass_mock_tracer
+
+    def get_hi_mass_mock_tracer_hod(self):
+        himass_g = (
+            self.halo_model.hod.total_occupation(10**self.halo_mass_mock_tracer)
+            / self.h
+        )  # no h
+        self._hi_mass_mock_tracer = np.log10(himass_g)
+
+    @property
+    @tagging(
+        "hm",
+        "cosmo",
+        "nu",
+        "mock",
+        "box",
+        "tracer_1",
+        "tracer_2",
+        "discrete",
+        "rsd",
+        "himass",
+        "hivel",
+    )
+    def hi_profile_mock_tracer(self):
+        """
+        The emission line profiles of the mock tracers in Jansky
+        """
+        if self._hi_profile_mock_tracer is None:
+            self.get_hi_profile_mock_tracer()
+        return self._hi_profile_mock_tracer
+
+    def get_hi_profile_mock_tracer(self):
+        hifluxd_ch = hi_mass_to_flux_profile(
+            self.hi_mass_mock_tracer,
+            self.z_mock_tracer,
+            self.nu,
+            self.tf_slope,
+            self.tf_zero,
+            cosmo=self.cosmo,
+            seed=self.seed,
+            no_vel=self.no_vel,
+            num_ch_ext_on_each_side=self.num_ch_ext_on_each_side,
+        )
+        self._hi_profile_mock_tracer = hifluxd_ch
+
+    def propagate_hi_profile_to_map(self, return_highres=False, beam=True):
+        """
+        Project the ``hi_profile_mock_tracer`` onto sky maps and convolve with the beam (if ``beam``).
+        If ``return_highres``, the returned map is the higher resolution map
+        specified by ``highres_sim``. If not, the map will be downsampled to the original resolution.
+        """
+        if self.sigma_beam_ch is None:
+            beam = False
+        highres = self.highres_sim
+        num_pix_x = self.num_pix_x
+        num_pix_y = self.num_pix_y
+        hifluxd_ch = self.hi_profile_mock_tracer
+        if highres is None:
+            # no need for downsampling
+            return_highres = True
+            wproj = self.wproj
+        else:
+            wproj = create_udres_wproj(self.wproj, highres)
+            num_pix_x *= highres
+            num_pix_y *= highres
+
+        indx_0, indx_1 = radec_to_indx(
+            self.ra_mock_tracer, self.dec_mock_tracer, wproj, to_int=False
+        )
+        nu_ext = self.nu.copy()
+        for i in range(self.num_ch_ext_on_each_side * 2):
+            nu_ext = center_to_edges(nu_ext)
+        indx_z = find_ch_id(redshift_to_freq(self.z_mock_tracer), nu_ext)
+        num_ch_vel = hifluxd_ch.shape[0] // 2
+        hi_map_ext_in_jy = np.zeros((num_pix_x, num_pix_y, len(nu_ext)))
+        for i, indx_diff in enumerate(
+            np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1).astype("int")
+        ):
+            hiflux_i = hifluxd_ch[i]
+            indx_2 = indx_z + indx_diff
+            indx_bins = [
+                np.arange(hi_map_ext_in_jy.shape[i] + 1) - 0.5 for i in range(3)
+            ]
+            map_i, _ = np.histogramdd(
+                np.array([indx_0, indx_1, indx_2]).T,
+                bins=indx_bins,
+                weights=hiflux_i,
+            )
+            hi_map_ext_in_jy += map_i
+        # remove the excess channels used for taking into account of galaxies
+        # whose centres are outside the frequency range but the profile tails are inside
+        hi_map_in_jy = hi_map_ext_in_jy[
+            :, :, self.num_ch_ext_on_each_side : -self.num_ch_ext_on_each_side
+        ]
+        if beam:
+            beam_image = self.get_beam_image(wproj, num_pix_x, num_pix_y, cache=False)
+            hi_map_in_jy, _ = weighted_convolution(
+                hi_map_in_jy, beam_image, np.ones_like(hi_map_in_jy)
+            )
+        if return_highres:
+            return hi_map_in_jy
+        spec = Specification(
+            wproj=wproj,
+            num_pix_x=num_pix_x,
+            num_pix_y=num_pix_y,
+        )
+        ra_map = spec.ra_map
+        dec_map = spec.dec_map
+        hi_map_in_jy = sample_map_from_highres(
+            hi_map_in_jy,
+            ra_map,
+            dec_map,
+            self.wproj,
+            self.num_pix_x,
+            self.num_pix_y,
+            average=False,
+        )
+        return hi_map_in_jy
 
 
 class HISimulation:
@@ -833,6 +1235,146 @@ def gen_random_gal_pos(
     return ra_g_mock, dec_g_mock, inside_range
 
 
+def hi_mass_to_flux_profile(
+    loghimass,
+    z_g,
+    nu,
+    tf_slope=None,
+    tf_zero=None,
+    cosmo=Planck18,
+    seed=None,
+    num_ch_ext_on_each_side=5,
+    internal_step=1001,
+    no_vel=True,
+):
+    r"""
+    Convert HI mass to emission line profile.
+
+    The relation between mass and flux (flux density integrated) of a HI source can be written as [1]
+
+    .. math::
+        M_{\rm HI} = \frac{16\pi m_H}{3 h f_{21} A_{10}}\, D_L^2\, S,
+
+    where :math:`M_{\rm HI}` is the HI mass, :math:`m_H` is the mass of neutral hydrogen atom,
+    :math:`h` is the Planck constant, :math:`f_{21}` is the rest frequency of 21cm line,
+    :math:`A_{10}` is the spontaneous emission rate of 21cm line,
+    :math:`D_L` is the luminosity distance of the source, and
+    :math:`S` is the flux.
+
+    If ``no_vel`` is set to ``False``, the w50 parameters of the HI sources are calculated using
+    a Tully-Fisher relation. Random inclinations and busy function parameters are assigned to the sources.
+    The busy functions are then used as the emission profiles. The profiles are gridded into frequency channels.
+    The gridded profile, ``hifluxd_ch`` has the shape of (ch_offset,num_source), with the zeroth axis corresponding
+    to the channel offset, and varies from (-N,-N+1,...,0,...,N-1,N).
+
+    Parameters
+    ----------
+    loghimass: array
+        The HI mass of sources in log10 solmar mass (**no h**).
+    z_g: array
+        The redshifts of the sources
+    nu: array
+        The frequency channels in Hz.
+    tf_slope: float, default None.
+        The slope of the T-F relation. See :func:`meer21cm.util.tully_fisher`.
+    tf_zero: float, default None.
+        The intercept of the T-F relation. See :func:`meer21cm.util.tully_fisher`.
+    cosmo: optional, default Planck18.
+        The cosmology used.
+    seed: optional, default None.
+        The seed number for rng.
+    num_ch_ext_on_each_side: optional, default 5.
+        Internal parameter, no need to change.
+    internal_step: optional, default 1001.
+        Internal parameter, decrease for less accuracy.
+        Can be lower when velocity resolution is low.
+    no_vel: optional, default True.
+        If True, source will have no emission line profile and just a delta peak.
+
+    Returns
+    -------
+    hifluxd_ch: array
+        The flux density of each source in Jy.
+
+    References
+    ----------
+    .. [1] Meyer et al., "Tracing HI Beyond the Local Universe", https://arxiv.org/abs/1705.04210
+    """
+    rng = np.random.default_rng(seed=seed)
+    # internally allowing some extension so galaxies
+    # outside the frequency range can be accurately calculated
+    # so the tail of profile can be correctly distributed into the range
+    nu_ext = nu.copy()
+    for i in range(num_ch_ext_on_each_side * 2):
+        nu_ext = center_to_edges(nu_ext)
+    num_g = loghimass.size
+    lumi_dist_g = cosmo.luminosity_distance(z_g).to("Mpc").value
+    # in Jy Hz
+    hiintflux_g = 10**loghimass / mass_intflux_coeff / lumi_dist_g**2
+    freq_resol = np.diff(nu).mean()
+    # no velocity, just one channel
+    if no_vel:
+        hifluxd_ch = hiintflux_g / freq_resol
+        return hifluxd_ch[None, :]
+    # get w_50
+    hivel_g = tully_fisher(10**loghimass / 1.4, tf_slope, tf_zero, inv=True)
+    incli_g = np.abs(np.sin(rng.uniform(0, 2 * np.pi, size=num_g)))
+    # get width
+    hiwidth_g = incli_g * hivel_g
+    # in km/s/freq
+    dvdf = (constants.c / nu).to("km/s").value.mean()
+    vel_resol = dvdf * np.diff(nu).mean()
+    # get the number of channels needed to plot the profile
+    num_ch_vel = (int(hiwidth_g.max() / vel_resol)) // 2 + 2
+    # in terms of frequency offset
+    freq_ch_arr = np.linspace(-num_ch_vel, num_ch_vel, 2 * num_ch_vel + 1) * freq_resol
+    # busy function parameters
+    busy_c = 10 ** (rng.uniform(-3, -2, size=num_g))
+    busy_b = 10 ** (rng.uniform(-2, 0, size=num_g))
+    # fine resolution velocity offset points for calculating the profile
+    vel_int_arr = np.linspace(-hiwidth_g.max(), hiwidth_g.max(), num=internal_step)
+    hiprofile_g = busy_function_simple(
+        vel_int_arr[:, None],
+        1,
+        busy_b,
+        (busy_c / hiwidth_g)[None, :] * 2,
+        hiwidth_g[None, :] / 2,
+    )
+    # the sum over profile should give the integrated flux
+    hiprofile_g = (
+        hiprofile_g / (np.sum(hiprofile_g, axis=0))[None, :] * hiintflux_g[None, :]
+    )
+    gal_freq = redshift_to_freq(z_g)
+    gal_which_ch = find_ch_id(gal_freq, nu_ext)
+    # the fine resolution point in Hz
+    freq_int_arr = (
+        vel_int_arr[None, :] * gal_freq[:, None] / constants.c.to("km/s").value
+    )
+    hicumflux_g = np.cumsum(hiprofile_g, axis=0)
+    # central freq of a galaxy relative to the frequency channel
+    freq_start_pos = np.zeros_like(gal_freq)
+    inrange_sel = gal_which_ch < nu_ext.size
+    freq_start_pos[inrange_sel] = (
+        nu_ext[gal_which_ch[inrange_sel]] - gal_freq[inrange_sel] - freq_resol / 2
+    )
+    freq_gal_arr = freq_ch_arr[:, None] - freq_start_pos[None, :]
+    freq_indx = np.argmin(
+        np.abs(freq_gal_arr[:, :, None] - freq_int_arr[None, :, :]).reshape(
+            (-1, freq_int_arr.shape[-1])
+        ),
+        axis=1,
+    )
+    freq_indx = freq_indx.reshape(freq_gal_arr.shape)
+    hifluxd_ch = np.zeros(freq_indx.shape)
+    for i in range(num_g):
+        hifluxd_ch[:, i] = hicumflux_g[:, i][freq_indx[:, i]]
+    hifluxd_ch = np.diff(hifluxd_ch, axis=0)
+    hifluxd_ch = np.concatenate((np.zeros(num_g)[None, :], hifluxd_ch), axis=0)
+    # from Jy Hz to Jy
+    hifluxd_ch /= freq_resol
+    return hifluxd_ch
+
+
 def generate_hi_flux(
     nu,
     ra_g_mock,
@@ -1021,6 +1563,7 @@ def flux_to_sky_map(
         # throw away edge bits
         indx_z[indx_z < 0] = 0
         indx_z[indx_z >= sky_map.shape[-1]] = sky_map.shape[-1] - 1
+        # this is wrong actually, if multiple galaxies are in one indx
         if fast_ang_pos:
             sky_map[indx_1_g, indx_2_g, indx_z] += sourceflux_ch[i]
         else:

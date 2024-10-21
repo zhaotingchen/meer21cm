@@ -12,10 +12,99 @@ from powerbox import PowerBox
 from scipy.special import erf
 from scipy.interpolate import interp1d
 from numpy.random import default_rng
+from halomod.hod import HODBulk
+from astropy.wcs import WCS
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
 lamb_21 = (constants.c / f_21 * units.s).to("m")
+# for HI galaxy
+nhi_per_jyhzdl2 = 16 * np.pi / 3 / constants.h / (f_21 * units.Hz) / A_10
+nhi_per_jyhzdl2 = nhi_per_jyhzdl2.to("Mpc-2 Jy-1 Hz-1")
+# correct coeff for eq 45 in 1705.04210
+mass_intflux_coeff = (
+    (
+        nhi_per_jyhzdl2
+        * (constants.m_e + constants.m_p)
+        * units.Mpc**2
+        * units.Jy
+        * units.Hz
+    )
+    .to("Msun")
+    .value
+)
+
+
+def sample_map_from_highres(
+    map_highres, ra_map, dec_map, wproj_lowres, num_pix_x, num_pix_y, average=True
+):
+    """
+    grid a highres map into lowres.
+
+    Parameters
+    ----------
+    map_highres: array
+        The input high-res map.
+    ra_map: array
+        The RA coordinates of the input map pixels.
+    dec_map: array
+        The Dec coordinates of the input map pixels.
+    wproj_lowres: :class:`astropy.wcs.WCS` object.
+        The wcs object for the low-res map.
+    num_pix_x: int
+        The number of pixels along the first axis for the low-res map.
+    num_pix_y: int
+        The number of pixels along the second axis for the low-res map.
+    average: bool, default True.
+        Whether the sampling is an average of the high-res pixels (True)
+        or the sum (False).
+    """
+    indx_1, indx_2 = radec_to_indx(ra_map, dec_map, wproj_lowres, to_int=False)
+    indx_1 = indx_1.ravel()
+    indx_2 = indx_2.ravel()
+    map_lowres = np.zeros((num_pix_x, num_pix_y, map_highres.shape[-1]))
+    indx_num = [num_pix_x, num_pix_y]
+    indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(2)]
+    for indx_z in range(map_highres.shape[-1]):
+        count, _ = np.histogramdd(np.array([indx_1, indx_2]).T, bins=indx_bins)
+        map_i, _ = np.histogramdd(
+            np.array([indx_1, indx_2]).T,
+            bins=indx_bins,
+            weights=map_highres[:, :, indx_z].ravel(),
+        )
+        if average:
+            map_i /= count
+        map_lowres[:, :, indx_z] = map_i
+    return map_lowres
+
+
+def create_udres_wproj(
+    wproj,
+    udres_scale,
+):
+    """
+    Take an input wcs and create a wcs object that upgrades/downgrades the resolution.
+    The ratio between the output resolution and input is determined by
+    ``udres_scale``.
+
+    Parameters
+    ----------
+    wproj: :class:`astropy.wcs.WCS` object.
+        The input wcs.
+    udres_scale: float
+        The ratio between input and output resolution.
+
+    Returns
+    -------
+    w: :class:`astropy.wcs.WCS` object.
+        The output wcs.
+    """
+    w = WCS(naxis=2)
+    w.wcs.crpix = wproj.wcs.crpix
+    w.wcs.cdelt = wproj.wcs.cdelt / udres_scale
+    w.wcs.crval = wproj.wcs.crval
+    w.wcs.ctype = wproj.wcs.ctype
+    return w
 
 
 def super_sample_array(arr_in, super_factor):
@@ -276,7 +365,11 @@ def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     """
     vec1 = hp.ang2vec(ra1, dec1, lonlat=True)
     vec2 = hp.ang2vec(ra2, dec2, lonlat=True)
-    result = (np.arccos((vec1 * vec2).sum(axis=-1)) * units.rad).to(unit).value
+    # extremely rarely, due to precision errors vec1*vec2 can be bigger than 1
+    # triggering a nan in arccos
+    v1v2cross = (vec1 * vec2).sum(axis=-1)
+    v1v2cross[v1v2cross > 1] = 1
+    result = (np.arccos(v1v2cross) * units.rad).to(unit).value
     return result.T
 
 
@@ -902,3 +995,27 @@ def tully_fisher(xarr, slope, zero_point, inv=False):
     else:
         out = 10 ** (slope * np.log10(xarr) + zero_point)
     return out
+
+
+class Obuljen18(HODBulk):
+    """
+    A :class:`halomod.hod.HODBulk` object for the HI-halo mass relation
+    reported in Obuljen et al. (2018) [1].
+    """
+
+    _defaults = {
+        "m0h": 9.52,
+        "mminh": 11.27,
+        "alpha": 0.44,
+        "M_min": 9.0,
+    }
+
+    def _satellite_occupation(self, m):
+        m0h = self.params["m0h"]
+        mminh = self.params["mminh"]
+        alpha = self.params["alpha"]
+        himass = 10 ** (m0h) * (m / 10**mminh) ** alpha * np.exp(-(10**mminh) / m)
+        return himass
+
+    def sigma_satellite(self, m):
+        return np.zeros_like(m)

@@ -4,6 +4,44 @@ from astropy.cosmology import Planck18, WMAP1
 from meer21cm.util import *
 import sys
 from scipy.special import erf
+from halomod import TracerHaloModel
+from meer21cm import Specification
+
+
+def test_sample_map_from_highres():
+    mock = Specification()
+    w = create_udres_wproj(mock.wproj, 3)
+    mock2 = Specification(
+        wproj=w,
+        num_pix_x=mock.num_pix_x * 3,
+        num_pix_y=mock.num_pix_y * 3,
+    )
+    map_hires = np.ones((mock.num_pix_x * 3, mock.num_pix_y * 3, 1))
+    map_lowres = sample_map_from_highres(
+        map_hires,
+        mock2.ra_map,
+        mock2.dec_map,
+        mock.wproj,
+        mock2.num_pix_x,
+        mock2.num_pix_y,
+        average=True,
+    )
+    # get rid of nan
+    map_lowres = map_lowres[map_lowres == map_lowres]
+    assert np.allclose(map_lowres, np.ones_like(map_lowres))
+
+
+def test_create_udres_wproj():
+    mock = Specification()
+    w = create_udres_wproj(mock.wproj, 3)
+    mock2 = Specification(
+        wproj=w,
+        num_pix_x=mock.num_pix_x * 3,
+        num_pix_y=mock.num_pix_y * 3,
+    )
+    assert mock2.ra_map[0, 0] == mock.ra_map[0, 0]
+    assert mock2.dec_map[0, 0] == mock.dec_map[0, 0]
+    assert np.allclose(mock.survey_volume, mock2.survey_volume)
 
 
 def test_super_sample_array():
@@ -283,3 +321,11 @@ def test_random_sample_indx():
     sub_num = 200
     sub_indx = np.sort(random_sample_indx(tot_num, sub_num))
     assert np.allclose(sub_indx, np.unique(sub_indx))
+
+
+def test_Obuljen18():
+    hm = TracerHaloModel(hod_model=Obuljen18)
+    assert np.allclose(
+        hod_obuljen18(10, output_has_h=True), hm.hod.total_occupation(1e10)
+    )
+    assert hm.hod.sigma_satellite(1e10) == 0
