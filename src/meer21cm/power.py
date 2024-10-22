@@ -1606,12 +1606,14 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             map_bin *= self.W_HI
         return map_bin
 
-    def gen_random_poisson_galaxy(self, num_g_rand=None, seed=None):
+    def gen_random_poisson_galaxy(self, sel=None, num_g_rand=None, seed=None):
+        if sel is None:
+            sel = self.W_HI[:, :, 0]
         if num_g_rand is None:
             num_g_rand = self.ra_gal.size
         rng = np.random.default_rng(seed=seed)
-        ra_rand = self.ra_map[self.W_HI[:, :, 0]]
-        dec_rand = self.dec_map[self.W_HI[:, :, 0]]
+        ra_rand = self.ra_map[sel]
+        dec_rand = self.dec_map[sel]
         ra_rand = rng.choice(ra_rand, size=num_g_rand, replace=True)
         dec_rand = rng.choice(dec_rand, size=num_g_rand, replace=True)
         rand_disp = rng.uniform(
