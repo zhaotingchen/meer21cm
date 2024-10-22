@@ -655,7 +655,9 @@ class HIGalaxySimulation(MockSimulation):
         )
         self._hi_profile_mock_tracer = hifluxd_ch
 
-    def propagate_hi_profile_to_map(self, return_highres=False, beam=True):
+    def propagate_hi_profile_to_map(
+        self, return_highres=False, beam=True, beam_image=None
+    ):
         """
         Project the ``hi_profile_mock_tracer`` onto sky maps and convolve with the beam (if ``beam``).
         If ``return_highres``, the returned map is the higher resolution map
@@ -705,7 +707,10 @@ class HIGalaxySimulation(MockSimulation):
             :, :, self.num_ch_ext_on_each_side : -self.num_ch_ext_on_each_side
         ]
         if beam:
-            beam_image = self.get_beam_image(wproj, num_pix_x, num_pix_y, cache=False)
+            if beam_image is None:
+                beam_image = self.get_beam_image(
+                    wproj, num_pix_x, num_pix_y, cache=False
+                )
             hi_map_in_jy, _ = weighted_convolution(
                 hi_map_in_jy, beam_image, np.ones_like(hi_map_in_jy)
             )
