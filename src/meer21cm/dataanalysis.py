@@ -552,6 +552,7 @@ class Specification:
         self._ra_gal = self.ra_gal[gal_sel]
         self._dec_gal = self.dec_gal[gal_sel]
         self._z_gal = self.z_gal[gal_sel]
+        return gal_sel
 
     @property
     @tagging("beam", "nu")
