@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-from meer21cm.mock import gen_random_gal_pos, run_poisson_mock
 from astropy.cosmology import Planck18
 from meer21cm.util import f_21
 from unittest.mock import patch

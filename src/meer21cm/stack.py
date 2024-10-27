@@ -265,10 +265,11 @@ def stack(
         raise ValueError("x_unit must be either frequency or velocity")
 
     # find the pixels each source belongs to
-    coor_g = SkyCoord(ra_g_in, dec_g_in, unit="deg")
-    indx_1_g, indx_2_g = wproj.world_to_pixel(coor_g)
-    indx_1_g = np.round(indx_1_g).astype("int")
-    indx_2_g = np.round(indx_2_g).astype("int")
+    indx_1_g, indx_2_g = radec_to_indx(ra_g_in, dec_g_in, wproj)
+    # coor_g = SkyCoord(ra_g_in, dec_g_in, unit="deg")
+    # indx_1_g, indx_2_g = wproj.world_to_pixel(coor_g)
+    # indx_1_g = np.round(indx_1_g).astype("int")
+    # indx_2_g = np.round(indx_2_g).astype("int")
     if no_sel_weight:
         w_map_in *= map_gal_weight
     # zero-pad the map and the weights
