@@ -663,7 +663,7 @@ class HIGalaxySimulation(MockSimulation):
         If ``return_highres``, the returned map is the higher resolution map
         specified by ``highres_sim``. If not, the map will be downsampled to the original resolution.
         """
-        if self.sigma_beam_ch is None:
+        if self.sigma_beam_ch is None and beam_image is None:
             beam = False
         highres = self.highres_sim
         num_pix_x = self.num_pix_x
