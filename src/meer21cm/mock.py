@@ -11,7 +11,6 @@ from numpy.random import default_rng
 from astropy import constants, units
 from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.ndimage import gaussian_filter
-from .stack import stack
 from .util import (
     check_unit_equiv,
     get_wcs_coor,
