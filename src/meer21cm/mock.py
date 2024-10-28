@@ -336,25 +336,53 @@ class MockSimulation(PowerSpectrum):
             self.get_mock_tracer_position_in_radecz()
         return self._mock_tracer_position_in_radecz
 
+    @property
+    def ra_mock_tracer(self):
+        """
+        The RA coordinate of mock galaxies on the sky
+        """
+        return self.mock_tracer_position_in_radecz[0]
+
+    @property
+    def dec_mock_tracer(self):
+        """
+        The Dec coordinate of mock galaxies on the sky
+        """
+        return self.mock_tracer_position_in_radecz[1]
+
+    @property
+    def z_mock_tracer(self):
+        """
+        The redshift of mock galaxies
+        """
+        return self.mock_tracer_position_in_radecz[2]
+
+    @property
+    def mock_inside_range(self):
+        """
+        Whether the mock galaxies are inside the survey area and frequency range
+        """
+        return self.mock_tracer_position_in_radecz[3]
+
     def get_mock_tracer_position_in_radecz(self):
         (
-            self.ra_mock_tracer,
-            self.dec_mock_tracer,
-            self.z_mock_tracer,
+            ra_mock_tracer,
+            dec_mock_tracer,
+            z_mock_tracer,
         ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
-        freq_tracer = redshift_to_freq(self.z_mock_tracer)
+        freq_tracer = redshift_to_freq(z_mock_tracer)
         tracer_ch_id = find_ch_id(freq_tracer, self.nu)
         # num_ch id is for tracer outside the frequency range
         z_sel = tracer_ch_id < len(self.nu)
-        ra_temp = self.ra_mock_tracer.copy()
+        ra_temp = ra_mock_tracer.copy()
         ra_temp[ra_temp > 180] -= 360
         ra_range = np.array(self.ra_range)
         ra_range[ra_range > 180] -= 360
         radec_sel = (
             (ra_temp > ra_range[0])
             * (ra_temp < ra_range[1])
-            * (self.dec_mock_tracer > self.dec_range[0])
-            * (self.dec_mock_tracer < self.dec_range[1])
+            * (dec_mock_tracer > self.dec_range[0])
+            * (dec_mock_tracer < self.dec_range[1])
         )
         inside_range = z_sel * radec_sel
         # there may be an excess
@@ -371,12 +399,12 @@ class MockSimulation(PowerSpectrum):
             )
             inside_range = np.zeros_like(inside_range)
             inside_range[inside_indx[rand_indx]] = True
-        self.mock_inside_range = inside_range
+        mock_inside_range = inside_range
         self._mock_tracer_position_in_radecz = (
-            self.ra_mock_tracer,
-            self.dec_mock_tracer,
-            self.z_mock_tracer,
-            self.mock_inside_range,
+            ra_mock_tracer,
+            dec_mock_tracer,
+            z_mock_tracer,
+            mock_inside_range,
         )
 
     def propagate_mock_tracer_to_gal_cat(self, trim=True):
