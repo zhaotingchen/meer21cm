@@ -112,17 +112,9 @@ def weighted_convolution(
     return conv_signal, conv_weights
 
 
-@tagging("anisotropic")
-def kat_beam(nu, wproj, xdim, ydim, band="L"):
-    r"""
-    Returns a beam model from the ``katbeam`` model, which is a simplification of
-    the model reported in Asad et al. [1].
-    The katbeam implementation here still needs validation. Use it
-    with caution, especially if you want correct orientation of the beam.
-
-    References
-    ----------
-    .. [1] Asad et al., "Primary beam effects of radio astronomy antennas -- II. Modelling the MeerKAT L-band beam", https://arxiv.org/abs/1904.07155
+def get_beam_xy(wproj, xdim, ydim):
+    """
+    Get the x and y angular coordinates of the given wcs.
     """
     x_cen, y_cen = xdim // 2, ydim // 2
     ra_cen, dec_cen = get_wcs_coor(
@@ -136,6 +128,26 @@ def kat_beam(nu, wproj, xdim, ydim, band="L"):
     vec_cen = hp.ang2vec(ra_cen, dec_cen, lonlat=True)
     xx = np.arcsin(vec - vec_cen[None, None, :])[:, :, 0].T * 180 / np.pi
     yy = np.arcsin(vec - vec_cen[None, None, :])[:, :, 1].T * 180 / np.pi
+    return xx, yy
+
+
+@tagging("anisotropic")
+def kat_beam(nu, wproj, xdim, ydim, band="L"):
+    r"""
+    Returns a beam model from the ``katbeam`` model, which is a simplification of
+    the model reported in Asad et al. [1].
+    The katbeam implementation here still needs validation. Use it
+    with caution, especially if you want correct orientation of the beam.
+
+    References
+    ----------
+    .. [1] Asad et al., "Primary beam effects of radio astronomy antennas -- II. Modelling the MeerKAT L-band beam", https://arxiv.org/abs/1904.07155
+    """
+    xx, yy = get_beam_xy(
+        wproj,
+        xdim,
+        ydim,
+    )
     beam = JimBeam(f"MKAT-AA-{band}-JIM-2020")
     freqMHz = nu / 1e6
     beam_image = np.zeros((xdim, ydim, len(nu)))
