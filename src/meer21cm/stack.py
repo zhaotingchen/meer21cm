@@ -92,10 +92,20 @@ def stack(
             indx_0_sample.ravel(), indx_1_sample.ravel(), ch_id
         ].reshape(indx_0_sample.shape)
         # each source is added to a different channel in the final cube
-        stack_3D_map[:, :, ch_id - indx_z_g + num_ch - 1] += (
-            map_source_i * weight_source_i
+        # this is wrong because repeating indices are only added in the last occurance
+        # stack_3D_map[:, :, ch_id - indx_z_g + num_ch - 1] += (
+        #    map_source_i * weight_source_i
+        # )
+        # stack_3D_weight[:, :, ch_id - indx_z_g + num_ch - 1] += weight_source_i
+        add_id = ch_id - indx_z_g + num_ch - 1
+        # some new np black magic
+        np.add.at(stack_3D_weight, (slice(None), slice(None), add_id), weight_source_i)
+        np.add.at(
+            stack_3D_map,
+            (slice(None), slice(None), add_id),
+            weight_source_i * map_source_i,
         )
-        stack_3D_weight[:, :, ch_id - indx_z_g + num_ch - 1] += weight_source_i
+
     # average
     stack_3D_map[stack_3D_weight > 0] = (
         stack_3D_map[stack_3D_weight > 0] / stack_3D_weight[stack_3D_weight > 0]
