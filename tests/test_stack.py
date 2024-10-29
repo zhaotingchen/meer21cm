@@ -54,6 +54,27 @@ def test_stack():
     assert np.allclose(np.unique(indx[1]), [10])
     average_profile = stack_3D_map[10, 10, peak_point - 4 : peak_point + 5]
     assert np.allclose(average_profile, [0, 1, 2, 3, 4, 3, 2, 1, 0])
+    # test two sources on top of each other
+    sp = Specification(
+        ra_range=ra_range_MK,
+        dec_range=dec_range_MK,
+    )
+    data = sp.data.copy()
+    source_1 = np.array([1, 2, 3, 4, 5, 4, 3, 2, 1])
+    source_avg = source_1.astype("float").copy()
+    data[80, 30, 80 - 4 : 80 + 5] += source_1
+    data[80, 30, 80 - 4 : 80 + 5] += source_1
+    ra_g = np.array([sp.ra_map[80, 30], sp.ra_map[80, 30]])
+    dec_g = np.array([sp.dec_map[80, 30], sp.dec_map[80, 30]])
+    z_g = np.array([sp.z_ch[80], sp.z_ch[80]])
+    sp._ra_gal = ra_g
+    sp._dec_gal = dec_g
+    sp._z_gal = z_g
+    sp._data = data
+    stack_3D_map, stack_3D_weight = stack(sp)
+    average_profile = stack_3D_map[10, 10, peak_point - 4 : peak_point + 5]
+    # due to double counting
+    assert np.allclose(average_profile, source_avg * 2)
 
 
 def test_raise_error():
