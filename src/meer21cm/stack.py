@@ -10,10 +10,53 @@ from meer21cm.util import radec_to_indx, center_to_edges, find_ch_id, redshift_t
 def stack(
     sp,
     stack_angular_num_nearby_pix=10,
+    symmetrize=False,
 ):
-    """ """
+    r"""
+    Calculate a stacked 3D cubelet using the intensity maps and source positions stored in ``sp``.
+    The stacked signal in the cubelet is calculated as:
+
+    .. math::
+        S(\Delta\alpha,\Delta\phi,\Delta\nu) = \frac{\sum_i S(\alpha_i{+}\Delta\alpha,\,\phi_i{+}\Delta\phi,\,\nu_i{+}\Delta\nu) w_i}{\sum_i w_i},
+
+    where i loops over each source stored in the (``sp.ra_gal``, ``sp.dec_gal``, ``sp.z_gal``) positions.
+    The pixels each source falls into are at (:math:`\alpha_i`, :math:`\phi_i`, :math:`\nu_i`).
+    :math:`S` is the intensity map stored in ``sp.data``.
+    :math:`w` is the weights stored in ``sp.weights_map_pixel`` and
+    :math:`w_i` is the weights at :math:`(\alpha_i{+}\Delta\alpha,\,\phi_i{+}\Delta\phi,\,\nu_i{+}\Delta\nu)`.
+
+    The cubelet extends towards the entire frequency range of the map so :math:`\delta\nu` is sampled at
+    [:math:`-N_{\rm ch} \delta\nu`,...,0,..., :math:`N_{\rm ch} \delta\nu`].
+    The angular sampling of the cubelet corresponds to the map pixels, and the size of the angular plane is set by
+    ``stack_angular_num_nearby_pix``. Note that ``stack_angular_num_nearby_pix`` is the number of pixels **each side of the centre** so
+    the size of the angular plane is ``(2 * stack_angular_num_nearby_pix + 1)**2``.
+
+    If ``symmetrize``, a mirroring of the individual cubelets is performed along :math:`\Delta\nu=0`. This corresponds to
+    the 180deg rotation along the spectral axis described in Sinigaglia et al. (2022) [1] and is the only symmetry that single-dish IM stacking is
+    sensitive to.
+
+    Parameters
+    ----------
+        sp: :class:`meer21cm.Specification` object.
+            The data used for stacking.
+        stack_angular_num_nearby_pix: optional, default 10.
+            The number of map pixels sampled on each side relative to the source centre.
+        symmetrize: optional, default False.
+            Whether to symmetrize the stacking.
+
+    Returns
+    -------
+        stack_3D_map: array.
+            The averaged cubelet for the stacking.
+        stack_3D_weight: array.
+            The weights in each voxel in the averaged cubelet.
+
+    References
+    ----------
+    .. [1] Sinigaglia, F. et al., "Optimizing spectral stacking for 21-cm observations of galaxies: accuracy assessment and symmetrized stacking", https://ui.adsabs.harvard.edu/abs/2022MNRAS.514.4205S.
+
+    """
     map_in = sp.data.copy()
-    W_map_in = sp.W_HI.copy()
     w_map_in = sp.w_HI.copy()
     num_ch = map_in.shape[-1]
     ra_g_in = sp.ra_gal.copy()
@@ -98,6 +141,12 @@ def stack(
         # )
         # stack_3D_weight[:, :, ch_id - indx_z_g + num_ch - 1] += weight_source_i
         add_id = ch_id - indx_z_g + num_ch - 1
+        if symmetrize:
+            add_id = np.append(add_id, 2 * num_ch - 2 - add_id)
+            weight_source_i = np.concatenate(
+                [weight_source_i, weight_source_i], axis=-1
+            )
+            map_source_i = np.concatenate([map_source_i, map_source_i], axis=-1)
         # some new np black magic
         np.add.at(stack_3D_weight, (slice(None), slice(None), add_id), weight_source_i)
         np.add.at(
@@ -114,6 +163,33 @@ def stack(
 
 
 def sum_3d_stack(stack_3D_map, vel_ch_avg=5, ang_sum_dist=3.0):
+    """
+    Collapse a stacked cubelet into stacked image and stacked spectrum.
+
+    Note that for stacked image, `vel_ch_avg` is the number of channels that go into
+    the summation on each side of the centre channel so that the total number of
+    channels that are summed is `(2 * vel_ch_avg + 1)`.
+
+    For stacked spectrum, the angular pixels that go into the summation are determined
+    by the distance to the center pixel. Note that the distance is in cell length not physical angular unit.
+
+
+    Parameters
+    ----------
+        stack_3D_map: array.
+            The stacked cubelet.
+        vel_ch_avg: optional, default 5.
+            How many channels on each side of the center to sum into stacked image.
+        ang_sum_dist: optional, default 3.0.
+            The distance within which the angular pixels are summed to stacked spectrum
+
+    Returns
+    -------
+        angular_stack_map: array.
+            The stacked image.
+        spectral_stack_map: array.
+            The stacked spectrum.
+    """
     mid_point = stack_3D_map.shape[-1] // 2
     ang_centre = stack_3D_map.shape[0] // 2
     xx, yy = np.meshgrid(

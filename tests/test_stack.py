@@ -12,7 +12,8 @@ import pytest
 # from astropy import constants, units
 
 
-def test_stack():
+@pytest.mark.parametrize("sym", [(False), (True)])
+def test_stack(sym):
     raminMK, ramaxMK = 334, 357
     decminMK, decmaxMK = -35, -26.5
     ra_range_MK = (raminMK, ramaxMK)
@@ -36,7 +37,7 @@ def test_stack():
     sp._dec_gal = dec_g
     sp._z_gal = z_g
     sp._data = data
-    stack_3D_map, stack_3D_weight = stack(sp)
+    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym)
     indx = np.where(stack_3D_map > 0)
     assert np.allclose(np.unique(indx[0]), [10])
     assert np.allclose(np.unique(indx[1]), [10])
@@ -48,7 +49,7 @@ def test_stack():
     # source 1 no weights
     w_HI[80, 30, 80 - 4 : 80 + 5] = 0.0
     sp.w_HI = w_HI
-    stack_3D_map, stack_3D_weight = stack(sp)
+    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym)
     indx = np.where(stack_3D_map > 0)
     assert np.allclose(np.unique(indx[0]), [10])
     assert np.allclose(np.unique(indx[1]), [10])
@@ -71,7 +72,7 @@ def test_stack():
     sp._dec_gal = dec_g
     sp._z_gal = z_g
     sp._data = data
-    stack_3D_map, stack_3D_weight = stack(sp)
+    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym)
     average_profile = stack_3D_map[10, 10, peak_point - 4 : peak_point + 5]
     # due to double counting
     assert np.allclose(average_profile, source_avg * 2)
