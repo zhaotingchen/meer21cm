@@ -6,3 +6,4 @@ Examples
 
     examples/gama_cross
     examples/quick_start
+    examples/custom_survey
