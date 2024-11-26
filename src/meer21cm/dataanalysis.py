@@ -11,6 +11,7 @@ from meer21cm.util import (
     find_ch_id,
     tagging,
     find_property_with_tags,
+    angle_in_range,
 )
 from astropy import constants, units
 import astropy
@@ -24,10 +25,7 @@ from itertools import chain
 import meer21cm
 from scipy.interpolate import interp1d
 import meer21cm.telescope as telescope
-from meer21cm.telescope import (
-    meerklass_L_deep_nu_min,
-    meerklass_L_deep_nu_max,
-)
+
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
@@ -37,8 +35,8 @@ class Specification:
         self,
         nu=None,
         wproj=None,
-        num_pix_x=133,
-        num_pix_y=73,
+        num_pix_x=None,
+        num_pix_y=None,
         cosmo="Planck18",
         map_has_sampling=None,
         sigma_beam_ch=None,
@@ -52,15 +50,17 @@ class Specification:
         filter_map_los=True,
         gal_file=None,
         weighting="counts",
-        ra_range=(-np.inf, np.inf),
+        ra_range=(0, 360),
         dec_range=(-400, 400),
         beam_model="gaussian",
         data=None,
         weights_map_pixel=None,
         counts=None,
+        survey="meerklass_L_deep",
         band="L",
         **kwparams,
     ):
+        self.survey = survey
         self.band = band
         self.dependency_dict = find_property_with_tags(self)
         funcs = list(chain.from_iterable(list(self.dependency_dict.values())))
@@ -91,18 +91,22 @@ class Specification:
                 band=self.band,
             )
             if nu_min is None:
-                nu_min = getattr(telescope, f"meerklass_{self.band}_deep_nu_min")
+                nu_min = getattr(telescope, f"{self.survey}_nu_min")
             if nu_max is None:
-                nu_max = getattr(telescope, f"meerklass_{self.band}_deep_nu_max")
+                nu_max = getattr(telescope, f"{self.survey}_nu_max")
             nu_sel = (nu > nu_min) * (nu < nu_max)
             nu = nu[nu_sel]
         self.nu_min = nu_min
         self.nu_max = nu_max
         self._nu = np.array(nu)
-        if wproj is None:
+        # default MeerKLASS L-band deep-field
+        if wproj is None and self.band == "L":
             map_file = default_data_dir + "test_fits.fits"
             wcs = WCS(map_file)
             wproj = wcs.dropaxis(-1)
+            num_pix_x = 133
+            num_pix_y = 73
+
         self.wproj = wproj
         self.num_pix_x = num_pix_x
         self.num_pix_y = num_pix_y
@@ -110,6 +114,10 @@ class Specification:
         self.beam_unit = beam_unit
         if map_has_sampling is None:
             map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
+            map_has_sampling[0] = False
+            map_has_sampling[-1] = False
+            map_has_sampling[:, 0] = False
+            map_has_sampling[:, -1] = False
         self.map_has_sampling = map_has_sampling
         self.map_unit = map_unit
         self.map_unit_type
@@ -129,6 +137,10 @@ class Specification:
         self.data = data
         if weights_map_pixel is None:
             weights_map_pixel = np.ones(self.map_has_sampling.shape)
+            weights_map_pixel[0] = 0.0
+            weights_map_pixel[-1] = 0.0
+            weights_map_pixel[:, 0] = 0.0
+            weights_map_pixel[:, -1] = 0.0
         self.weights_map_pixel = weights_map_pixel
         if counts is None:
             counts = np.ones(self.map_has_sampling.shape)
@@ -523,29 +535,19 @@ class Specification:
         self.trim_map_to_range()
 
     def trim_map_to_range(self):
-        ra_temp = self.ra_map.copy()
-        ra_temp[ra_temp > 180] -= 360
-        ra_range = np.array(self.ra_range)
-        ra_range[ra_range > 180] -= 360
-        map_sel = (
-            (ra_temp > ra_range[0])
-            * (ra_temp < ra_range[1])
-            * (self.dec_map > self.dec_range[0])
-            * (self.dec_map < self.dec_range[1])
-        )[:, :, None]
+        ra_sel = angle_in_range(self.ra_map, self.ra_range[0], self.ra_range[1])
+        dec_sel = (self.dec_map > self.dec_range[0]) * (
+            self.dec_map < self.dec_range[1]
+        )
+        map_sel = (ra_sel * dec_sel)[:, :, None]
         self.data = self.data * map_sel
         self.counts = self.counts * map_sel
         self.map_has_sampling = self.map_has_sampling * map_sel
         self.weights_map_pixel = self.weights_map_pixel * map_sel
 
     def trim_gal_to_range(self):
-        ra_temp = self.ra_gal.copy()
-        ra_temp[ra_temp > 180] -= 360
-        ra_range = np.array(self.ra_range)
-        ra_range[ra_range > 180] -= 360
         gal_sel = (
-            (ra_temp > ra_range[0])
-            * (ra_temp < ra_range[1])
+            angle_in_range(self.ra_gal, self.ra_range[0], self.ra_range[1])
             * (self.dec_gal > self.dec_range[0])
             * (self.dec_gal < self.dec_range[1])
         )

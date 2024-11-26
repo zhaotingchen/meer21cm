@@ -8,6 +8,26 @@ from halomod import TracerHaloModel
 from meer21cm import Specification
 
 
+def test_create_wcs_with_range():
+    ra_range = [315, 80]
+    dec_range = [-70, 5]
+    w_test, num_pix_x, num_pix_y = create_wcs_with_range(
+        ra_range,
+        dec_range,
+        buffer=[1.2, 1.4],
+    )
+    ra_xx, dec_yy = np.meshgrid(ra_range, dec_range)
+    x_indx, y_indx = radec_to_indx(ra_xx, dec_yy, w_test)
+    flag = (x_indx >= 0) * (x_indx < num_pix_x) * (y_indx >= 0) * (y_indx < num_pix_y)
+    assert flag.mean() == 1
+
+
+def test_angle_in_range():
+    assert angle_in_range(-10, 0, 360)
+    assert angle_in_range(350, 340, 10)
+    assert angle_in_range(5, 0, 10)
+
+
 def test_sample_map_from_highres():
     mock = Specification()
     w = create_udres_wproj(mock.wproj, 3)
@@ -41,6 +61,8 @@ def test_create_udres_wproj():
     )
     assert mock2.ra_map[0, 0] == mock.ra_map[0, 0]
     assert mock2.dec_map[0, 0] == mock.dec_map[0, 0]
+    mock.W_HI = np.ones_like(mock.W_HI)
+    mock2.W_HI = np.ones_like(mock2.W_HI)
     assert np.allclose(mock.survey_volume, mock2.survey_volume)
 
 

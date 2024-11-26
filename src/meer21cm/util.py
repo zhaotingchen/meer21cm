@@ -35,6 +35,79 @@ mass_intflux_coeff = (
 )
 
 
+def create_wcs_with_range(
+    ra_range,
+    dec_range,
+    resol=[0.3, 0.3],
+    buffer=[1.2, 1.2],
+    ctype=["RA---ZEA", "DEC--ZEA"],
+):
+    """
+    Create a wcs object that can be used to map a index array to sky cooridnates,
+    based on an approximate survey area specified by ``ra_range`` and ``dec_range``.
+
+    A naive number of pixels will be calculated for both directions based on the
+    difference between the lower and upper limit of the range, divided by the input
+    resolution. It is then multiplied by the buffer because usually you need more than
+    that due to curved sky.
+
+    Parameters
+    ----------
+    ra_range: array-like of 2 elements.
+        The lower and upper limit of the RA range in degree.
+    dec_range: array-like of 2 elements.
+        The lower and upper limit of the Dec range in degree.
+    resol: array-like of 2 elements, default [0.3,0.3].
+        The resolution along the two axis in degree.
+    buffer: array-like of 2 elements, default [1.2,1.2].
+        The proportional increase to the range.
+    ctype: list of two strings, default ['RA---ZEA', 'DEC--ZEA'].
+        The projection type.
+
+    Returns
+    -------
+    w: :class:`astropy.wcs.WCS` object.
+        The output wcs.
+
+    num_pix_x: int.
+        Number of pixels on the first axis.
+
+    num_pix_y: int.
+        Number of pixels on the second axis.
+
+    """
+    w = WCS(naxis=2)
+    ra_min = ra_range[0]
+    ra_max = ra_range[1]
+    if ra_range[1] < ra_range[0]:
+        ra_min -= 360
+    ra_cen = (ra_min + ra_max) / 2
+    dec_cen = (dec_range[0] + dec_range[1]) / 2
+    ra_scale = ra_max - ra_min
+    dec_scale = dec_range[1] - dec_range[0]
+    num_pix_x = int(ra_scale / resol[0] * buffer[0])
+    num_pix_y = int(dec_scale / resol[1] * buffer[1])
+    crpix = [num_pix_x // 2, num_pix_y // 2]
+    w.wcs.crpix = crpix
+    w.wcs.cdelt = resol
+    w.wcs.crval = [ra_cen, dec_cen]
+    w.wcs.ctype = ctype
+    return w, num_pix_x, num_pix_y
+
+
+def angle_in_range(alpha, lower, upper):
+    """
+    Determines whether the angle alpha is in a range.
+    All inputs in degree.
+    Stolen from
+    [this url](https://stackoverflow.com/questions/66799475/how-to-elegantly-find-if-an-angle-is-between-a-range).
+    """
+    # no selection at all
+    if (upper - lower) % 360 == 0:
+        return alpha <= np.inf
+    return (alpha - lower) % 360 <= (upper - lower) % 360
+
+
 def sample_map_from_highres(
     map_highres, ra_map, dec_map, wproj_lowres, num_pix_x, num_pix_y, average=True
 ):

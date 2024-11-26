@@ -833,6 +833,7 @@ def test_rot_back():
     ps = PowerSpectrum(
         include_sampling=[False, False],
     )
+    ps.W_HI = np.ones_like(ps.W_HI)
     ps.get_enclosing_box()
     ra_test, dec_test, z_test = ps.ra_dec_z_for_coord_in_box(ps.pix_coor_in_box)
     z_test = z_test.reshape((-1, len(ps.nu)))
