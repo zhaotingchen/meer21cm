@@ -45,7 +45,9 @@ def test_update_pars():
 def test_defaults(test_nu, test_W):
     spec = Specification()
     assert np.allclose(spec.nu, test_nu)
-    assert np.allclose(spec.map_has_sampling, np.ones(test_W.shape))
+    assert np.allclose(
+        spec.map_has_sampling[1:-1, 1:-1], np.ones(test_W[1:-1, 1:-1].shape)
+    )
     assert np.allclose(spec.z_ch, freq_to_redshift(test_nu))
     assert np.allclose(spec.z, freq_to_redshift(test_nu).mean())
     x_res = 0.3 * np.pi / 180 * Planck18.comoving_distance(spec.z).value

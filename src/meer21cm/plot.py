@@ -48,6 +48,7 @@ def plot_map(
     vmin=None,
     vmax=None,
     cmap="magma",
+    invert_x=True,
 ):
     """
     Stolen from meerpower
@@ -88,7 +89,8 @@ def plot_map(
         plt.clim(vmin, vmax)
     cbar = plt.colorbar(orientation="horizontal", shrink=cbarshrink, pad=0.2)
     cbar.set_label(cbar_label)
-    ax.invert_xaxis()
+    if invert_x:
+        ax.invert_xaxis()
     plt.xlabel("R.A [deg]")
     plt.ylabel("Dec. [deg]")
     plt.title(title, fontsize=18)
