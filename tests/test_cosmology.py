@@ -1,9 +1,44 @@
 from meer21cm import CosmologyCalculator, Specification
+from meer21cm.cosmology import CosmologyParameters
 from astropy.cosmology import Planck18, Planck15
 import numpy as np
 import camb
 from meer21cm.util import f_21
 import pytest
+
+
+def test_set_background():
+    pars = CosmologyParameters()
+    pars.get_derived_Ode()
+    pars.set_astropy_cosmo()
+    assert np.allclose(pars.cosmo.Onu0, Planck18.Onu0)
+    assert np.allclose(pars.cosmo.Ogamma0, Planck18.Ogamma0)
+    assert np.abs(pars.cosmo.Ok0) < 1e-5
+    # test w0wa
+    pars = CosmologyParameters(
+        w0=-0.85,
+        wa=0.1,
+    )
+    pars.get_derived_Ode()
+    pars.set_astropy_cosmo()
+    assert np.allclose(pars.cosmo.Onu0, Planck18.Onu0)
+    assert np.allclose(pars.cosmo.Ogamma0, Planck18.Ogamma0)
+    assert np.abs(pars.cosmo.Ok0) < 1e-5
+
+
+@pytest.mark.parametrize("ps_type, accuracy", [("linear", 0.01), ("nonlinear", 0.05)])
+def test_compare_matter_power(ps_type, accuracy):
+    pars = CosmologyParameters(ps_type=ps_type)
+    pkcamb = pars.get_matter_power_spectrum_camb()
+    pkbacco = pars.get_matter_power_spectrum_bacco()
+    # accuracy not great for nonlinear
+    assert np.allclose(np.abs(pkcamb / pkbacco - 1) < accuracy, True)
+    # test a different cosmology
+    pars = CosmologyParameters(w0=-0.85, wa=-0.1, ps_type=ps_type)
+    pkcamb = pars.get_matter_power_spectrum_camb()
+    pkbacco = pars.get_matter_power_spectrum_bacco()
+    # accuracy not great for nonlinear
+    assert np.allclose(np.abs(pkcamb / pkbacco - 1) < accuracy, True)
 
 
 def test_cosmo():

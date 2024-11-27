@@ -30,6 +30,7 @@ dependencies = [
     "cython < 3.0",
     "mpi4py",
     "pmesh",
+    "baccoemu",
 ]
 
 
