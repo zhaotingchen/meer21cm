@@ -34,7 +34,7 @@ def test_matter_mock(test_W):
     k1dedges = np.geomspace(0.05, 1.5, 20)
 
     mock = MockSimulation(
-        cosmo=WMAP1,
+        cosmo="WMAP1",
         k1dbins=k1dedges,
         model_k_from_field=True,
         upgrade_sampling_from_gridding=True,
@@ -89,7 +89,7 @@ def test_tracer_mock(test_W, tracer_i):
     mock = MockSimulation(
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
-        cosmo=WMAP1,
+        cosmo="WMAP1",
         k1dbins=k1dedges,
         kaiser_rsd=True,
         # mock is generated on the grid so no sampling effects

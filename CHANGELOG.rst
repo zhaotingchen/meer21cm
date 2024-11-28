@@ -1,8 +1,8 @@
 Releases
 ========
 
-dev
----
+v0.6.0
+------
 Features
 ++++++++
 * mock tracer positions
