@@ -25,9 +25,23 @@ from itertools import chain
 import meer21cm
 from scipy.interpolate import interp1d
 import meer21cm.telescope as telescope
+from astropy.cosmology import w0waCDM, Planck18
 
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
+
+default_cosmo = w0waCDM(
+    H0=Planck18.h * 100,
+    Om0=Planck18.Om0,
+    Ode0=Planck18.Ode0,
+    w0=-1.0,
+    wa=0.0,
+    Tcmb0=Planck18.Tcmb0,
+    Neff=Planck18.Neff,
+    m_nu=Planck18.m_nu,
+    Ob0=Planck18.Ob0,
+    name="Planck18",
+)
 
 
 class Specification:
@@ -37,7 +51,7 @@ class Specification:
         wproj=None,
         num_pix_x=None,
         num_pix_y=None,
-        cosmo="Planck18",
+        cosmo=default_cosmo,
         map_has_sampling=None,
         sigma_beam_ch=None,
         beam_unit=units.deg,
@@ -78,10 +92,12 @@ class Specification:
                     ],
                 )
 
-        if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
-            self._cosmo = kwparams["_cosmo"]
-        else:
-            self._cosmo = cosmo
+        # if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
+        #    self._cosmo = kwparams["_cosmo"]
+        # else:
+        #    self._cosmo = cosmo
+        self._cosmo = cosmo
+        self.cosmo = cosmo
         self.map_file = map_file
         self.counts_file = counts_file
         self.los_axis = los_axis
@@ -125,7 +141,6 @@ class Specification:
         # the coordinates of each pixel in the map
         self._ra_map, self._dec_map = get_wcs_coor(wproj, xx, yy)
         self.__dict__.update(kwparams)
-        self.cosmo = self._cosmo
         self.filter_map_los = filter_map_los
         self.gal_file = gal_file
         self.weighting = weighting
@@ -291,10 +306,10 @@ class Specification:
         if isinstance(value, str):
             cosmo = getattr(astropy.cosmology, value)
         self._cosmo = cosmo
-        self.ns = cosmo.meta["n"]
-        self.sigma8 = cosmo.meta["sigma8"]
-        self.tau = cosmo.meta["tau"]
-        self.Oc0 = cosmo.meta["Oc0"]
+        # self.ns = cosmo.meta["n"]
+        # self.sigma8 = cosmo.meta["sigma8"]
+        # self.tau = cosmo.meta["tau"]
+        # self.Oc0 = cosmo.meta["Oc0"]
         # there is probably a more elegant way of doing this, but I dont know how
         # maybe just inheriting astropy cosmology class?
         for key in cosmo.__dir__():

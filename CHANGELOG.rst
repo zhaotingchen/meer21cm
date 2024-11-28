@@ -1,17 +1,18 @@
 Releases
 ========
 
-dev
----
+v0.6.0
+------
 Features
 ++++++++
 * mock tracer positions
 * new HI galaxy simulation class
+* new cosmology parameter class
 
 Enhancements
 ++++++++++++
 * better RSD routine for lognormal simulation
-
+* allow using baccoemu instead of camb
 
 v0.5.0
 ------
