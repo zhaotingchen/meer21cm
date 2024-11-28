@@ -188,14 +188,13 @@ class CosmologyParameters:
     def get_derived_Ode(self):
         """
         Use camb to calculate the Ode0 given input parameters.
-        If Ode0 is given as an input, it will be skipped.
         """
-        if self._omega_de is None:
-            camb_pars = self.get_camb_pars()
-            results = camb.get_background(camb_pars)
-            tot, de = results.get_background_densities(1.0, ["tot", "de"]).values()
-            self.omega_de = (de / tot)[0]
-            self._omega_de = (de / tot)[0]
+        # if self._omega_de is None:
+        camb_pars = self.get_camb_pars()
+        results = camb.get_background(camb_pars)
+        tot, de = results.get_background_densities(1.0, ["tot", "de"]).values()
+        self.omega_de = (de / tot)[0]
+        self._omega_de = (de / tot)[0]
 
         return self.omega_de
 
