@@ -49,11 +49,13 @@ def plot_map(
     vmax=None,
     cmap="magma",
     invert_x=True,
+    dpi=100,
+    cbar_aspect=25,
 ):
     """
     Stolen from meerpower
     """
-    plt.figure()
+    plt.figure(dpi=dpi)
     plt.subplot(projection=wproj)
     ax = plt.gca()
     lon = ax.coords[0]
@@ -87,13 +89,18 @@ def plot_map(
     plt.imshow(map_in.T, cmap=cmap, norm=divnorm)
     if vmax is not None or vmin is not None:
         plt.clim(vmin, vmax)
-    cbar = plt.colorbar(orientation="horizontal", shrink=cbarshrink, pad=0.2)
+    cbar = plt.colorbar(
+        orientation="horizontal",
+        shrink=cbarshrink,
+        pad=0.2,
+        aspect=cbar_aspect,
+    )
     cbar.set_label(cbar_label)
     if invert_x:
         ax.invert_xaxis()
     plt.xlabel("R.A [deg]")
     plt.ylabel("Dec. [deg]")
-    plt.title(title, fontsize=18)
+    plt.title(title)
 
 
 def plot_eigenspectrum(
