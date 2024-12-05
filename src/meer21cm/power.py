@@ -1272,6 +1272,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             k1dweights = np.ones(self.box_ndim)
         if isinstance(power3d, str):
             power3d = getattr(self, power3d)
+        indep_modes = 1.0
         if filter_dependent_k:
             indep_modes = get_independent_fourier_modes(self.box_ndim)
         power1d, k1deff, nmodes = bin_3d_to_1d(
