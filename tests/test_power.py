@@ -671,6 +671,7 @@ def test_noise_power_from_map(test_W):
     ps.grid_data_to_field()
     pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
         "auto_power_3d_1",
+        filter_dependent_k=True,
     )
     avg_deviation = np.sqrt(
         ((np.abs((pdata_1d_hi - v_cell) / v_cell)) ** 2 * nmodes_hi).sum()

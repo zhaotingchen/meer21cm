@@ -1264,7 +1264,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         power3d,
         k1dbins=None,
         k1dweights=None,
-        filter_dependent_k=True,
+        filter_dependent_k=False,
     ):
         if k1dbins is None:
             k1dbins = self.k1dbins
