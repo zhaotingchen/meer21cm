@@ -1591,7 +1591,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
         pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
         pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
-        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj)
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
         pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
         indx_num = [num_pix_x, num_pix_y, len(self.nu)]
         indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(3)]
