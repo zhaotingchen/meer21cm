@@ -421,7 +421,9 @@ class MockSimulation(PowerSpectrum):
         self._dec_gal = dec[inside_range]
         self._z_gal = z[inside_range]
 
-    def propagate_mock_field_to_data(self, field, beam=True, highres=None):
+    def propagate_mock_field_to_data(
+        self, field, beam=True, highres=None, average=True
+    ):
         """
         Grid the mock tracer field onto the sky map and
         """
@@ -439,7 +441,7 @@ class MockSimulation(PowerSpectrum):
             num_pix_y = self.num_pix_y * highres
         map_highres = self.grid_field_to_sky_map(
             field,
-            average=True,
+            average=average,
             mask=False,
             wproj=wproj_hires,
             num_pix_x=num_pix_x,

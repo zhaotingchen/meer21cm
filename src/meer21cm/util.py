@@ -880,18 +880,18 @@ def himf(m, phi_s, m_s, alpha_s):
 
     While the units are arbitrary, it is recommended that
     phi_s is in the unit of Mpc:sup:`-3`dex:sup:`-1`,
-    m_s is in the unit of M_sun,
-    alpha_s has no unit.
+    m_s is in the unit of log10 M_sun,
+    and alpha_s has no unit.
 
 
     Parameters
     ----------
         m: float array.
-            mass
+            mass in log10.
         phi_s: float.
             HIMF amplitude
         m_s: float.
-            knee mass
+            knee mass in log10.
         alpha_s: float.
             slope
 
@@ -900,7 +900,12 @@ def himf(m, phi_s, m_s, alpha_s):
         out: float array.
             The HIMF values at m
     """
-    out = np.log(10) * phi_s * (m / m_s) ** (alpha_s + 1) * np.exp(-m / m_s)
+    out = (
+        np.log(10)
+        * phi_s
+        * (10**m / 10**m_s) ** (alpha_s + 1)
+        * np.exp(-(10**m) / 10**m_s)
+    )
     return out
 
 
@@ -931,7 +936,7 @@ def cal_himf(x, mmin, cosmo, mmax=11):
     marr = np.logspace(mmin, mmax, num=500)
     omegahi = (
         (
-            np.trapz(himf(marr, x[0], 10 ** x[1], x[2]) * marr, x=np.log10(marr))
+            np.trapz(himf(np.log10(marr), x[0], x[1], x[2]) * marr, x=np.log10(marr))
             * units.M_sun
             / units.Mpc**3
             / cosmo.critical_density0
@@ -940,10 +945,10 @@ def cal_himf(x, mmin, cosmo, mmax=11):
         .value
     )
     psn = (
-        np.trapz(himf(marr, x[0], 10 ** x[1], x[2]) * marr**2, x=np.log10(marr))
-        / np.trapz(himf(marr, x[0], 10 ** x[1], x[2]) * marr, x=np.log10(marr)) ** 2
+        np.trapz(himf(np.log10(marr), x[0], x[1], x[2]) * marr**2, x=np.log10(marr))
+        / np.trapz(himf(np.log10(marr), x[0], x[1], x[2]) * marr, x=np.log10(marr)) ** 2
     )
-    nhi = np.trapz(himf(marr, x[0], 10 ** x[1], x[2]), x=np.log10(marr))
+    nhi = np.trapz(himf(np.log10(marr), x[0], x[1], x[2]), x=np.log10(marr))
     return nhi, omegahi, psn
 
 
@@ -996,7 +1001,7 @@ def cumu_nhi_from_himf(m, mmin, x):
             The integrated number density of HI galaxies, in the units of phi_s * dex
     """
     marr = np.logspace(mmin, m, num=500)
-    nhi = np.trapz(himf(marr, x[0], 10 ** x[1], x[2]), x=np.log10(marr), axis=0)
+    nhi = np.trapz(himf(np.log10(marr), x[0], x[1], x[2]), x=np.log10(marr), axis=0)
     return nhi
 
 

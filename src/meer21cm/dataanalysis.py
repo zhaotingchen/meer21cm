@@ -566,6 +566,10 @@ class Specification:
             * (self.dec_gal > self.dec_range[0])
             * (self.dec_gal < self.dec_range[1])
         )
+        freq_edges = center_to_edges(self.nu)
+        z_edges = freq_to_redshift(freq_edges)
+        z_sel = (self.z_gal > z_edges.min()) * (self.z_gal < z_edges.max())
+        gal_sel *= z_sel
         self._ra_gal = self.ra_gal[gal_sel]
         self._dec_gal = self.dec_gal[gal_sel]
         self._z_gal = self.z_gal[gal_sel]

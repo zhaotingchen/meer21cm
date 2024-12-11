@@ -1264,7 +1264,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         power3d,
         k1dbins=None,
         k1dweights=None,
-        filter_dependent_k=True,
+        filter_dependent_k=False,
     ):
         if k1dbins is None:
             k1dbins = self.k1dbins
@@ -1272,6 +1272,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             k1dweights = np.ones(self.box_ndim)
         if isinstance(power3d, str):
             power3d = getattr(self, power3d)
+        indep_modes = 1.0
         if filter_dependent_k:
             indep_modes = get_independent_fourier_modes(self.box_ndim)
         power1d, k1deff, nmodes = bin_3d_to_1d(
@@ -1590,7 +1591,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
         pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
         pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
-        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj)
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
         pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
         indx_num = [num_pix_x, num_pix_y, len(self.nu)]
         indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(3)]
