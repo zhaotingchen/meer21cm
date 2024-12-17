@@ -1582,21 +1582,65 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         num_pix_x=None,
         num_pix_y=None,
     ):
+        """
+        Grid a field in the rectangular box onto the sky.
+
+        Parameters
+        ----------
+        field: array.
+            The field in the box to be gridded.
+
+        average: bool, default True.
+            Whether the field grids are averaged or summed into sky pixels.
+
+        mask: bool, default True.
+            If True, the sky map is then masked by the survey selection function.
+
+        wproj: :class:`astropy.wcs.WCS` object, default None.
+            The wcs object for the output sky map. Default uses the stored ``self.wproj``.
+
+        num_pix_x: int, default None.
+            The number of pixels along the first axis for the sky map. Defulat uses the stored ``self.num_pix_x``.
+
+        num_pix_y: int, default None.
+            The number of pixels along the seconds axis for the sky map. Defulat uses the stored ``self.num_pix_y``.
+
+        Returns
+        -------
+        map_bin: array.
+            The output sky map.
+        count_bin: array.
+            The number of grids in each sky map pixel.
+
+        """
+        num_particle_per_pixel = self.num_particle_per_pixel
         if wproj is None:
             wproj = self.wproj
         if num_pix_x is None:
             num_pix_x = self.num_pix_x
         if num_pix_y is None:
             num_pix_y = self.num_pix_y
-        pos_xyz = np.meshgrid(*self.x_vec, indexing="ij")
-        pos_xyz = np.array(pos_xyz).reshape((3, -1)).T
+        grid_coor_in_box = np.array(np.meshgrid(*self.x_vec, indexing="ij"))
+        par_coor_in_box = (
+            np.zeros(grid_coor_in_box.shape + (num_particle_per_pixel,))
+            + grid_coor_in_box[:, :, :, :, None]
+        )
+        par_value = np.zeros(par_coor_in_box.shape[1:])
+        par_value += field[:, :, :, None]
+        rng = np.random.default_rng(seed=self.seed)
+        rand_arr = rng.uniform(-1 / 2, 1 / 2, size=par_coor_in_box.shape)
+        rand_arr *= self.box_resol[:, None, None, None, None]
+        # first particle always at centre of grid
+        rand_arr[:, :, :, :, 0] = 0.0
+        par_coor_in_box += rand_arr
+        pos_xyz = np.array(par_coor_in_box.reshape((3, -1)).T)
         pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
         pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
-        pos_indx_z = find_ch_id(redshift_to_freq(pos_z), self.nu)
-        indx_num = [num_pix_x, num_pix_y, len(self.nu)]
-        indx_bins = [center_to_edges(np.arange(indx_num[i])) for i in range(3)]
+        pos_indx_z = redshift_to_freq(pos_z)
+        indx_num = [np.arange(num_pix_x), np.arange(num_pix_y), self.nu]
+        indx_bins = [center_to_edges(indx_num[i]) for i in range(3)]
         pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
-        map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=field.ravel())
+        map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=par_value.ravel())
         count_bin, _ = np.histogramdd(
             pos_indx,
             bins=indx_bins,
@@ -1605,7 +1649,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
         if mask:
             map_bin *= self.W_HI
-        return map_bin
+        return map_bin, count_bin
 
     def gen_random_poisson_galaxy(self, sel=None, num_g_rand=None, seed=None):
         if sel is None:

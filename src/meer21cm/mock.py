@@ -439,7 +439,7 @@ class MockSimulation(PowerSpectrum):
             wproj_hires = create_udres_wproj(self.wproj, highres)
             num_pix_x = self.num_pix_x * highres
             num_pix_y = self.num_pix_y * highres
-        map_highres = self.grid_field_to_sky_map(
+        map_highres, _ = self.grid_field_to_sky_map(
             field,
             average=average,
             mask=False,
