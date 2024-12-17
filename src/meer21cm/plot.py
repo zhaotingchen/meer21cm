@@ -42,6 +42,7 @@ def plot_map(
     wproj,
     W=None,
     title="",
+    have_cbar=True,
     cbar_label="",
     cbarshrink=1,
     ZeroCentre=False,
@@ -89,13 +90,14 @@ def plot_map(
     plt.imshow(map_in.T, cmap=cmap, norm=divnorm)
     if vmax is not None or vmin is not None:
         plt.clim(vmin, vmax)
-    cbar = plt.colorbar(
-        orientation="horizontal",
-        shrink=cbarshrink,
-        pad=0.2,
-        aspect=cbar_aspect,
-    )
-    cbar.set_label(cbar_label)
+    if have_cbar:
+        cbar = plt.colorbar(
+            orientation="horizontal",
+            shrink=cbarshrink,
+            pad=0.2,
+            aspect=cbar_aspect,
+        )
+        cbar.set_label(cbar_label)
     if invert_x:
         ax.invert_xaxis()
     plt.xlabel("R.A [deg]")
