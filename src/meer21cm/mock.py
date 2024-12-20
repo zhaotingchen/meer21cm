@@ -51,6 +51,38 @@ from powerbox import dft
 import warnings
 
 
+def delta_x_from_pb(pb):
+    """
+    Generate a corrected version of mock field for LogNormalPowerBox
+
+    Parameters
+    ----------
+    pb: :class:`powerbox.LogNormalPowerBox` object.
+        The input powerbox.
+
+    Returns
+    -------
+    delta_x: array
+        Output mock field.
+    """
+    # get power
+    pa = pb.power_array()
+    # correlation function
+    ca = np.fft.ifftn(np.fft.ifftshift(pa), norm="forward").real
+    # gaussian
+    gca = np.log(1 + ca)
+    # gaussian power
+    gpa = np.fft.fftshift(np.fft.fftn(gca)).real
+    # reset negative values
+    gpa[pb.k() == 0] = 0
+    delta_k = np.sqrt(gpa) * pb.gauss_hermitian()
+    # gaussian field
+    delta_x = (np.fft.ifftn(np.fft.ifftshift(delta_k)) * np.sqrt(np.prod(pb.N))).real
+    # standard deviation
+    sg = gpa.sum() / np.prod(pb.N)
+    return (np.exp(delta_x - sg / 2)) - 1
+
+
 # 20 lines missing before adding in
 class MockSimulation(PowerSpectrum):
     def __init__(
@@ -63,6 +95,7 @@ class MockSimulation(PowerSpectrum):
         strict_num_source=True,
         auto_relative=False,
         highres_sim=None,
+        grid_pad=4,
         **params,
     ):
         super().__init__(**params)
@@ -95,6 +128,7 @@ class MockSimulation(PowerSpectrum):
         self.strict_num_source = strict_num_source
         self.auto_relative = auto_relative
         self.highres_sim = highres_sim
+        self.grid_pad = grid_pad
 
     @property
     def highres_sim(self):
@@ -243,7 +277,8 @@ class MockSimulation(PowerSpectrum):
             seed=self.seed,
         )
         assert np.allclose(pb2.power_array()[pb2.k() != 0] * pb2.V, power_array)
-        return pb2.delta_x()
+        return delta_x_from_pb(pb2)
+        # return pb2.delta_x()
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_1", "rsd")
