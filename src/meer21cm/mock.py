@@ -74,7 +74,7 @@ def delta_x_from_pb(pb):
     # gaussian power
     gpa = np.fft.fftshift(np.fft.fftn(gca)).real
     # reset negative values
-    gpa[pb.k() == 0] = 0
+    gpa[gpa < 0] = 0
     delta_k = np.sqrt(gpa) * pb.gauss_hermitian()
     # gaussian field
     delta_x = (np.fft.ifftn(np.fft.ifftshift(delta_k)) * np.sqrt(np.prod(pb.N))).real
