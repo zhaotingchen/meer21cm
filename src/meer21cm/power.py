@@ -137,17 +137,21 @@ class ModelPowerSpectrum(CosmologyCalculator):
             if "tracer_2_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_2_dep_attr)
 
-    def fog_lorentz(self, sigma_v):
+    def fog_lorentz(self, sigma_v, kmode=None, mumode=None):
         """
         sqrt(1/(1+(sigma_v k_parallel /H_0)^2))
         """
+        if mumode is None:
+            mumode = self.mumode
+        if kmode is None:
+            kmode = self.kmode
         H_0 = self.H0.to("km s^-1 Mpc^-1").value
-        k_parallel = self.kmode * self.mumode
+        k_parallel = kmode * mumode
         fog = np.sqrt(1 / (1 + (sigma_v * k_parallel / H_0) ** 2))
         return fog
 
-    def fog_term(self, sigma_v):
-        return getattr(self, "fog_" + self.fog_profile)(sigma_v)
+    def fog_term(self, sigma_v, kmode=None, mumode=None):
+        return getattr(self, "fog_" + self.fog_profile)(sigma_v, kmode, mumode)
 
     @property
     def tracer_bias_1(self):
@@ -299,20 +303,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
         beta2=None,
         sigmav_2=None,
         r=1.0,
+        mumode=None,
     ):
+        if mumode is None:
+            mumode = self.mumode
         if beta2 is None:
             beta2 = beta1
         if sigmav_2 is None:
             sigmav_2 = sigmav_1
         power_in_redshift_space = (
             power_in_real_space
-            * (
-                r
-                + (beta1 + beta2) * self.mumode**2
-                + beta1 * beta2 * self.mumode**4
-            )
-            * self.fog_term(sigmav_1)
-            * self.fog_term(sigmav_2)
+            * (r + (beta1 + beta2) * mumode**2 + beta1 * beta2 * mumode**4)
+            * self.fog_term(sigmav_1, mumode=mumode)
+            * self.fog_term(sigmav_2, mumode=mumode)
         )
         return power_in_redshift_space
 

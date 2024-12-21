@@ -248,19 +248,20 @@ class MockSimulation(PowerSpectrum):
     def get_mock_field(self, bias, sigma_v=0):
         if self.box_ndim is None:
             self.get_enclosing_box()
+        grid_pad = self.grid_pad
         self.propagate_field_k_to_model()
         pb = LogNormalPowerBox(
-            N=self.box_ndim,
+            N=self.box_ndim + grid_pad,
             dim=3,
             pk=self.matter_power_spectrum_fnc,
-            boxlength=self.box_len,
+            boxlength=self.box_resol * (self.box_ndim + grid_pad),
             seed=self.seed,
         )
         # manually modify powerbox pk to include bias and rsd
         power_array = self.matter_power_spectrum_fnc(pb.k())
         if self.kaiser_rsd:
             mumode = np.nan_to_num(pb.kvec[-1][None, None, :] / pb.k())
-            fog = np.fft.fftshift(self.fog_term(sigma_v))
+            fog = np.fft.fftshift(self.fog_term(sigma_v, kmode=pb.k(), mumode=mumode))
             power_array *= ((bias + mumode**2 * self.f_growth) * fog) ** 2
         else:
             power_array *= bias**2
@@ -270,14 +271,18 @@ class MockSimulation(PowerSpectrum):
         # basically a cheat, instead of a function
         # pkfunc just returns an array of the correct size
         pb2 = LogNormalPowerBox(
-            N=self.box_ndim,
+            N=self.box_ndim + grid_pad,
             dim=3,
             pk=pkfunc,
-            boxlength=self.box_len,
+            boxlength=self.box_resol * (self.box_ndim + grid_pad),
             seed=self.seed,
         )
         assert np.allclose(pb2.power_array()[pb2.k() != 0] * pb2.V, power_array)
-        return delta_x_from_pb(pb2)
+        slice_indx = [
+            slice(grid_pad // 2, self.box_ndim[i] + grid_pad // 2) for i in range(3)
+        ]
+        slice_indx = tuple(slice_indx)
+        return delta_x_from_pb(pb2)[slice_indx]
         # return pb2.delta_x()
 
     @property
