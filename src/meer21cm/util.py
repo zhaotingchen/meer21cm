@@ -1097,3 +1097,23 @@ class Obuljen18(HODBulk):
 
     def sigma_satellite(self, m):
         return np.zeros_like(m)
+
+
+def dft_matrix(N, norm="backward"):
+    """
+    Generate the DFT matrix for a given N.
+    The default is the backward normalization, which is the same as np.fft.fft.
+
+    Parameters
+    ----------
+        N: int
+            The size of the matrix.
+        norm: str, default 'backward'
+            The normalization of the DFT matrix.
+
+    Returns
+    -------
+        dft_mat: np.ndarray
+            The DFT matrix.
+    """
+    return np.fft.fft(np.eye(N), norm=norm)

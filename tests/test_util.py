@@ -8,6 +8,13 @@ from halomod import TracerHaloModel
 from meer21cm import Specification
 
 
+def test_dft_matrix():
+    assert np.allclose(dft_matrix(10), np.fft.fft(np.eye(10)))
+    assert np.allclose(
+        dft_matrix(10, norm="forward"), np.fft.fft(np.eye(10), norm="forward")
+    )
+
+
 def test_create_wcs_with_range():
     ra_range = [315, 80]
     dec_range = [-70, 5]
