@@ -20,3 +20,5 @@ share/python-wheels/
 MANIFEST
 *.pyc
 core
+.idea/*
+.DS_Store

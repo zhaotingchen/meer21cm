@@ -329,6 +329,20 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
 
     def get_model_power_i(self, i):
+        """
+        Calculate the model power spectrum for the i-th tracer.
+        The attribute f"_auto_power_tracer_{i}_model" will be set by the output.
+
+        Parameters
+        ----------
+        i: int
+            The index of the tracer.
+
+        Returns
+        -------
+        auto_power_model: np.ndarray
+            The model power spectrum for the i-th tracer.
+        """
         if getattr(self, "tracer_bias_" + str(i)) is None:
             return None
         B_beam = self.beam_attenuation()
@@ -354,6 +368,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             weights1_in_real=getattr(self, "weights_" + str(i)),
         )
         setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
+        return auto_power_model
 
     def get_model_power_cross(self):
         if getattr(self, "tracer_bias_" + str(2)) is None:
