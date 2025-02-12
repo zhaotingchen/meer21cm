@@ -45,7 +45,7 @@ from .grid import (
 import healpy as hp
 from meer21cm.power import PowerSpectrum, Specification
 from meer21cm.telescope import weighted_convolution
-from powerbox import LogNormalPowerBox
+from powerbox import LogNormalPowerBox, PowerBox
 from halomod import TracerHaloModel as THM
 from powerbox import dft
 import warnings
@@ -87,7 +87,7 @@ def delta_x_from_pb(pb):
 class MockSimulation(PowerSpectrum):
     def __init__(
         self,
-        density="poisson",
+        density="lognormal",
         relative_resol_to_pix=0.5,
         target_relative_to_num_g=1.5,
         num_discrete_source=100,
@@ -250,7 +250,15 @@ class MockSimulation(PowerSpectrum):
             self.get_enclosing_box()
         grid_pad = self.grid_pad
         self.propagate_field_k_to_model()
-        pb = LogNormalPowerBox(
+        if self.density == "lognormal":
+            backend = LogNormalPowerBox
+        elif self.density == "gaussian":
+            backend = PowerBox
+        else:
+            raise ValueError(
+                f"density must be 'lognormal' or 'gaussian', got {self.density}"
+            )
+        pb = backend(
             N=self.box_ndim + grid_pad,
             dim=3,
             pk=self.matter_power_spectrum_fnc,
@@ -270,7 +278,7 @@ class MockSimulation(PowerSpectrum):
         del pb
         # basically a cheat, instead of a function
         # pkfunc just returns an array of the correct size
-        pb2 = LogNormalPowerBox(
+        pb2 = backend(
             N=self.box_ndim + grid_pad,
             dim=3,
             pk=pkfunc,
