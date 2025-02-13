@@ -44,9 +44,12 @@ jobs:
         conda install -c anaconda 'cython<3.0'
         pip install "numpy<2.0"
         sudo apt install libopenmpi-dev
-        conda install conda-forge::openmpi
-        conda install openmpi-mpicc
-        pip install mpi4py
+        # magic fix of ld issue
+        rm /home/runner/miniconda/envs/tests/compiler_compat/ld
+        #conda install conda-forge::openmpi
+        #conda install openmpi-mpicc
+        #pip install "mpi4py<4.0"
+        conda install -c conda-forge mpi4py openmpi
         pip install git+https://github.com/rainwoodman/pfft-python.git
         pip install ".[full]"
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi

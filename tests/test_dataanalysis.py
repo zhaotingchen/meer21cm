@@ -4,7 +4,7 @@ import numpy as np
 from astropy import units, constants
 import pytest
 from astropy.wcs.utils import proj_plane_pixel_area
-from meer21cm.util import freq_to_redshift, center_to_edges, f_21
+from meer21cm.util import freq_to_redshift, center_to_edges, f_21, create_wcs_with_range
 from meer21cm.telescope import dish_beam_sigma
 
 
@@ -208,3 +208,27 @@ def test_z_interp():
     func = ps.z_as_func_of_comov_dist()
     z_rand = np.random.uniform(ps.z_ch.min(), ps.z_ch.max(), size=100)
     assert np.allclose(func(ps.comoving_distance(z_rand).value), z_rand)
+
+
+def test_buffer():
+    ramintest, ramaxtest = -1.5, 1.5
+    decmintest, decmaxtest = -1.5, 1.5
+    ra_range = np.array([ramintest, ramaxtest])
+    dec_range = np.array([decmintest, decmaxtest])
+
+    ang_resol = 0.3
+    wproj, num_pix_x, num_pix_y = create_wcs_with_range(
+        ra_range,
+        dec_range,
+        resol=[ang_resol, ang_resol],
+    )
+    sp_mock = Specification(
+        wproj=wproj,
+        num_pix_x=num_pix_x,
+        num_pix_y=num_pix_y,
+        ra_range=ra_range,
+        dec_range=dec_range,
+        nu=[f_21, f_21],
+        range_buffer=1e-3,
+    )
+    assert len(np.unique(sp_mock.W_HI[:, :, 0].mean(-1))) == 2
