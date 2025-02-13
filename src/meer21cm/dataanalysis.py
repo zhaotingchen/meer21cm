@@ -72,8 +72,10 @@ class Specification:
         counts=None,
         survey="meerklass_L_deep",
         band="L",
+        range_buffer=0.0,
         **kwparams,
     ):
+        self.range_buffer = range_buffer
         self.survey = survey
         self.band = band
         self.dependency_dict = find_property_with_tags(self)
@@ -550,10 +552,10 @@ class Specification:
         self.trim_map_to_range()
 
     def trim_map_to_range(self):
-        ra_sel = angle_in_range(self.ra_map, self.ra_range[0], self.ra_range[1])
-        dec_sel = (self.dec_map > self.dec_range[0]) * (
-            self.dec_map < self.dec_range[1]
-        )
+        ra_range = np.array(self.ra_range) + [-self.range_buffer, self.range_buffer]
+        dec_range = np.array(self.dec_range) + [-self.range_buffer, self.range_buffer]
+        ra_sel = angle_in_range(self.ra_map, ra_range[0], ra_range[1])
+        dec_sel = (self.dec_map > dec_range[0]) * (self.dec_map < dec_range[1])
         map_sel = (ra_sel * dec_sel)[:, :, None]
         self.data = self.data * map_sel
         self.counts = self.counts * map_sel
