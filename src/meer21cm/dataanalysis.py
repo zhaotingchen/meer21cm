@@ -552,6 +552,11 @@ class Specification:
         self.trim_map_to_range()
 
     def trim_map_to_range(self):
+        """
+        Trim the map to the specified range.
+        The map data and counts outside the range will be set to zero.
+        The map_has_sampling and weights_map_pixel will be set to False outside the range.
+        """
         ra_range = np.array(self.ra_range) + [-self.range_buffer, self.range_buffer]
         dec_range = np.array(self.dec_range) + [-self.range_buffer, self.range_buffer]
         ra_sel = angle_in_range(self.ra_map, ra_range[0], ra_range[1])
@@ -563,10 +568,16 @@ class Specification:
         self.weights_map_pixel = self.weights_map_pixel * map_sel
 
     def trim_gal_to_range(self):
+        """
+        Trim the galaxy catalogue to the specified range.
+        The galaxy catalogue outside the ra-dec-z range will be removed.
+        """
+        ra_range = np.array(self.ra_range) + [-self.range_buffer, self.range_buffer]
+        dec_range = np.array(self.dec_range) + [-self.range_buffer, self.range_buffer]
         gal_sel = (
-            angle_in_range(self.ra_gal, self.ra_range[0], self.ra_range[1])
-            * (self.dec_gal > self.dec_range[0])
-            * (self.dec_gal < self.dec_range[1])
+            angle_in_range(self.ra_gal, ra_range[0], ra_range[1])
+            * (self.dec_gal > dec_range[0])
+            * (self.dec_gal < dec_range[1])
         )
         freq_edges = center_to_edges(self.nu)
         z_edges = freq_to_redshift(freq_edges)
