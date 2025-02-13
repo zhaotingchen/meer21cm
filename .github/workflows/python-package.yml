@@ -44,6 +44,8 @@ jobs:
         conda install -c anaconda 'cython<3.0'
         pip install "numpy<2.0"
         sudo apt install libopenmpi-dev
+        # magic fix of ld issue
+        rm /home/runner/miniconda/envs/tests/compiler_compat/ld
         #conda install conda-forge::openmpi
         #conda install openmpi-mpicc
         #pip install "mpi4py<4.0"
