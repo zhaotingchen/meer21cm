@@ -428,21 +428,21 @@ class Specification:
     @property
     def ra_map(self):
         """
-        A binary window for whether a pixel has been sampled
+        The right ascension of each pixel in the map.
         """
         return self._ra_map
 
     @property
     def dec_map(self):
         """
-        A binary window for whether a pixel has been sampled
+        The declination of each pixel in the map.
         """
         return self._dec_map
 
     @property
     def weights_map_pixel(self):
         """
-        the weights per map pixel.
+        The weights per map pixel.
         """
         return self._weights_map_pixel
 
@@ -455,21 +455,21 @@ class Specification:
     @property
     def ra_gal(self):
         """
-        RA coordinates of galaxy catalogue for cross-correlation
+        The right ascension of each galaxy in the catalogue for cross-correlation.
         """
         return self._ra_gal
 
     @property
     def dec_gal(self):
         """
-        Dec coordinates of galaxy catalogue for cross-correlation
+        The declination of each galaxy in the catalogue for cross-correlation.
         """
         return self._dec_gal
 
     @property
     def z_gal(self):
         """
-        Redshifts of galaxy catalogue for cross-correlation
+        The redshifts of each galaxy in the catalogue for cross-correlation.
         """
         return self._z_gal
 

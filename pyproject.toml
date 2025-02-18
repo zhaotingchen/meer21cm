@@ -25,7 +25,6 @@ dependencies = [
     "astropy",
     'hmf',
     'halomod',
-    'powerbox@git+https://github.com/zhaotingchen/powerbox',
     'katbeam@git+https://github.com/ska-sa/katbeam',
     "cython < 3.0",
     "mpi4py",

@@ -8,7 +8,6 @@ from astropy.io import fits
 from astropy.cosmology import Planck18
 import inspect
 import sys
-from powerbox import PowerBox
 from scipy.special import erf
 from scipy.interpolate import interp1d
 from numpy.random import default_rng
@@ -444,41 +443,6 @@ def get_ang_between_coord(ra1, dec1, ra2, dec2, unit="deg"):
     v1v2cross[v1v2cross > 1] = 1
     result = (np.arccos(v1v2cross) * units.rad).to(unit).value
     return result.T
-
-
-def generate_colored_noise(x_size, x_len, power_k_func, seed=None):
-    """
-    Generate random 1D gaussian fluctuations following a specific spectrum. This is similar to ``colorednoise`` package for generating colored noise. It is simply wrapping the :class:`powerbox.PowerBox` under the hood.
-    Note that the Fourier convention used should be consistent with :py:mod:`np.fft`.
-
-    Parameters
-    ----------
-        x_size: int
-            The number of sampling.
-        x_len: float
-            The **total length** of the sampling.
-        power_k_func: func
-            The power spectrum of the random noise in Fourier space.
-        seed: int, default None
-            The seed number for random generator for sampling. If None, a random seed is used.
-
-    Returns
-    -------
-        rand_arr: float array.
-            The random noise.
-    """
-
-    pb = PowerBox(
-        x_size,
-        power_k_func,
-        dim=1,
-        boxlength=x_len,
-        a=0.0,
-        b=2 * np.pi,
-        seed=None,
-    )
-    rand_arr = pb.delta_x()
-    return rand_arr
 
 
 def get_default_args(func):
@@ -1097,3 +1061,23 @@ class Obuljen18(HODBulk):
 
     def sigma_satellite(self, m):
         return np.zeros_like(m)
+
+
+def dft_matrix(N, norm="backward"):
+    """
+    Generate the DFT matrix for a given N.
+    The default is the backward normalization, which is the same as np.fft.fft.
+
+    Parameters
+    ----------
+        N: int
+            The size of the matrix.
+        norm: str, default 'backward'
+            The normalization of the DFT matrix.
+
+    Returns
+    -------
+        dft_mat: np.ndarray
+            The DFT matrix.
+    """
+    return np.fft.fft(np.eye(N), norm=norm)

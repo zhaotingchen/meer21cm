@@ -8,6 +8,13 @@ from halomod import TracerHaloModel
 from meer21cm import Specification
 
 
+def test_dft_matrix():
+    assert np.allclose(dft_matrix(10), np.fft.fft(np.eye(10)))
+    assert np.allclose(
+        dft_matrix(10, norm="forward"), np.fft.fft(np.eye(10), norm="forward")
+    )
+
+
 def test_create_wcs_with_range():
     ra_range = [315, 80]
     dec_range = [-70, 5]
@@ -154,15 +161,6 @@ def test_get_ang_between_coord():
     dec2 = np.array([80])
     ang = get_ang_between_coord(ra1, dec1, ra2, dec2)
     assert np.allclose(ang.ravel(), dec2 - dec1)
-
-
-def test_generate_colored_noise():
-    rand_arr = [
-        generate_colored_noise(100, 100, lambda k: np.ones_like(k)) for i in range(1000)
-    ]
-    rand_arr = np.array(rand_arr)
-    assert np.allclose(rand_arr.mean(), 0.0)
-    assert np.abs(rand_arr.std() - 1.0) < 0.2
 
 
 def test_get_default_args():

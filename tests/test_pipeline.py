@@ -39,7 +39,7 @@ def test_gaussian_field_map_grid():
     )
     assert avg_deviation < 5e-2
     # grid the field to sky map
-    map_bin = ps.grid_field_to_sky_map(pos_value, average=True)
+    map_bin, _ = ps.grid_field_to_sky_map(pos_value, average=True)
     # pass it to the object
     ps.data = map_bin
     # regrid the sky map to a regular grid field
@@ -107,7 +107,7 @@ def test_poisson_field_map_grid():
         ((np.abs((pfield - psn) / psn)) ** 2 * nmodes).sum() / nmodes.sum()
     )
     assert avg_deviation < 5e-2
-    map_bin = ps.grid_field_to_sky_map(pos_value, average=False)
+    map_bin, _ = ps.grid_field_to_sky_map(pos_value, average=False)
     ps.data = map_bin
     ps.downres_factor_radial = 2.0
     ps.downres_factor_transverse = 1.5

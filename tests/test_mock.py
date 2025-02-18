@@ -5,6 +5,8 @@ from meer21cm.mock import (
     MockSimulation,
     HIGalaxySimulation,
     hi_mass_to_flux_profile,
+    generate_gaussian_field,
+    generate_colored_noise,
 )
 from meer21cm import Specification
 from meer21cm.util import hod_obuljen18, create_udres_wproj
@@ -18,12 +20,14 @@ from meer21cm.power import PowerSpectrum
 from meer21cm.util import radec_to_indx, find_ch_id, redshift_to_freq
 
 
-def test_matter_mock(test_W):
+@pytest.mark.parametrize("density", [("lognormal"), ("gaussian"), ("test")])
+def test_matter_mock(test_W, density):
     # default is Planck18, so use WMAP1 to test
     # if cosmo is properly updated throughout
     k1dedges = np.geomspace(0.05, 1.5, 20)
 
     mock = MockSimulation(
+        density=density,
         cosmo="WMAP1",
         k1dbins=k1dedges,
         model_k_from_field=True,
@@ -43,33 +47,36 @@ def test_matter_mock(test_W):
     mock.pix_coor_in_box
     # test input and output power consistency
     mock.k1dbins = k1dedges
+    if density != "test":
+        mock.field_1 = mock.mock_matter_field
+        pfield_i, keff, nmodes = mock.get_1d_power(
+            "auto_power_3d_1",
+        )
 
-    mock.field_1 = mock.mock_matter_field
-    pfield_i, keff, nmodes = mock.get_1d_power(
-        "auto_power_3d_1",
-    )
-
-    pmatter3d = mock.matter_power_spectrum_fnc(mock.kmode)
-    pm1d, _, _ = mock.get_1d_power(
-        pmatter3d,
-    )
-    avg_deviation = np.sqrt(
-        ((np.abs((pfield_i - pm1d) / pm1d)) ** 2 * nmodes).sum() / nmodes.sum()
-    )
-    assert avg_deviation < 2e-1
-    # test RSD
-    mock.kaiser_rsd = True
-    # mock.get_mock_matter_field()
-    mock.field_1 = mock.mock_matter_field
-    pfield_i_rsd, keff, nmodes = mock.get_1d_power(
-        "auto_power_3d_1",
-    )
-    pm1d_rsd, _, _ = mock.get_1d_power(mock.auto_power_matter_model)
-    avg_deviation = np.sqrt(
-        ((np.abs((pfield_i_rsd - pm1d_rsd) / pm1d_rsd)) ** 2 * nmodes).sum()
-        / nmodes.sum()
-    )
-    assert avg_deviation < 2e-1
+        pmatter3d = mock.matter_power_spectrum_fnc(mock.kmode)
+        pm1d, _, _ = mock.get_1d_power(
+            pmatter3d,
+        )
+        avg_deviation = np.sqrt(
+            ((np.abs((pfield_i - pm1d) / pm1d)) ** 2 * nmodes).sum() / nmodes.sum()
+        )
+        assert avg_deviation < 2e-1
+        # test RSD
+        mock.kaiser_rsd = True
+        # mock.get_mock_matter_field()
+        mock.field_1 = mock.mock_matter_field
+        pfield_i_rsd, keff, nmodes = mock.get_1d_power(
+            "auto_power_3d_1",
+        )
+        pm1d_rsd, _, _ = mock.get_1d_power(mock.auto_power_matter_model)
+        avg_deviation = np.sqrt(
+            ((np.abs((pfield_i_rsd - pm1d_rsd) / pm1d_rsd)) ** 2 * nmodes).sum()
+            / nmodes.sum()
+        )
+        assert avg_deviation < 2e-1
+    else:
+        with pytest.raises(ValueError):
+            mock.field_1 = mock.mock_matter_field
 
 
 @pytest.mark.parametrize("tracer_i", [(1), (2)])
@@ -378,3 +385,10 @@ def test_project_hi_profile(highres):
             ]
             test2 = hifluxd_ch[:, i]
             assert np.allclose(test1, test2)
+
+
+def test_generate_colored_noise():
+    rand_arr = [generate_colored_noise(100, 100, np.ones(100)) for i in range(1000)]
+    rand_arr = np.array(rand_arr)
+    assert np.allclose(rand_arr.mean(), 0.0)
+    assert np.abs(rand_arr.std() - 1.0) < 0.1
