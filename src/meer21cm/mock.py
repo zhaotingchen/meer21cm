@@ -45,42 +45,8 @@ from .grid import (
 import healpy as hp
 from meer21cm.power import PowerSpectrum, Specification
 from meer21cm.telescope import weighted_convolution
-from powerbox import LogNormalPowerBox, PowerBox
 from halomod import TracerHaloModel as THM
-from powerbox import dft
 import warnings
-
-
-# def delta_x_from_pb(pb):
-#    """
-#    Generate a corrected version of mock field for LogNormalPowerBox
-#
-#    Parameters
-#    ----------
-#    pb: :class:`powerbox.LogNormalPowerBox` object.
-#        The input powerbox.
-#
-#    Returns
-#    -------
-#    delta_x: array
-#        Output mock field.
-#    """
-#    # get power
-#    pa = pb.power_array()
-#    # correlation function
-#    ca = np.fft.ifftn(np.fft.ifftshift(pa), norm="forward").real
-#    # gaussian
-#    gca = np.log(1 + ca)
-#    # gaussian power
-#    gpa = np.fft.fftshift(np.fft.fftn(gca)).real
-#    # reset negative values
-#    gpa[gpa < 0] = 0
-#    delta_k = np.sqrt(gpa) * pb.gauss_hermitian()
-#    # gaussian field
-#    delta_x = (np.fft.ifftn(np.fft.ifftshift(delta_k)) * np.sqrt(np.prod(pb.N))).real
-#    # standard deviation
-#    sg = gpa.sum() / np.prod(pb.N)
-#    return (np.exp(delta_x - sg / 2)) - 1
 
 
 # 20 lines missing before adding in
@@ -251,47 +217,13 @@ class MockSimulation(PowerSpectrum):
         grid_pad = self.grid_pad
         self.propagate_field_k_to_model()
         if self.density == "lognormal":
-            # backend = LogNormalPowerBox
             backend = generate_lognormal_field
         elif self.density == "gaussian":
-            # backend = PowerBox
             backend = generate_gaussian_field
         else:
             raise ValueError(
                 f"density must be 'lognormal' or 'gaussian', got {self.density}"
             )
-        # pb = backend(
-        #    N=self.box_ndim + grid_pad,
-        #    dim=3,
-        #    pk=self.matter_power_spectrum_fnc,
-        #    boxlength=self.box_resol * (self.box_ndim + grid_pad),
-        #    seed=self.seed,
-        # )
-        ## manually modify powerbox pk to include bias and rsd
-        # power_array = self.matter_power_spectrum_fnc(pb.k())
-        # if self.kaiser_rsd:
-        #    mumode = np.nan_to_num(pb.kvec[-1][None, None, :] / pb.k())
-        #    fog = np.fft.fftshift(self.fog_term(sigma_v, kmode=pb.k(), mumode=mumode))
-        #    power_array *= ((bias + mumode**2 * self.f_growth) * fog) ** 2
-        # else:
-        #    power_array *= bias**2
-        # power_array = power_array[pb.k() != 0]
-        # pkfunc = lambda x: power_array
-        # del pb
-        ## basically a cheat, instead of a function
-        ## pkfunc just returns an array of the correct size
-        # pb2 = backend(
-        #    N=self.box_ndim + grid_pad,
-        #    dim=3,
-        #    pk=pkfunc,
-        #    boxlength=self.box_resol * (self.box_ndim + grid_pad),
-        #    seed=self.seed,
-        # )
-        # assert np.allclose(pb2.power_array()[pb2.k() != 0] * pb2.V, power_array)
-        # slice_indx = [
-        #    slice(grid_pad // 2, self.box_ndim[i] + grid_pad // 2) for i in range(3)
-        # ]
-        # slice_indx = tuple(slice_indx)
         power_array = self.matter_power_spectrum_fnc(self.kmode)
         if self.kaiser_rsd:
             mumode = self.mumode
@@ -299,6 +231,8 @@ class MockSimulation(PowerSpectrum):
                 self.fog_term(sigma_v, kmode=self.kmode, mumode=mumode)
             )
             power_array *= ((bias + mumode**2 * self.f_growth) * fog) ** 2
+        else:
+            power_array *= bias**2
         delta_x = backend(self.box_ndim, self.box_len, power_array, self.seed)
         return delta_x
 
@@ -1046,7 +980,6 @@ def generate_lognormal_field(
         box_ndim, box_len, Delta_G, seed, ps_has_volume=False
     )
     # Apply lognormal transformation
-    # sigma_sq = np.var(delta_x_g)
     sigma_sq = np.sum(Delta_G) / np.prod(box_ndim)
     delta_x = np.exp(delta_x_g - sigma_sq / 2.0) - 1.0
     return delta_x
