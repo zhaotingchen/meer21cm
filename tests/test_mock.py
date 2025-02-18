@@ -5,6 +5,7 @@ from meer21cm.mock import (
     MockSimulation,
     HIGalaxySimulation,
     hi_mass_to_flux_profile,
+    generate_gaussian_field,
 )
 from meer21cm import Specification
 from meer21cm.util import hod_obuljen18, create_udres_wproj
@@ -383,3 +384,25 @@ def test_project_hi_profile(highres):
             ]
             test2 = hifluxd_ch[:, i]
             assert np.allclose(test1, test2)
+
+
+# def test_generate_gaussian_field():
+#    raminMK, ramaxMK = 334, 357
+#    decminMK, decmaxMK = -35, -26.5
+#    ra_range_MK = (raminMK, ramaxMK)
+#    dec_range_MK = (decminMK, decmaxMK)
+#    mock = MockSimulation(
+#        ra_range=ra_range_MK,
+#        dec_range=dec_range_MK,
+#    )
+#    mock.get_enclosing_box()
+#    delta_x = generate_gaussian_field(
+#        mock.box_ndim,
+#        mock.box_len,
+#        mock.matter_power_spectrum_fnc(mock.kmode),
+#        mock.seed
+#    )
+#    assert np.allclose(delta_x.shape, mock.box_ndim)
+#    mock.field_1 = delta_x
+#    ratio = mock.auto_power_3d_1 / mock.matter_power_spectrum_fnc(mock.kmode)
+#    assert np.abs(ratio.mean()-1) < 1e-2
