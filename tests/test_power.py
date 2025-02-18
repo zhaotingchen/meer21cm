@@ -1,10 +1,10 @@
 import numpy as np
 from meer21cm.power import *
-from powerbox import PowerBox
 import pytest
 from scipy.signal import windows
 from meer21cm import PowerSpectrum, Specification
 from meer21cm.util import center_to_edges, f_21
+from meer21cm.mock import generate_gaussian_field
 
 
 def test_nyquist_k():
@@ -86,18 +86,14 @@ def test_get_power_spectrum():
     box_resol = box_len / box_dim
     kvec = get_k_vector(box_dim, box_resol)
     kmode = get_vec_mode(kvec)
-    pb = PowerBox(
-        box_dim,
-        lambda k: k ** (spindx),
-        dim=3,
-        boxlength=box_len,
-    )
-    delta_x = pb.delta_x()
+    ps = kmode ** (spindx)
+    ps[0, 0, 0] = 0.0
+    delta_x = generate_gaussian_field(box_dim, box_len, ps, None)
+    # note that, generate_gaussian_field deliberately does not use get_fourier_density
     delta_fourier = get_fourier_density(delta_x)
     mean_power = (
         (get_power_spectrum(delta_fourier, box_len) / kmode ** (spindx))[kmode > 0]
     ).mean()
-    # current lack of precision seems to be a powerbox bug?
     assert np.abs(mean_power - 1) < 0.1
     # test poisson galaxies
     delta_x = np.zeros(100**3)

@@ -3,14 +3,6 @@ from meer21cm.stack import sum_3d_stack, stack
 from meer21cm import Specification
 import pytest
 
-# from astropy.cosmology import Planck18
-# from meer21cm.util import f_21
-# from unittest.mock import patch
-# import matplotlib.pyplot as plt
-# from meer21cm.stack import weight_source_peaks, stack, sum_3d_stack
-# from meer21cm.util import radec_to_indx
-# from astropy import constants, units
-
 
 @pytest.mark.parametrize("sym", [(False), (True)])
 def test_stack(sym):
