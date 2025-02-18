@@ -46,9 +46,6 @@ jobs:
         sudo apt install libopenmpi-dev
         # magic fix of ld issue
         rm /home/runner/miniconda/envs/tests/compiler_compat/ld
-        #conda install conda-forge::openmpi
-        #conda install openmpi-mpicc
-        #pip install "mpi4py<4.0"
         conda install -c conda-forge mpi4py openmpi
         pip install git+https://github.com/rainwoodman/pfft-python.git
         pip install ".[full]"
