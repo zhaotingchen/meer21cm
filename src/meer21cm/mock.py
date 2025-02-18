@@ -983,3 +983,35 @@ def generate_lognormal_field(
     sigma_sq = np.sum(Delta_G) / np.prod(box_ndim)
     delta_x = np.exp(delta_x_g - sigma_sq / 2.0) - 1.0
     return delta_x
+
+
+def generate_colored_noise(x_size, x_len, power_spectrum, seed=None):
+    """
+    Generate random 1D gaussian fluctuations following a specific spectrum.
+    This is similar to ``colorednoise`` package for generating colored noise.
+    It is simply wrapping the ``generate_gaussian_field`` function under the hood.
+    Note that the Fourier convention used should be consistent with :py:mod:`np.fft`,
+    and the power spectrum is dimensionless.
+
+    Parameters
+    ----------
+        x_size: int
+            The number of sampling.
+        x_len: float
+            The **total length** of the sampling.
+        power_spectrum: array
+            The power spectrum of the random noise in Fourier space.
+        seed: int, default None
+            The seed number for random generator for sampling. If None, a random seed is used.
+
+    Returns
+    -------
+        rand_arr: float array.
+            The random noise.
+    """
+
+    rand_arr = generate_gaussian_field(
+        x_size, x_len, power_spectrum, seed, ps_has_volume=False
+    )
+    rand_arr -= rand_arr.mean()
+    return rand_arr

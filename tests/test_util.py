@@ -163,15 +163,6 @@ def test_get_ang_between_coord():
     assert np.allclose(ang.ravel(), dec2 - dec1)
 
 
-def test_generate_colored_noise():
-    rand_arr = [
-        generate_colored_noise(100, 100, lambda k: np.ones_like(k)) for i in range(1000)
-    ]
-    rand_arr = np.array(rand_arr)
-    assert np.allclose(rand_arr.mean(), 0.0)
-    assert np.abs(rand_arr.std() - 1.0) < 0.2
-
-
 def test_get_default_args():
     def test_func(x, arg1=1):
         return 1
