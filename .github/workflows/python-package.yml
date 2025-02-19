@@ -33,7 +33,7 @@ jobs:
         if [ "$RUNNER_OS" == "Linux" ]; then
           wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
         elif [ "$RUNNER_OS" == "macOS" ]; then
-          curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh $HOME/miniconda.sh
+          curl -O $HOME/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh
         else
           echo "Unsupported OS: $RUNNER_OS"
           exit 1
