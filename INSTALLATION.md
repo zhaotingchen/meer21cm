@@ -1,36 +1,46 @@
 # Installation
 
-The installation is tested locally on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10. Here is some hopefully useful guide to installing `pfft-python` which `pmesh` uses as dependency.
+The installation is tested locally on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10. Here is some hopefully useful guide to installing the pacakge.
 
-If you have a working installation of `mpi4py` on your system you may skip the first part and go straight to [`pfft-python`](#pfft). If you are on ilifu jump straight to [`Installing on ilifu`](#ilifu).
+Most of the extra efforts before installing the package itself is to install `pfft-python` and `pmesh` which `meer21cm` depends on.
 
-## Installing `mpi4py`
-A clean `conda` environment is highly recommended.
+If you are on ilifu jump straight to [`Installing on ilifu`](#ilifu).
 
+## Installing dependencies
+A clean `conda` environment on python 3.9 or 3.10 is highly recommended.
 
 ### MacOS
-First, install an MPI implementation. For MacOS (no need to use Rosetta as well), simply
+In the conda environment, do
 ```
-brew install mpi4py
+conda install -c anaconda 'cython<3.0'
+pip install "numpy<2.0"
+brew install openmpi
+brew install hdf5
+brew install c-blosc
+export HDF5_DIR=/opt/homebrew/opt/hdf5
+export BLOSC_DIR=/opt/homebrew/opt/c-blosc
+pip install "mpi4py<4.0"
+git clone https://github.com/zhaotingchen/MP-sort.git
+cd MP-sort
+pip install -e .
+cd ..
+pip install git+https://github.com/rainwoodman/pfft-python.git
 ```
-
-Although `mpi4py` should already be installed, for linking reasons we find that it is better if you do
-```
-pip install mpi4py
-```
-again.
+This should install some tricky yet required dependencies for `meer21cm`.
 
 ### Linux PC
-For Linux PC, depending on your system you should be able to install `openmpi` or `mpich`. For `ubuntu`, the most secure way in our tests seems to be
+For Linux PC, depending on your system you should be able to install `openmpi` through `conda` or `apt`. For `ubuntu`, the most secure way in our tests seems to be
 
 ```
+conda install -c anaconda 'cython<3.0'
+pip install "numpy<2.0"
 sudo apt install libopenmpi-dev
-conda install conda-forge::openmpi
-conda install openmpi-mpicc
-pip install mpi4py
+rm /path/to/your/conda/env/compiler_compat/ld
+conda install -c conda-forge mpi4py openmpi
+pip install git+https://github.com/rainwoodman/pfft-python.git
 ```
-
-Note that technically only `openmpi-mpicc` is really needed. Try only installing `openmpi-mpicc` and then `mpi4py` first. There is always a possibility of compiling issues, so the extra steps are just trying to avoid problems as much as possible.
+Note that you need to replace `/path/to/your/conda/env` with the actual path to your conda environment.
+You can also try skipping the `rm` step and see if it works.
 
 ### HPC
 If you are on a cluster, most likely you already have some MPI implementation available. You can check its availability by
@@ -63,21 +73,6 @@ Sometimes you already have a version of `cython` installed that causes a compila
 ```
 conda install "cython<3.0"
 ```
-
-
-## Manual installation of `pfft-python` dependencies
-<a name="pfft"></a>
-Sadly this can not just a `pip install`. First, make sure `cython` is installed with an older version instead of "cython3" (skip if you already did it using `conda`)
-
-```
-pip install "cython<3.0"
-```
-Then, install numpy manually
-```
-pip install "numpy<2.0"
-```
-
-This prepares the environment so `setup.py` for `pfft-python` and `pmesh` will not fail.
 
 ## Install `meer21cm`
 Finally, clone the repo for `meer21cm`
