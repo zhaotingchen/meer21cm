@@ -63,6 +63,7 @@ jobs:
             export HDF5_DIR=/opt/homebrew/opt/hdf5
             export BLOSC_DIR=/opt/homebrew/opt/c-blosc
             pip install "mpi4py<4.0"
+            pip install git+https://github.com/MP-Gadget/MP-sort.git
         fi
         pip install git+https://github.com/rainwoodman/pfft-python.git
         pip install ".[full]"
