@@ -30,9 +30,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Get Miniconda
       run: |
-        if [ runner.os == 'Linux' ]; then
+        if [ runner.os == "Linux" ]; then
           wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $HOME/miniconda.sh
-        elif [ runner.os == 'macOS' ]; then
+        elif [ runner.os == "macOS" ]; then
           curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh $HOME/miniconda.sh
         else
           echo "Unsupported OS: $RUNNER_OS"
