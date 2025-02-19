@@ -57,7 +57,7 @@ jobs:
             rm /home/runner/miniconda/envs/tests/compiler_compat/ld
             conda install -c conda-forge mpi4py openmpi
         elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install openmpi
+            brew install mpich
             brew install hdf5
             brew install c-blosc
             export HDF5_DIR=/opt/homebrew/opt/hdf5
