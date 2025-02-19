@@ -57,13 +57,13 @@ jobs:
             rm /home/runner/miniconda/envs/tests/compiler_compat/ld
             conda install -c conda-forge mpi4py openmpi
         elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install mpich
+            brew install openmpi
             brew install hdf5
             brew install c-blosc
             export HDF5_DIR=/opt/homebrew/opt/hdf5
             export BLOSC_DIR=/opt/homebrew/opt/c-blosc
             pip install "mpi4py<4.0"
-            git clone https://github.com/MP-Gadget/MP-sort
+            git clone https://github.com/zhaotingchen/MP-sort.git
             cd MP-sort
             pip install -e .
             cd ..
