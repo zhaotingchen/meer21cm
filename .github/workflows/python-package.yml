@@ -57,11 +57,12 @@ jobs:
             rm /home/runner/miniconda/envs/tests/compiler_compat/ld
             conda install -c conda-forge mpi4py openmpi
         elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install mpi4py
+            brew install openmpi
             brew install hdf5
             brew install c-blosc
             export HDF5_DIR=/opt/homebrew/opt/hdf5
             export BLOSC_DIR=/opt/homebrew/opt/c-blosc
+            pip install "mpi4py<4.0"
         fi
         pip install git+https://github.com/rainwoodman/pfft-python.git
         pip install ".[full]"
