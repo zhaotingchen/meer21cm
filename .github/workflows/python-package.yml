@@ -63,7 +63,7 @@ jobs:
             export HDF5_DIR=/opt/homebrew/opt/hdf5
             export BLOSC_DIR=/opt/homebrew/opt/c-blosc
             pip install "mpi4py<4.0"
-            git clone https://github.com/zhaotingchen/MP-sort.git
+            git clone https://github.com/MP-Gadget/MP-sort
             cd MP-sort
             pip install -e .
             cd ..
