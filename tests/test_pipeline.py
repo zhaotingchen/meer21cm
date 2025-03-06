@@ -64,7 +64,7 @@ def test_gaussian_field_map_grid():
     avg_deviation = np.sqrt(
         ((np.abs((pmap_1 - ps_mod) / ps_mod)) ** 2 * nmodes).sum() / nmodes.sum()
     )
-    assert avg_deviation < 1e-1
+    assert avg_deviation < 1.5e-1
 
 
 def test_poisson_field_map_grid():

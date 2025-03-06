@@ -436,7 +436,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         The attribute f"_auto_power_matter_model" will be set by the output.
         """
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
-        beta_m = self.f_growth
+        if self.kaiser_rsd:
+            beta_m = self.f_growth
+        else:
+            beta_m = 0.0
         self._auto_power_matter_model = self.cal_rsd_power(
             pk3d_mm_r,
             beta_m,
@@ -1765,8 +1768,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
-            particle_value=data_particle,
+            grid_scheme=self.grid_scheme,
+            particle_mass=data_particle,
             particle_weights=weights_particle,
             compensate=self.compensate[0],
         )
@@ -1774,8 +1777,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
-            particle_value=data_particle,
+            grid_scheme=self.grid_scheme,
+            particle_mass=data_particle,
             particle_weights=weights_particle,
             compensate=self.compensate[0],
             shift=self.interlace_shift,
@@ -1784,7 +1787,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             hi_map_rg,
             hi_map_rg2,
             self.interlace_shift,
-            self.box_resol,
+            # self.box_resol,
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
@@ -1830,7 +1833,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_pos_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
+            grid_scheme=self.grid_scheme,
             compensate=self.compensate[1],
             average=False,
         )
@@ -1838,7 +1841,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_pos_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
+            grid_scheme=self.grid_scheme,
             compensate=self.compensate[1],
             average=False,
             shift=self.interlace_shift,
@@ -1847,18 +1850,18 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_map_rg,
             gal_map_rg2,
             self.interlace_shift,
-            self.box_resol,
+            # self.box_resol,
         )
         pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
             0
-        ]
+        ].reshape((-1, 3))
         # get which pixels in the rg box are not covered by the lightcone
         _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
             pix_coor_orig,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
-            particle_value=self.data[self.W_HI].ravel(),
+            grid_scheme=self.grid_scheme,
+            particle_mass=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
             compensate=self.compensate[0],
         )

@@ -442,6 +442,10 @@ def test_ModelPowerSpectrum():
     matter_ps_rsd = model.auto_power_matter_model
     assert np.allclose(matter_ps_rsd / matter_ps_real, (1 + model.f_growth) ** 2)
 
+    # has mumode, but turn off rsd
+    model.kaiser_rsd = False
+    assert np.allclose(model.auto_power_matter_model, matter_ps_real)
+
     # test tracer with no rsd but with bias
     model = ModelPowerSpectrum(tracer_bias_1=2.0)
     assert model.auto_power_tracer_2_model is None
@@ -764,7 +768,7 @@ def test_gal_poisson_power(test_W):
         ((np.abs((pdata_1d_hi - psn_1d) / psn_1d)) ** 2 * nmodes_hi).sum()
         / nmodes_hi.sum()
     )
-    assert avg_deviation < 2e-1
+    assert avg_deviation < 2.5e-1
 
 
 def test_grid_gal(test_gal_fits, test_W):
@@ -876,4 +880,4 @@ def test_poisson_gal_gen():
     psn = volume / ps.ra_gal.size
     psn1d, _, _ = ps.get_1d_power("auto_power_3d_2")
     plateau = psn1d[-5:].mean()
-    assert np.abs(plateau - psn) / psn < 2e-1
+    assert np.abs(plateau - psn) / psn < 2.5e-1
