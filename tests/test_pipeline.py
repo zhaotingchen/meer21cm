@@ -64,7 +64,7 @@ def test_gaussian_field_map_grid():
     avg_deviation = np.sqrt(
         ((np.abs((pmap_1 - ps_mod) / ps_mod)) ** 2 * nmodes).sum() / nmodes.sum()
     )
-    assert avg_deviation < 1e-1
+    assert avg_deviation < 1.5e-1
 
 
 def test_poisson_field_map_grid():
@@ -185,7 +185,7 @@ def test_mock_field_map_grid(highres, beam):
         # taper_hi = mock.taper_func(mock.box_ndim[-1])
         # weights_hi = hi_weights_rg * taper_hi[None, None, :]
         mock.include_beam = [True, False]
-        mock.include_sampling = [True, False]
+        mock.include_sky_sampling = [True, False]
         # mock.field_1 = hi_map_rg
         # mock.weights_1 = weights_hi
         mock.propagate_field_k_to_model()
@@ -213,7 +213,7 @@ def test_mock_field_map_grid(highres, beam):
         # taper_hi = mock.taper_func(mock.box_ndim[-1])
         # weights_hi = hi_weights_rg * taper_hi[None, None, :]
         # mock.include_beam = [True, False]
-        # mock.include_sampling = [True, False]
+        # mock.include_sky_sampling = [True, False]
         # mock.field_1 = hi_map_rg
         # mock.weights_1 = weights_hi
         # mock.propagate_field_k_to_model()

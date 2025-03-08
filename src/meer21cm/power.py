@@ -37,7 +37,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         mean_amp_1=1.0,
         mean_amp_2=1.0,
         sampling_resol=None,
-        include_sampling=[True, False],
+        include_sky_sampling=[True, False],
         kaiser_rsd=True,
         **params,
     ):
@@ -62,7 +62,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.weights_2 = weights_2
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
-        self.include_sampling = include_sampling
+        self.include_sky_sampling = include_sky_sampling
         self.sampling_resol = sampling_resol
         self.has_resol = True
         if self.sampling_resol is None:
@@ -281,10 +281,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def sampling_resol(self, value):
         self._sampling_resol = value
         self.has_resol = True
-        if self.include_sampling[0]:
+        if self.include_sky_sampling[0]:
             if "tracer_1_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_1_dep_attr)
-        if self.include_sampling[1]:
+        if self.include_sky_sampling[1]:
             if "tracer_2_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_2_dep_attr)
 
@@ -436,7 +436,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         The attribute f"_auto_power_matter_model" will be set by the output.
         """
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
-        beta_m = self.f_growth
+        if self.kaiser_rsd:
+            beta_m = self.f_growth
+        else:
+            beta_m = 0.0
         self._auto_power_matter_model = self.cal_rsd_power(
             pk3d_mm_r,
             beta_m,
@@ -463,7 +466,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
-        tracer_samp_indx = np.array(self.include_sampling).astype("int")[i - 1]
+        tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
         tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
@@ -495,7 +498,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")
-        tracer_samp_indx = np.array(self.include_sampling).astype("int")
+        tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         # cross power
         pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
@@ -1380,7 +1383,7 @@ def step_window_attenuation(k_dir, step_size_in_mpc, p=1):
         The index of assignment scheme.
     """
     # note np.sinc is sin(pi x)/(pi x)
-    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** p
+    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** (p / 2)
 
 
 class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
@@ -1412,7 +1415,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         mean_amp_1=1.0,
         mean_amp_2=1.0,
         sampling_resol=None,
-        include_sampling=[True, False],
+        include_sky_sampling=[True, False],
         downres_factor_transverse=1.2,
         downres_factor_radial=2.0,
         field_from_mapdata=False,
@@ -1473,7 +1476,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mean_amp_1=mean_amp_1,
             mean_amp_2=mean_amp_2,
             sampling_resol=sampling_resol,
-            include_sampling=include_sampling,
+            include_sky_sampling=include_sky_sampling,
             kaiser_rsd=kaiser_rsd,
             **params,
         )
@@ -1765,8 +1768,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
-            particle_value=data_particle,
+            grid_scheme=self.grid_scheme,
+            particle_mass=data_particle,
             particle_weights=weights_particle,
             compensate=self.compensate[0],
         )
@@ -1774,8 +1777,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.pix_coor_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
-            particle_value=data_particle,
+            grid_scheme=self.grid_scheme,
+            particle_mass=data_particle,
             particle_weights=weights_particle,
             compensate=self.compensate[0],
             shift=self.interlace_shift,
@@ -1784,7 +1787,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             hi_map_rg,
             hi_map_rg2,
             self.interlace_shift,
-            self.box_resol,
+            # self.box_resol,
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
@@ -1798,9 +1801,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         include_beam = np.array(self.include_beam)
         include_beam[0] = True
         self.include_beam = include_beam
-        include_sampling = np.array(self.include_sampling)
-        include_sampling[0] = True
-        self.include_sampling = include_sampling
+        include_sky_sampling = np.array(self.include_sky_sampling)
+        include_sky_sampling[0] = True
+        self.include_sky_sampling = include_sky_sampling
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
     def grid_gal_to_field(self, radecfreq=None):
@@ -1830,7 +1833,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_pos_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
+            grid_scheme=self.grid_scheme,
             compensate=self.compensate[1],
             average=False,
         )
@@ -1838,7 +1841,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_pos_in_box,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
+            grid_scheme=self.grid_scheme,
             compensate=self.compensate[1],
             average=False,
             shift=self.interlace_shift,
@@ -1847,18 +1850,18 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_map_rg,
             gal_map_rg2,
             self.interlace_shift,
-            self.box_resol,
+            # self.box_resol,
         )
         pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
             0
-        ]
+        ].reshape((-1, 3))
         # get which pixels in the rg box are not covered by the lightcone
         _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
             pix_coor_orig,
             self.box_len,
             self.box_ndim,
-            window=self.grid_scheme,
-            particle_value=self.data[self.W_HI].ravel(),
+            grid_scheme=self.grid_scheme,
+            particle_mass=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
             compensate=self.compensate[0],
         )
@@ -1875,9 +1878,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         include_beam = np.array(self.include_beam)
         include_beam[1] = False
         self.include_beam = include_beam
-        include_sampling = np.array(self.include_sampling)
-        include_sampling[1] = False
-        self.include_sampling = include_sampling
+        include_sky_sampling = np.array(self.include_sky_sampling)
+        include_sky_sampling[1] = False
+        self.include_sky_sampling = include_sky_sampling
 
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
 

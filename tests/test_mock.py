@@ -90,7 +90,7 @@ def test_tracer_mock(test_W, tracer_i):
         k1dbins=k1dedges,
         kaiser_rsd=True,
         # mock is generated on the grid so no sampling effects
-        include_sampling=[False, False],
+        include_sky_sampling=[False, False],
         downres_factor_transverse=0.8,
         downres_factor_radial=0.8,
         model_k_from_field=True,

@@ -49,26 +49,15 @@ jobs:
         export PATH="$HOME/miniconda/bin:$PATH"
         source activate ${ENV_NAME}
         pip install --upgrade "pip<24.1"
-        conda install -c anaconda 'cython<3.0'
-        pip install "numpy<2.0"
+        conda install -c anaconda cython
         if [ "$RUNNER_OS" == 'Linux' ]; then
-            sudo apt install libopenmpi-dev
-            # magic fix of ld issue
-            rm /home/runner/miniconda/envs/tests/compiler_compat/ld
-            conda install -c conda-forge mpi4py openmpi
+            conda install hdf5
         elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install openmpi
             brew install hdf5
             brew install c-blosc
             export HDF5_DIR=/opt/homebrew/opt/hdf5
             export BLOSC_DIR=/opt/homebrew/opt/c-blosc
-            pip install "mpi4py<4.0"
-            git clone https://github.com/zhaotingchen/MP-sort.git
-            cd MP-sort
-            pip install -e .
-            cd ..
         fi
-        pip install git+https://github.com/rainwoodman/pfft-python.git
         pip install ".[full]"
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8

@@ -1,5 +1,4 @@
 import numpy as np
-import pmesh
 import healpy as hp
 from astropy.cosmology import Planck18
 from astropy import units
@@ -179,7 +178,7 @@ def fourier_window_for_assignment(
         "Accurate Estimators of Correlation Functions in Fourier Space",
         https://ui.adsabs.harvard.edu/abs/2016MNRAS.460.3624S.
     """
-    p = allowed_window_scheme.index(window) + 1
+    p = float(allowed_window_scheme.index(window) + 1) / 2
     wx, wy, wz = [np.sinc(np.fft.fftfreq(num_mesh[i])) for i in range(3)]
     window_in_fourier = (wx[:, None, None] * wy[None, :, None] * wz[None, None, :]) ** p
     return window_in_fourier
@@ -187,160 +186,394 @@ def fourier_window_for_assignment(
 
 def compensate_grid_window_effects(
     field_in_real_space,
-    num_mesh,
-    window="nnb",
-    pmesh_pos_k=True,
+    grid_scheme="nnb",
 ):
     """
     Apply correction to cancel the windowing effects from
     discretization of fields into grids.
-
-    Parameters
-    ----------
-        field_in_real_space: :class:`pmesh.pm.RealField`
-            The meshed field in real space.
-        num_mesh: list
-            The number of grids on each side
-        window: str, default "nnb".
-            The mass assignment scheme
-        pmesh_pos_k: bool, default True.
-            For `pmesh`, only positive k is saved.
-            For potential future update of Fourier convention.
-
-    Returns
-    -------
-        field_in_real_space: :class:`pmesh.pm.RealField`
-            The compensated field in real space.
     """
-    assign_window = fourier_window_for_assignment(
+    num_mesh = field_in_real_space.shape
+    window = fourier_window_for_assignment(
         num_mesh,
-        window=window,
+        grid_scheme,
     )
-    if pmesh_pos_k:
-        assign_window = assign_window[:, :, : num_mesh[-1] // 2 + 1]
-    field_in_fourier_space = field_in_real_space.r2c()
-    field_in_fourier_space /= assign_window
-    field_in_fourier_space.c2r(field_in_real_space)
-    return field_in_real_space
+    field_in_fourier_space = np.fft.fftn(field_in_real_space)
+    field_in_fourier_space /= window
+    field_compensated = np.fft.ifftn(field_in_fourier_space).real
+    return field_compensated
 
 
-def project_particle_to_regular_grid(
-    particle_pos,
-    box_size,
-    num_mesh,
-    window="nnb",
-    particle_value=None,
-    particle_weights=None,
-    compensate=False,
-    shift=0.0,
-    average=True,
-):
-    """
-    Project particles into 3D regular grids with a certain assignment scheme.
-    This function allows mass assignment scheme compensation and interlacing for
-    more accurate estimation of power spectrum. The details of the techniques
-    can be found in Cunnington & Wolz 2024 [1].
+# def _compensate_grid_window_effects(
+#    field_in_real_space,
+#    num_mesh,
+#    window="nnb",
+#    pmesh_pos_k=True,
+# ):
+#    """
+#    Apply correction to cancel the windowing effects from
+#    discretization of fields into grids.
+#
+#    Parameters
+#    ----------
+#        field_in_real_space: :class:`pmesh.pm.RealField`
+#            The meshed field in real space.
+#        num_mesh: list
+#            The number of grids on each side
+#        window: str, default "nnb".
+#            The mass assignment scheme
+#        pmesh_pos_k: bool, default True.
+#            For `pmesh`, only positive k is saved.
+#            For potential future update of Fourier convention.
+#
+#    Returns
+#    -------
+#        field_in_real_space: :class:`pmesh.pm.RealField`
+#            The compensated field in real space.
+#    """
+#    assign_window = fourier_window_for_assignment(
+#        num_mesh,
+#        window=window,
+#    )
+#    if pmesh_pos_k:
+#        assign_window = assign_window[:, :, : num_mesh[-1] // 2 + 1]
+#    field_in_fourier_space = field_in_real_space.r2c()
+#    field_in_fourier_space /= assign_window
+#    field_in_fourier_space.c2r(field_in_real_space)
+#    return field_in_real_space
 
-    Parameters
-    ----------
-        particle_pos: ``numpy`` array.
-            The coordinates of the particles.
-            Last axis must have a length of 3 corresponding to (x,y,z).
-        box_size: ``numpy`` array.
-            The length of the box on each side
-        num_mesh: list
-            The number of grids on each side
-        window: str, default "nnb".
-            The mass assignment scheme
-        particle_value: ``numpy`` array, default None.
-            The mass of each particle.
-        particle_weights: ``numpy`` array, default None.
-            The weights of each particle.
-        compensate: bool, default False.
-            Whether to apply the correction to deconvolve the
-            sampling window function.
-        shift: float, default 0.0.
-            The shift of the field when performing Fourier transform, in the unit of cell size.
-        average: bool, default True.
-            The grid values are weighted averages of the particles if True
-            and weighted sums of the particles if False.
+# def _project_particle_to_regular_grid(
+#    particle_pos,
+#    box_size,
+#    num_mesh,
+#    window="nnb",
+#    particle_value=None,
+#    particle_weights=None,
+#    compensate=False,
+#    shift=0.0,
+#    average=True,
+# ):
+#    """
+#    Project particles into 3D regular grids with a certain assignment scheme.
+#    This function allows mass assignment scheme compensation and interlacing for
+#    more accurate estimation of power spectrum. The details of the techniques
+#    can be found in Cunnington & Wolz 2024 [1].
+#
+#    Parameters
+#    ----------
+#        particle_pos: ``numpy`` array.
+#            The coordinates of the particles.
+#            Last axis must have a length of 3 corresponding to (x,y,z).
+#        box_size: ``numpy`` array.
+#            The length of the box on each side
+#        num_mesh: list
+#            The number of grids on each side
+#        window: str, default "nnb".
+#            The mass assignment scheme
+#        particle_value: ``numpy`` array, default None.
+#            The mass of each particle.
+#        particle_weights: ``numpy`` array, default None.
+#            The weights of each particle.
+#        compensate: bool, default False.
+#            Whether to apply the correction to deconvolve the
+#            sampling window function.
+#        shift: float, default 0.0.
+#            The shift of the field when performing Fourier transform, in the unit of cell size.
+#        average: bool, default True.
+#            The grid values are weighted averages of the particles if True
+#            and weighted sums of the particles if False.
+#
+#    Returns
+#    -------
+#        projected_map: :class:`pmesh.pm.RealField`
+#            The projected field.
+#        projected_weights: :class:`pmesh.pm.RealField`
+#            The projected weights.
+#        particle_counts: :class:`pmesh.pm.RealField`
+#            The number counts of particles in each grid.
+#
+#    References
+#    ----------
+#    .. [1] Cunnington S. and Wolz L., "Accurate Fourier-space statistics for line intensity mapping: Cartesian grid sampling without aliased power", https://ui.adsabs.harvard.edu/abs/2024MNRAS.528.5586C
+#    """
+#    particle_pos = particle_pos.reshape((-1, 3))
+#    if particle_value is None:
+#        particle_value = np.ones(len(particle_pos))
+#    if particle_weights is None:
+#        particle_weights = np.ones(len(particle_pos))
+#    pm = pmesh.pm.ParticleMesh(BoxSize=box_size, Nmesh=num_mesh)
+#    shifted = pm.affine.shift(shift)
+#    particle_counts = pm.paint(particle_pos, transform=shifted)
+#    projected_map = pm.paint(
+#        particle_pos,
+#        mass=(particle_value * particle_weights).ravel(),
+#        resampler=window,
+#        transform=shifted,
+#    )
+#    projected_weights = pm.paint(
+#        particle_pos,
+#        mass=particle_weights.ravel(),
+#        resampler=window,
+#        transform=shifted,
+#    )
+#    if average:
+#        projected_map[projected_weights > 0] = (
+#            projected_map[projected_weights > 0]
+#            / projected_weights[projected_weights > 0]
+#        )
+#    if compensate:
+#        projected_map = compensate_grid_window_effects(
+#            projected_map,
+#            num_mesh,
+#            window=window,
+#        )
+#    return projected_map, projected_weights, particle_counts
 
-    Returns
-    -------
-        projected_map: :class:`pmesh.pm.RealField`
-            The projected field.
-        projected_weights: :class:`pmesh.pm.RealField`
-            The projected weights.
-        particle_counts: :class:`pmesh.pm.RealField`
-            The number counts of particles in each grid.
 
-    References
-    ----------
-    .. [1] Cunnington S. and Wolz L., "Accurate Fourier-space statistics for line intensity mapping: Cartesian grid sampling without aliased power", https://ui.adsabs.harvard.edu/abs/2024MNRAS.528.5586C
-    """
-    particle_pos = particle_pos.reshape((-1, 3))
-    if particle_value is None:
-        particle_value = np.ones(len(particle_pos))
-    if particle_weights is None:
-        particle_weights = np.ones(len(particle_pos))
-    pm = pmesh.pm.ParticleMesh(BoxSize=box_size, Nmesh=num_mesh)
-    shifted = pm.affine.shift(shift)
-    particle_counts = pm.paint(particle_pos, transform=shifted)
-    projected_map = pm.paint(
-        particle_pos,
-        mass=(particle_value * particle_weights).ravel(),
-        resampler=window,
-        transform=shifted,
-    )
-    projected_weights = pm.paint(
-        particle_pos,
-        mass=particle_weights.ravel(),
-        resampler=window,
-        transform=shifted,
-    )
-    if average:
-        projected_map[projected_weights > 0] = (
-            projected_map[projected_weights > 0]
-            / projected_weights[projected_weights > 0]
-        )
-    if compensate:
-        projected_map = compensate_grid_window_effects(
-            projected_map,
-            num_mesh,
-            window=window,
-        )
-    return projected_map, projected_weights, particle_counts
+# def _interlace_two_fields(
+#    real_field_1,
+#    real_field_2,
+#    shift,
+#    box_resol,
+# ):
+#    """
+#    Interlacing two fields, where one is the shifted version of the other.
+#
+#    Parameters
+#    ----------
+#        real_field_1: :class:`pmesh.pm.RealField`
+#            The first field for interlacing
+#        real_field_2: :class:`pmesh.pm.RealField`
+#            The second field for interlacing, which should be a shifted version of the first.
+#        shift: float.
+#            The shift of the field when performing Fourier transform, in the unit of cell size.
+#        box_resol: list of float.
+#            The length of the cell along each direction.
+#
+#    Returns
+#    -------
+#        interlaced_field: :class:`pmesh.pm.RealField`
+#            The interlaced field.
+#    """
+#    c1 = real_field_1.r2c()
+#    c2 = real_field_2.r2c()
+#    for k, s1, s2 in zip(c1.slabs.x, c1.slabs, c2.slabs):
+#        kH = sum(k[i] * box_resol[i] for i in range(3))
+#        s1[...] = s1[...] * 0.5 + s2[...] * 0.5 * np.exp(shift * 1j * kH)
+#    interlaced_field = c1.c2r()
+#    return interlaced_field
 
 
 def interlace_two_fields(
     real_field_1,
     real_field_2,
     shift,
-    box_resol,
 ):
     """
     Interlacing two fields, where one is the shifted version of the other.
 
     Parameters
     ----------
-        real_field_1: :class:`pmesh.pm.RealField`
+        real_field_1: array-like.
             The first field for interlacing
-        real_field_2: :class:`pmesh.pm.RealField`
+        real_field_2: array-like.
             The second field for interlacing, which should be a shifted version of the first.
         shift: float.
             The shift of the field when performing Fourier transform, in the unit of cell size.
-        box_resol: list of float.
-            The length of the cell along each direction.
 
     Returns
     -------
-        interlaced_field: :class:`pmesh.pm.RealField`
+        interlaced_field: array-like.
             The interlaced field.
     """
-    c1 = real_field_1.r2c()
-    c2 = real_field_2.r2c()
-    for k, s1, s2 in zip(c1.slabs.x, c1.slabs, c2.slabs):
-        kH = sum(k[i] * box_resol[i] for i in range(3))
-        s1[...] = s1[...] * 0.5 + s2[...] * 0.5 * np.exp(shift * 1j * kH)
-    interlaced_field = c1.c2r()
-    return interlaced_field
+    box_ndim = real_field_1.shape
+    fourier_field_1 = np.fft.fftn(real_field_1)
+    fourier_field_2 = np.fft.fftn(real_field_2)
+    kH_2 = [np.fft.fftfreq(box_ndim[i]) for i in range(3)]
+    kH_2 = np.array(np.meshgrid(*kH_2, indexing="ij"))
+    exp_term = np.prod(np.exp(-2 * 1j * shift * kH_2), axis=0)
+    fourier_field_1 = (fourier_field_1 + exp_term * fourier_field_2) / 2
+    return np.fft.ifftn(fourier_field_1).real
+
+
+def project_function(
+    s_arr,
+    grid_scheme="nnb",
+):
+    """
+    Return the weighting function for the given mass assignment scheme and input 1D distance.
+    The distance is in the unit of the cell size.
+
+    Parameters
+    ----------
+        s_arr: float array.
+            The distance in the unit of the cell size.
+        grid_scheme: str, default 'nnb'
+            The mass assignment scheme.
+
+    Returns
+    -------
+        weight_arr: float array.
+            The weighting function.
+    """
+    s_arr = np.abs(s_arr)
+    p = allowed_window_scheme.index(grid_scheme)
+    if p == 0:
+        return (s_arr <= 0.5).astype("float")
+    elif p == 1:
+        return (1 - s_arr) * (s_arr <= 1)
+    elif p == 2:
+        result = (3 / 4 - s_arr**2) * (s_arr <= 0.5) + (0.5 * (1.5 - s_arr) ** 2) * (
+            s_arr < 1.5
+        ) * (s_arr > 0.5)
+        return result
+    elif p == 3:
+        result = (4 - 6 * s_arr**2 + 3 * s_arr**3) / 6 * (s_arr <= 1) + (
+            2 - s_arr
+        ) ** 3 / 6 * (s_arr < 2) * (s_arr > 1)
+        return result
+
+
+def particle_to_mesh_distance(
+    particle_pos,
+    box_len,
+    box_ndim,
+):
+    """
+    Calculate the distance between particles and the nearest mesh center.
+    The distance is in the unit of the cell size.
+    For particles outside the box, the nearest mesh center is the one on the boundary.
+
+    Parameters
+    ----------
+        particle_pos: array.
+            The coordinates of the particles.
+        box_len: array.
+            The length of the box on each side
+        box_ndim: array.
+            The number of grids on each side
+
+    Returns
+    -------
+        dist: array.
+            The distance between the particles and the nearest mesh center.
+        indx_grid: array.
+            The index of the nearest mesh center.
+    """
+    box_resol = box_len / box_ndim
+    mesh_edges = [np.linspace(0, box_len[i], box_ndim[i] + 1) for i in range(3)]
+    mesh_cen = [(mesh_edges[i][:-1] + mesh_edges[i][1:]) / 2 for i in range(3)]
+    indx_grid = []
+    for i in range(3):
+        indx_i = np.digitize(particle_pos[:, i], mesh_edges[i]) - 1
+        # if particle is outside the box, set to 0 or box_ndim-1 as appropriate
+        indx_i[indx_i < 0] = 0
+        indx_i[indx_i >= box_ndim[i]] = box_ndim[i] - 1
+        indx_grid += [
+            indx_i,
+        ]
+    mesh_cen = [
+        (np.linspace(0, box_ndim[i] - 1, box_ndim[i]) + 0.5) * box_resol[i]
+        for i in range(3)
+    ]
+    particle_pos_mesh = [mesh_cen[i][indx_grid[i]] for i in range(3)]
+    particle_pos_mesh = np.array(particle_pos_mesh).T
+    return (particle_pos - particle_pos_mesh) / box_resol[None, :], indx_grid
+
+
+def project_particle_to_regular_grid(
+    particle_pos,
+    box_len,
+    box_ndim,
+    grid_scheme="nnb",
+    particle_mass=None,
+    particle_weights=None,
+    average=True,
+    shift=0.0,
+    compensate=False,
+):
+    """
+    Project particles into a regular grid with a certain mass assignment scheme.
+
+    Parameters
+    ----------
+        particle_pos: array.
+            The coordinates of the particles.
+        box_len: array.
+            The length of the box on each side
+        box_ndim: array.
+            The number of grids on each side
+        grid_scheme: str, default 'nnb'
+            The mass assignment scheme.
+        particle_mass: array, default None.
+            The mass of each particle.
+        particle_weights: array, default None.
+            The weights of each particle.
+        average: bool, default True.
+            The grid values are weighted averages of the particles if True
+            and weighted sums of the particles if False.
+        shift: float, default 0.0.
+            Shift the position of the particles by the same amount in all directions,
+            in the unit of cell size.
+
+    Returns
+    -------
+        mesh_mass: array.
+            The mass of each grid.
+        mesh_weights: array.
+            The weights of each grid.
+        mesh_counts: array.
+            The effective number of particles in each grid.
+    """
+    p = allowed_window_scheme.index(grid_scheme)
+    if particle_mass is None:
+        particle_mass = np.ones(len(particle_pos))
+    if particle_weights is None:
+        particle_weights = np.ones(len(particle_pos))
+    box_resol = box_len / box_ndim
+    mesh_mass = np.zeros(box_ndim)
+    mesh_weights = np.zeros(box_ndim)
+    mesh_counts = np.zeros(box_ndim)
+    par_pos = particle_pos + shift * box_resol[None, :]
+    particle_s, indx_grid = particle_to_mesh_distance(par_pos, box_len, box_ndim)
+    indx_grid = np.array(indx_grid).T
+    grid_func = project_function(particle_s, grid_scheme)
+    shift_limit = np.floor(p / 2 + 0.5)
+    shift_mat = np.meshgrid(
+        np.arange(shift_limit + 1),
+        np.arange(shift_limit + 1),
+        np.arange(shift_limit + 1),
+        indexing="ij",
+    )
+    shift_mat = np.array([shift_mat[i].ravel() for i in range(3)]).T
+    for i, shift in enumerate(shift_mat):
+        s_shift = particle_s + shift[None, :]
+        grid_func_shift = project_function(s_shift, grid_scheme)
+        indx_shift = (indx_grid - shift[None, :]).astype("int")
+        indx_sel = np.prod(indx_shift >= 0, axis=1)
+        indx_sel *= np.prod(indx_shift < box_ndim[None, :], axis=1)
+        indx_sel = indx_sel.astype("bool")
+        np.add.at(
+            mesh_mass,
+            tuple(indx_shift[indx_sel].T),
+            (particle_mass * particle_weights * np.prod(grid_func_shift, axis=1))[
+                indx_sel
+            ],
+        )
+        np.add.at(
+            mesh_weights,
+            tuple(indx_shift[indx_sel].T),
+            (particle_weights * np.prod(grid_func_shift, axis=1))[indx_sel],
+        )
+        np.add.at(
+            mesh_counts,
+            tuple(indx_shift[indx_sel].T),
+            np.prod(grid_func_shift, axis=1)[indx_sel],
+        )
+    if average:
+        mesh_mass = np.where(mesh_weights > 0, mesh_mass / mesh_weights, 0)
+    if compensate:
+        mesh_mass = compensate_grid_window_effects(
+            mesh_mass,
+            grid_scheme,
+        )
+    return mesh_mass, mesh_weights, mesh_counts

@@ -39,7 +39,7 @@ def W_mas(dims, window="nnb", FullPk=False):
     wx = np.divide(np.sin(qx), qx, out=np.ones_like(qx), where=qx != 0.0)
     wy = np.divide(np.sin(qy), qy, out=np.ones_like(qy), where=qy != 0.0)
     wz = np.divide(np.sin(qz), qz, out=np.ones_like(qz), where=qz != 0.0)
-    return (wx * wy * wz) ** p
+    return (wx * wy * wz) ** (p / 2)
 
 
 @pytest.mark.parametrize("window", list(allowed_window_scheme))
@@ -49,51 +49,51 @@ def test_fourier_window_for_assignment(window):
     assert np.allclose(test_1, test_2)
 
 
-@pytest.mark.parametrize("window", list(allowed_window_scheme))
-def test_uniform_grids(window):
-    box_len = np.array([10, 10, 10])
-    ndim_rg = np.array([10, 10, 10])
-    pos_arr = np.zeros((10, 10, 10, 3))
-    pos_arr[:, :, :, 0] += np.arange(10)[:, None, None] + 0.5
-    pos_arr[:, :, :, 1] += np.arange(10)[None, :, None] + 0.5
-    pos_arr[:, :, :, 2] += np.arange(10)[None, None, :] + 0.5
-    test_map, test_weights, test_counts = project_particle_to_regular_grid(
-        pos_arr,
-        box_len,
-        ndim_rg,
-        compensate=True,
-        window=window,
-    )
-    assert np.allclose(test_map, np.ones_like(test_map))
-    assert np.allclose(test_weights, np.ones_like(test_map))
-    assert np.allclose(test_counts, np.ones_like(test_map))
-    test_map_1, test_weights, test_counts = project_particle_to_regular_grid(
-        pos_arr,
-        box_len,
-        ndim_rg,
-        compensate=True,
-        window=window,
-        particle_value=np.ones(10**3),
-        particle_weights=np.random.uniform(1, 2, size=10**3),
-    )
-    test_map_2, test_weights_2, test_counts_2 = project_particle_to_regular_grid(
-        pos_arr,
-        box_len,
-        ndim_rg,
-        compensate=True,
-        window=window,
-        particle_value=np.ones(10**3),
-        particle_weights=np.random.uniform(1, 2, size=10**3),
-        shift=0.5,
-    )
-    field_interlaced = interlace_two_fields(
-        test_map_1, test_map_1, 0.0, [1.0, 1.0, 1.0]
-    )
-    assert np.allclose(field_interlaced, np.ones_like(test_map))
-    field_interlaced = interlace_two_fields(
-        test_map_1, test_map_2, 0.5, [1.0, 1.0, 1.0]
-    )
-    assert np.allclose(field_interlaced, np.ones_like(test_map))
+# @pytest.mark.parametrize("window", list(allowed_window_scheme))
+# def test_uniform_grids(window):
+#    box_len = np.array([10, 10, 10])
+#    ndim_rg = np.array([10, 10, 10])
+#    pos_arr = np.zeros((10, 10, 10, 3))
+#    pos_arr[:, :, :, 0] += np.arange(10)[:, None, None] + 0.5
+#    pos_arr[:, :, :, 1] += np.arange(10)[None, :, None] + 0.5
+#    pos_arr[:, :, :, 2] += np.arange(10)[None, None, :] + 0.5
+#    test_map, test_weights, test_counts = project_particle_to_regular_grid(
+#        pos_arr,
+#        box_len,
+#        ndim_rg,
+#        compensate=True,
+#        window=window,
+#    )
+#    assert np.allclose(test_map, np.ones_like(test_map))
+#    assert np.allclose(test_weights, np.ones_like(test_map))
+#    assert np.allclose(test_counts, np.ones_like(test_map))
+#    test_map_1, test_weights, test_counts = project_particle_to_regular_grid(
+#        pos_arr,
+#        box_len,
+#        ndim_rg,
+#        compensate=True,
+#        window=window,
+#        particle_value=np.ones(10**3),
+#        particle_weights=np.random.uniform(1, 2, size=10**3),
+#    )
+#    test_map_2, test_weights_2, test_counts_2 = project_particle_to_regular_grid(
+#        pos_arr,
+#        box_len,
+#        ndim_rg,
+#        compensate=True,
+#        window=window,
+#        particle_value=np.ones(10**3),
+#        particle_weights=np.random.uniform(1, 2, size=10**3),
+#        shift=0.5,
+#    )
+#    field_interlaced = interlace_two_fields(
+#        test_map_1, test_map_1, 0.0, [1.0, 1.0, 1.0]
+#    )
+#    assert np.allclose(field_interlaced, np.ones_like(test_map))
+#    field_interlaced = interlace_two_fields(
+#        test_map_1, test_map_2, 0.5, [1.0, 1.0, 1.0]
+#    )
+#    assert np.allclose(field_interlaced, np.ones_like(test_map))
 
 
 def test_find_rotation_matrix():
@@ -175,3 +175,127 @@ def test_minimum_enclosing_box_of_lightcone():
     ra_cen, dec_cen = hp.vec2ang(test_vec, lonlat=True)
     assert np.abs(ra_rand - ra_cen) < 0.05
     assert np.abs(dec_rand - dec_cen) < 0.05
+
+
+def test_project_function():
+    for scheme in allowed_window_scheme:
+        s_arr = np.linspace(-1.5, 1.5, 601)
+        weight_arr = project_function(s_arr, scheme)
+        assert np.abs(np.trapz(weight_arr, s_arr) - 1) < 1e-2
+    scheme = "test"
+    with pytest.raises(ValueError):
+        weight_arr = project_function(s_arr, scheme)
+
+
+def test_particle_to_mesh_distance():
+    box_len = np.array([20, 30, 40])
+    box_ndim = np.array([2, 3, 4])
+    xx, yy, zz = np.meshgrid(
+        np.arange(box_ndim[0]),
+        np.arange(box_ndim[1]),
+        np.arange(box_ndim[2]),
+        indexing="ij",
+    )
+    _xx = xx.ravel() * 10 + 5
+    _yy = yy.ravel() * 10 + 5
+    _zz = zz.ravel() * 10 + 5
+    par_pos = np.zeros((np.prod(box_ndim), 3))
+    par_pos[:, 0] = _xx
+    par_pos[:, 1] = _yy
+    par_pos[:, 2] = _zz
+    dist, indx_grid = particle_to_mesh_distance(par_pos, box_len, box_ndim)
+    assert np.allclose(dist, np.zeros_like(dist))
+    assert np.allclose(indx_grid, [xx.ravel(), yy.ravel(), zz.ravel()])
+    dist, indx_grid = particle_to_mesh_distance(
+        np.array([[-10, -10, -10]]), box_len, box_ndim
+    )
+    assert np.allclose(dist.ravel(), [-1.5, -1.5, -1.5])
+    assert np.allclose(np.array(indx_grid).ravel(), [0, 0, 0])
+    dist, indx_grid = particle_to_mesh_distance(
+        np.array([[25, 35, 45]]), box_len, box_ndim
+    )
+    assert np.allclose(dist.ravel(), [1, 1, 1])
+    assert np.allclose(np.array(indx_grid).ravel(), [1, 2, 3])
+
+
+@pytest.mark.parametrize("window", list(allowed_window_scheme))
+def test_project_particle_to_regular_grid(window):
+    # test par on grid centres
+    box_len = np.array([20, 30, 40])
+    box_ndim = np.array([2, 3, 4])
+    xx, yy, zz = np.meshgrid(
+        np.arange(box_ndim[0]),
+        np.arange(box_ndim[1]),
+        np.arange(box_ndim[2]),
+        indexing="ij",
+    )
+    _xx = xx.ravel() * 10
+    _yy = yy.ravel() * 10
+    _zz = zz.ravel() * 10
+    par_pos = np.zeros((np.prod(box_ndim), 3))
+    par_pos[:, 0] = _xx
+    par_pos[:, 1] = _yy
+    par_pos[:, 2] = _zz
+    par_pos += 5
+    test_map, test_w, test_c = project_particle_to_regular_grid(
+        par_pos,
+        box_len,
+        box_ndim,
+        grid_scheme=window,
+    )
+    assert np.allclose(test_map, np.ones_like(test_map))
+    test_map, test_w, test_c = project_particle_to_regular_grid(
+        par_pos,
+        box_len,
+        box_ndim,
+        grid_scheme=window,
+        shift=10.0,
+        compensate=True,
+    )
+    assert np.allclose(test_map, np.zeros_like(test_map))
+    if window == "nnb":
+        # shift 5, should still be the same
+        test_map, test_w, test_c = project_particle_to_regular_grid(
+            par_pos,
+            box_len,
+            box_ndim,
+            grid_scheme=window,
+            shift=-0.5,
+        )
+        assert np.allclose(test_c, np.ones_like(test_c))
+        # slightly more, should be less
+        test_map, test_w, test_c = project_particle_to_regular_grid(
+            par_pos,
+            box_len,
+            box_ndim,
+            grid_scheme=window,
+            shift=-0.5001,
+        )
+        assert not np.allclose(test_c, np.ones_like(test_c))
+    if window == "nnb" or window == "pcs":
+        return 1
+    # test interpolation, put particles on the grid edges
+    xx, yy, zz = np.meshgrid(
+        np.arange(box_ndim[0] + 1),
+        np.arange(box_ndim[1] + 1),
+        np.arange(box_ndim[2] + 1),
+        indexing="ij",
+    )
+    _xx = xx.ravel() * 10
+    _yy = yy.ravel() * 10
+    _zz = zz.ravel() * 10
+    par_pos = np.zeros((np.prod(box_ndim + 1), 3))
+    par_pos[:, 0] = _xx
+    par_pos[:, 1] = _yy
+    par_pos[:, 2] = _zz
+    par_mass = (xx + yy + zz).ravel()
+    pars_mass = xx + yy + zz
+    pars_mass = (pars_mass[1:, 1:, 1:] + pars_mass[:-1, :-1, :-1]) / 2
+    test_map, test_w, test_c = project_particle_to_regular_grid(
+        par_pos, box_len, box_ndim, grid_scheme=window, particle_mass=par_mass
+    )
+    # output is the mean at between the grid edges
+    assert np.allclose(test_map, pars_mass)
+    # effective count is still 1
+    assert np.allclose(test_w, np.ones_like(test_w))
+    assert np.allclose(test_c, np.ones_like(test_c))
