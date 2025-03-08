@@ -1,80 +1,55 @@
 # Installation
 
-The installation is tested locally on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10. Here is some hopefully useful guide to installing the pacakge.
-
-Most of the extra efforts before installing the package itself is to install `pfft-python` and `pmesh` which `meer21cm` depends on.
+The installation is tested on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10.
 
 If you are on ilifu jump straight to [`Installing on ilifu`](#ilifu).
 
-## Installing dependencies
+## 1. Installing dependencies
 A clean `conda` environment on python 3.9 or 3.10 is highly recommended.
+You can create a new conda environment by
+```
+conda create -n meer21cm python=3.10
+conda activate meer21cm
+```
+
+If you are not on your own machine, check below for how to activate the conda environment on HPC.
 
 ### MacOS
-In the conda environment, do
+For MacOS, you can install hdf5 through brew.
 ```
-conda install -c anaconda 'cython<3.0'
-pip install "numpy<2.0"
-brew install openmpi
 brew install hdf5
 brew install c-blosc
 export HDF5_DIR=/opt/homebrew/opt/hdf5
 export BLOSC_DIR=/opt/homebrew/opt/c-blosc
-pip install "mpi4py<4.0"
-git clone https://github.com/zhaotingchen/MP-sort.git
-cd MP-sort
-pip install -e .
-cd ..
-pip install git+https://github.com/rainwoodman/pfft-python.git
 ```
-This should install some tricky yet required dependencies for `meer21cm`.
 
 ### Linux PC
-For Linux PC, depending on your system you should be able to install `openmpi` through `conda` or `apt`. For `ubuntu`, the most secure way in our tests seems to be
+For Linux PC, most of the time you can install the h5df dependency through `conda`.
 
 ```
-conda install -c anaconda 'cython<3.0'
-pip install "numpy<2.0"
-sudo apt install libopenmpi-dev
-rm /path/to/your/conda/env/compiler_compat/ld
-conda install -c conda-forge mpi4py openmpi
-pip install git+https://github.com/rainwoodman/pfft-python.git
+conda install hdf5
 ```
-Note that you need to replace `/path/to/your/conda/env` with the actual path to your conda environment.
-You can also try skipping the `rm` step and see if it works.
 
 ### HPC
-If you are on a cluster, most likely you already have some MPI implementation available. You can check its availability by
+If you are on a cluster, most likely you already have some conda module available. You can check its availability by
 ```
 module avail
 ```
-You can first find that anaconda module to use. Typically this will be called `anaconda` or `anaconda3`.
+Typically this will be called `conda`, `anaconda` or `anaconda3`.
 Then do
 ```
 module load anaconda3
 ```
 
-Find the MPI you want to use and then do
-```
-module load MPI_MODULE
-```
-and replace `MPI_MODULE` above with whatever you find in `module avail`, for example `module load openmpi`. Then simply `pip install mpi4py`.
+If the HPC does not have conda, you can also install your own miniconda (check the [official guide](https://docs.conda.io/en/latest/miniconda.html) for more details). One thing to note is that you need to change the path to which conda is installed when using the installation prompt as you typically do not have access to the default system path.
 
-If `pip install mpi4py` still failed with an MPI issue, it may be fixed by specifying `mpicc` path. Try to find your `mpicc` path by entering
-```
-which mpicc
-```
-in your terminal and do
-```
-env MPICC=path/to/mpicc pip install mpi4py
-```
-instead.
 
-Sometimes you already have a version of `cython` installed that causes a compilation error. In that case you can override the `cython` in your conda environment by installing it again
+Then create a new conda environment and activate it. Install the dependencies
 ```
-conda install "cython<3.0"
+conda install hdf5
 ```
 
-## Install `meer21cm`
+## 2. Install `meer21cm`
 Finally, clone the repo for `meer21cm`
 ```
 git clone git@github.com:zhaotingchen/meer21cm.git
@@ -99,35 +74,33 @@ and run
 ```
 pytest tests/
 ```
-to see if the installation is successful.
+to see if the current installation passes all the tests.
 
 If you want to develop `meer21cm`, the installation step should be
 ```
 pip install -e ".[full]"
 ```
 
-Similarly, if there is an MPI compilation error, you can try fixing it by specifying
-
-```
-env MPICC=path/to/mpicc pip install -e ".[test]"
-```
-
 Note that development install `-e` is needed, as this package is in early stage and will not have a stable version before the official release.
 
-## Installing on ilifu
+## 3. Check if installation is successful
+In the conda environment, do
+```
+python -c "import meer21cm; print(meer21cm.__file__)"
+```
+If you see the output, then the installation is successful.
+
+
+## A. Installing on ilifu
 <a name="ilifu"></a>
 If you are on ilifu, the installation has been tested so you can follow the exact steps listed here.
 
 ```
 git clone git@github.com:zhaotingchen/meer21cm.git
-cd meer21cm
 module load anaconda3
 conda create -n meer21cm python=3.10
 conda activate meer21cm
-conda install "cython<2"
-module load openmpi
-pip install mpi4py
-pip install "numpy<2"
+conda install hdf5
 pip install -e ".[full]"
 ```
 

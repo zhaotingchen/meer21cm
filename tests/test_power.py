@@ -615,7 +615,7 @@ def test_set_corrtype():
 
 
 def test_step_window_attenuation():
-    assert step_window_attenuation(1, 1) == np.sinc(1 / np.pi / 2)
+    assert step_window_attenuation(1, 1) == np.sqrt(np.sinc(1 / np.pi / 2))
     assert step_window_attenuation(0, 0) == 1.0
 
 
@@ -717,10 +717,10 @@ def test_cache():
 def test_gal_poisson_power(test_W):
     sp = PowerSpectrum(
         ra_range=(334, 357),
+        dec_range=(-35, -26.5),
         sampling_resol="auto",
         tracer_bias_2=1.0,  # just for invoke clean tracer_2
     )
-    sp.map_has_sampling = (test_W * np.ones(sp.nu.size)[None, None, :]) > 0
     num_g = 10000
     gal_pix_indx = np.random.choice(np.arange(sp.W_HI.sum()), size=num_g, replace=False)
     has_gal = np.zeros(sp.W_HI.sum())
@@ -729,6 +729,7 @@ def test_gal_poisson_power(test_W):
     data[sp.W_HI] += has_gal
     sp = PowerSpectrum(
         ra_range=(334, 357),
+        dec_range=(-35, -26.5),
         sampling_resol="auto",
         tracer_bias_2=1.0,  # just for invoke clean tracer_2
         data=data,
@@ -753,22 +754,17 @@ def test_gal_poisson_power(test_W):
     gal_map_rg, weights_gal_rg, pix_count_rg = ps.grid_data_to_field()
     ps.mean_center_1 = True
     ps.unitless_1 = True
-    taper = ps.taper_func(ps.box_ndim[-1])
-    weights = (pix_count_rg.mean(axis=-1) > 0.5).astype("float")[:, :, None] * taper[
-        None, None, :
-    ]
-    ps.weights_1 = weights
     pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
         "auto_power_3d_1",
     )
     B_samp = ps.step_sampling()
-    p_sn = (pix_count_rg > 0).mean() * np.prod(ps.box_len) / num_g / B_samp
+    p_sn = ps.survey_volume / num_g * B_samp**2
     psn_1d, _, _ = ps.get_1d_power(p_sn)
     avg_deviation = np.sqrt(
         ((np.abs((pdata_1d_hi - psn_1d) / psn_1d)) ** 2 * nmodes_hi).sum()
         / nmodes_hi.sum()
     )
-    assert avg_deviation < 2.5e-1
+    assert avg_deviation < 1e-1
 
 
 def test_grid_gal(test_gal_fits, test_W):
@@ -782,7 +778,7 @@ def test_grid_gal(test_gal_fits, test_W):
         map_has_sampling=ps.W_HI,
         weights_map_pixel=ps.w_HI,
         field_from_mapdata=True,
-        include_sampling=[True, True],
+        include_sky_sampling=[True, True],
         tracer_bias_2=1.0,  # just for invoking some tests
     )
     ps.read_gal_cat()
@@ -792,7 +788,7 @@ def test_grid_gal(test_gal_fits, test_W):
 def test_shot_noise_tapering():
     ps = PowerSpectrum(
         nu=[f_21, f_21],
-        include_sampling=[False, False],
+        include_sky_sampling=[False, False],
         box_len=[200, 400, 600],
         box_ndim=[40, 80, 120],
     )
@@ -832,7 +828,7 @@ def test_shot_noise_tapering():
 
 def test_rot_back():
     ps = PowerSpectrum(
-        include_sampling=[False, False],
+        include_sky_sampling=[False, False],
     )
     ps.W_HI = np.ones_like(ps.W_HI)
     ps.get_enclosing_box()

@@ -185,7 +185,7 @@ def test_mock_field_map_grid(highres, beam):
         # taper_hi = mock.taper_func(mock.box_ndim[-1])
         # weights_hi = hi_weights_rg * taper_hi[None, None, :]
         mock.include_beam = [True, False]
-        mock.include_sampling = [True, False]
+        mock.include_sky_sampling = [True, False]
         # mock.field_1 = hi_map_rg
         # mock.weights_1 = weights_hi
         mock.propagate_field_k_to_model()
@@ -213,7 +213,7 @@ def test_mock_field_map_grid(highres, beam):
         # taper_hi = mock.taper_func(mock.box_ndim[-1])
         # weights_hi = hi_weights_rg * taper_hi[None, None, :]
         # mock.include_beam = [True, False]
-        # mock.include_sampling = [True, False]
+        # mock.include_sky_sampling = [True, False]
         # mock.field_1 = hi_map_rg
         # mock.weights_1 = weights_hi
         # mock.propagate_field_k_to_model()
