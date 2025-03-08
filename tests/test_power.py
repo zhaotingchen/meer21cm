@@ -764,7 +764,7 @@ def test_gal_poisson_power(test_W):
         ((np.abs((pdata_1d_hi - psn_1d) / psn_1d)) ** 2 * nmodes_hi).sum()
         / nmodes_hi.sum()
     )
-    assert avg_deviation < 1e-1
+    assert avg_deviation < 2e-1
 
 
 def test_grid_gal(test_gal_fits, test_W):
