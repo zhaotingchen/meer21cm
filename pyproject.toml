@@ -18,17 +18,13 @@ classifiers = [
 ]
 dependencies = [
     # due to halomod dependency
-    "numpy < 2.0",
-    'scipy < 1.14',
+    "numpy",
+    'scipy',
     "healpy",
     "matplotlib",
     "astropy",
-    'hmf',
     'halomod',
     'katbeam@git+https://github.com/ska-sa/katbeam',
-    "cython < 3.0",
-    "mpi4py",
-    "pmesh",
     "baccoemu",
 ]
 
