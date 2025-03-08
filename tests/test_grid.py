@@ -39,7 +39,7 @@ def W_mas(dims, window="nnb", FullPk=False):
     wx = np.divide(np.sin(qx), qx, out=np.ones_like(qx), where=qx != 0.0)
     wy = np.divide(np.sin(qy), qy, out=np.ones_like(qy), where=qy != 0.0)
     wz = np.divide(np.sin(qz), qz, out=np.ones_like(qz), where=qz != 0.0)
-    return (wx * wy * wz) ** p
+    return (wx * wy * wz) ** (p / 2)
 
 
 @pytest.mark.parametrize("window", list(allowed_window_scheme))

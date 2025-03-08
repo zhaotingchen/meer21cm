@@ -178,7 +178,7 @@ def fourier_window_for_assignment(
         "Accurate Estimators of Correlation Functions in Fourier Space",
         https://ui.adsabs.harvard.edu/abs/2016MNRAS.460.3624S.
     """
-    p = allowed_window_scheme.index(window) + 1
+    p = float(allowed_window_scheme.index(window) + 1) / 2
     wx, wy, wz = [np.sinc(np.fft.fftfreq(num_mesh[i])) for i in range(3)]
     window_in_fourier = (wx[:, None, None] * wy[None, :, None] * wz[None, None, :]) ** p
     return window_in_fourier
