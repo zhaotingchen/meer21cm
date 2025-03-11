@@ -7,6 +7,7 @@ from meer21cm.grid import (
     minimum_enclosing_box_of_lightcone,
     project_particle_to_regular_grid,
     interlace_two_fields,
+    fourier_window_for_assignment,
 )
 from scipy.signal import windows
 from meer21cm.util import (
@@ -38,6 +39,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         mean_amp_2=1.0,
         sampling_resol=None,
         include_sky_sampling=[True, False],
+        compensate=[True, True],
         kaiser_rsd=True,
         **params,
     ):
@@ -52,6 +54,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.kmode = np.geomspace(self.kmin, self.kmax, 100)
         if mumode is None:
             self.mumode = np.zeros_like(self.kmode)
+        self._include_beam = [None, None]  # for initialization
         self.include_beam = include_beam
         self.cross_coeff = cross_coeff
         self._auto_power_matter_model = None
@@ -75,6 +78,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
             ]
         self.fog_profile = fog_profile
         self.kaiser_rsd = kaiser_rsd
+        self._compensate = [None, None]  # for initialization
+        self.compensate = compensate
 
     @property
     def kaiser_rsd(self):
@@ -139,14 +144,36 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
     @include_beam.setter
     def include_beam(self, value):
+        value_before = self._include_beam
         self._include_beam = value
         if self.sigma_beam_ch is None and (np.array(self.include_beam).sum() > 0):
             print("no input beam found, setting include_beam to False")
             self._include_beam = [False, False]
-        if value[0]:
+        if value_before[0] != value[0]:
             if "tracer_1_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_1_dep_attr)
-        if value[1]:
+        if value_before[1] != value[1]:
+            if "tracer_2_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def compensate(self):
+        """
+        Whether the gridded fields are compensated
+        according to the mass assignment scheme.
+        """
+        return self._compensate
+
+    @compensate.setter
+    def compensate(self, value):
+        value_before = self._compensate
+        if isinstance(value, bool):
+            value = (value, value)
+        self._compensate = value
+        if value_before[0] != value[0]:
+            if "tracer_1_dep_attr" in dir(self):
+                self.clean_cache(self.tracer_1_dep_attr)
+        if value_before[1] != value[1]:
             if "tracer_2_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_2_dep_attr)
 
@@ -366,6 +393,14 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         return 1.0
 
+    def compensate_sampling(self):
+        """
+        The sampling window function to be compensated for the gridding mass assignment scheme.
+        Note that the window can only be calculated in Cartesian grids, so it is not used
+        in ``ModelPowerSpectrum`` and only in ``PowerSpectrum``.
+        """
+        return 1.0
+
     # calculate on the fly, no need for tagging
     def beam_attenuation(self):
         """
@@ -465,8 +500,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
             return None
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
+        B_comp = self.compensate_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
+        tracer_comp_indx = np.array(self.compensate).astype("int")[i - 1]
         tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
@@ -481,6 +518,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
         auto_power_model *= B_beam ** (tracer_beam_indx * 2)
         auto_power_model *= B_sampling ** (tracer_samp_indx * 2)
+        auto_power_model *= B_comp ** (tracer_comp_indx * 2)
         auto_power_model = get_modelpk_conv(
             auto_power_model,
             weights1_in_real=getattr(self, "weights_" + str(i)),
@@ -497,8 +535,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
             return None
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
+        B_comp = self.compensate_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")
+        tracer_comp_indx = np.array(self.compensate).astype("int")
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         # cross power
         pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
@@ -522,6 +562,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
         self._cross_power_tracer_model *= B_sampling ** (
             tracer_samp_indx[0] + tracer_samp_indx[1]
+        )
+        self._cross_power_tracer_model *= B_comp ** (
+            tracer_comp_indx[0] + tracer_comp_indx[1]
         )
         self._cross_power_tracer_model[self.kmode == 0] = 0.0
         self._cross_power_tracer_model = get_modelpk_conv(
@@ -1478,6 +1521,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             sampling_resol=sampling_resol,
             include_sky_sampling=include_sky_sampling,
             kaiser_rsd=kaiser_rsd,
+            compensate=compensate,
             **params,
         )
         self.k1dbins = k1dbins
@@ -1497,7 +1541,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             setattr(self, attr, None)
         self.upgrade_sampling_from_gridding = False
         self.box_buffkick = box_buffkick
-        self.compensate = compensate
         self.taper_func = taper_func
         if field_from_mapdata:
             self.get_enclosing_box()
@@ -1527,20 +1570,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     @interlace_shift.setter
     def interlace_shift(self, value):
         self._interlace_shift = value
-
-    @property
-    def compensate(self):
-        """
-        Whether the gridded fields are compensated
-        according to the mass assignment scheme.
-        """
-        return self._compensate
-
-    @compensate.setter
-    def compensate(self, value):
-        if isinstance(value, bool):
-            value = (value, value)
-        self._compensate = value
 
     @property
     def downres_factor_transverse(self):
@@ -1627,6 +1656,18 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             * step_window_attenuation(k_para, sampling_resol[2], p)
         )
         return B_sampling
+
+    def compensate_sampling(self):
+        """
+        The sampling window function to be compensated for the gridding mass assignment scheme.
+        Note that
+        the window can only be calculated in Cartesian grids, so it is not used
+        in ``ModelPowerSpectrum`` and only in ``PowerSpectrum``.
+        """
+        if self._box_ndim is None:
+            return 1.0
+        else:
+            return fourier_window_for_assignment(self.box_ndim, self.grid_scheme)
 
     @property
     def box_origin(self):
@@ -1771,7 +1812,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             grid_scheme=self.grid_scheme,
             particle_mass=data_particle,
             particle_weights=weights_particle,
-            compensate=self.compensate[0],
+            compensate=False,  # compensate should be at model level
         )
         hi_map_rg2, _, _ = project_particle_to_regular_grid(
             self.pix_coor_in_box,
@@ -1780,7 +1821,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             grid_scheme=self.grid_scheme,
             particle_mass=data_particle,
             particle_weights=weights_particle,
-            compensate=self.compensate[0],
+            compensate=False,  # compensate should be at model level
             shift=self.interlace_shift,
         )
         hi_map_rg = interlace_two_fields(
@@ -1834,7 +1875,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.box_len,
             self.box_ndim,
             grid_scheme=self.grid_scheme,
-            compensate=self.compensate[1],
+            compensate=False,  # compensate should be at model level
             average=False,
         )
         (gal_map_rg2, _, _,) = project_particle_to_regular_grid(
@@ -1842,7 +1883,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.box_len,
             self.box_ndim,
             grid_scheme=self.grid_scheme,
-            compensate=self.compensate[1],
+            compensate=False,  # compensate should be at model level
             average=False,
             shift=self.interlace_shift,
         )
@@ -1863,7 +1904,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             grid_scheme=self.grid_scheme,
             particle_mass=self.data[self.W_HI].ravel(),
             particle_weights=self.w_HI[self.W_HI].ravel(),
-            compensate=self.compensate[0],
+            compensate=False,
         )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
