@@ -1834,10 +1834,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
         self.pixel_counts_hi_rg = pixel_counts_hi_rg
-        taper_HI = self.taper_func(self.box_ndim[-1])
-        weights_hi = hi_weights_rg * taper_HI[None, None, :]
+        # taper_HI = self.taper_func(self.box_ndim[-1])
+        # weights_hi = hi_weights_rg * taper_HI[None, None, :]
+        weights_hi = hi_weights_rg
         self.field_1 = hi_map_rg
         self.weights_1 = weights_hi
+        self.apply_taper_to_field(1)
         self.unitless_1 = False
         include_beam = np.array(self.include_beam)
         include_beam[0] = True
@@ -1910,10 +1912,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
         self.field_2 = gal_map_rg
-        taper_g = self.taper_func(self.box_ndim[-1])
+        # taper_g = self.taper_func(self.box_ndim[-1])
         # only pixels sampled by the lightcone is used
-        weights_g = (pixel_counts_hi_rg > 0) * taper_g[None, None, :]
+        # weights_g = (pixel_counts_hi_rg > 0) * taper_g[None, None, :]
+        weights_g = pixel_counts_hi_rg > 0
         self.weights_2 = weights_g
+        self.apply_taper_to_field(2)
         self.mean_center_2 = True
         self.unitless_2 = True
         include_beam = np.array(self.include_beam)
@@ -2038,3 +2042,35 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         dec_rand += rand_disp[num_g_rand:]
         z_rand = rng.uniform(self.z_ch.min(), self.z_ch.max(), size=num_g_rand)
         return ra_rand, dec_rand, redshift_to_freq(z_rand)
+
+    def apply_taper_to_field(
+        self,
+        field,
+        taper_func=None,
+        axis=[
+            2,
+        ],
+    ):
+        """
+        Apply a taper to the field, by multiplying the taper function to the
+        corresponding weights of the field.
+
+        Parameters
+        ----------
+        field: int.
+            The index of the field to be tapered, either 1 or 2.
+        taper_func: function, default None.
+            The taper function. Default uses the stored ``self.taper_func``.
+        axis: list, default [2,].
+            The axis to apply the taper to. Default is the z-axis which is approximately the los.
+        """
+        if taper_func is None:
+            taper_func = self.taper_func
+        taper_i = [taper_func(self.box_ndim[i]) for i in range(3)]
+        taper = 1
+        for i in axis:
+            slice_list_i = [None, None, None]
+            slice_list_i[i] = slice(None, None, None)
+            slice_list_i = tuple(slice_list_i)
+            taper = taper * taper_i[i][slice_list_i]
+        setattr(self, f"weights_{field}", getattr(self, f"weights_{field}") * taper)
