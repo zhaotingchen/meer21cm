@@ -1463,7 +1463,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         downres_factor_radial=2.0,
         field_from_mapdata=False,
         box_buffkick=5,
-        compensate=[True, True],
+        compensate=[False, False],
         taper_func=windows.blackmanharris,
         kaiser_rsd=True,
         grid_scheme="nnb",
@@ -1664,10 +1664,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         the window can only be calculated in Cartesian grids, so it is not used
         in ``ModelPowerSpectrum`` and only in ``PowerSpectrum``.
         """
-        if self._box_ndim is None:
-            return 1.0
-        else:
-            return fourier_window_for_assignment(self.box_ndim, self.grid_scheme)
+        return fourier_window_for_assignment(self.box_ndim, self.grid_scheme)
 
     @property
     def box_origin(self):
