@@ -503,6 +503,9 @@ def test_ModelPowerSpectrum():
     assert model._auto_power_tracer_1_model is None
     model.weights_2 = 1
     assert model._auto_power_tracer_2_model is None
+    model = ModelPowerSpectrum()
+    model.compensate = False
+    assert model.compensate_sampling() == 1.0
 
 
 def test_gaussian_beam_attenuation():

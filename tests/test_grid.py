@@ -49,53 +49,6 @@ def test_fourier_window_for_assignment(window):
     assert np.allclose(test_1, test_2)
 
 
-# @pytest.mark.parametrize("window", list(allowed_window_scheme))
-# def test_uniform_grids(window):
-#    box_len = np.array([10, 10, 10])
-#    ndim_rg = np.array([10, 10, 10])
-#    pos_arr = np.zeros((10, 10, 10, 3))
-#    pos_arr[:, :, :, 0] += np.arange(10)[:, None, None] + 0.5
-#    pos_arr[:, :, :, 1] += np.arange(10)[None, :, None] + 0.5
-#    pos_arr[:, :, :, 2] += np.arange(10)[None, None, :] + 0.5
-#    test_map, test_weights, test_counts = project_particle_to_regular_grid(
-#        pos_arr,
-#        box_len,
-#        ndim_rg,
-#        compensate=True,
-#        window=window,
-#    )
-#    assert np.allclose(test_map, np.ones_like(test_map))
-#    assert np.allclose(test_weights, np.ones_like(test_map))
-#    assert np.allclose(test_counts, np.ones_like(test_map))
-#    test_map_1, test_weights, test_counts = project_particle_to_regular_grid(
-#        pos_arr,
-#        box_len,
-#        ndim_rg,
-#        compensate=True,
-#        window=window,
-#        particle_value=np.ones(10**3),
-#        particle_weights=np.random.uniform(1, 2, size=10**3),
-#    )
-#    test_map_2, test_weights_2, test_counts_2 = project_particle_to_regular_grid(
-#        pos_arr,
-#        box_len,
-#        ndim_rg,
-#        compensate=True,
-#        window=window,
-#        particle_value=np.ones(10**3),
-#        particle_weights=np.random.uniform(1, 2, size=10**3),
-#        shift=0.5,
-#    )
-#    field_interlaced = interlace_two_fields(
-#        test_map_1, test_map_1, 0.0, [1.0, 1.0, 1.0]
-#    )
-#    assert np.allclose(field_interlaced, np.ones_like(test_map))
-#    field_interlaced = interlace_two_fields(
-#        test_map_1, test_map_2, 0.5, [1.0, 1.0, 1.0]
-#    )
-#    assert np.allclose(field_interlaced, np.ones_like(test_map))
-
-
 def test_find_rotation_matrix():
     vec = np.random.randn(3)
     vec /= np.sqrt(np.sum(vec**2))
