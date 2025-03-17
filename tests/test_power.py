@@ -246,6 +246,25 @@ def test_bin_functions():
     )
 
 
+def test_cy_power_in_ps():
+    ps = PowerSpectrum(
+        kaiser_rsd=False,
+    )
+    ps.box_len = np.array([1000, 1000, 1000])
+    ps.box_ndim = np.array([20, 20, 20])
+    ps.propagate_field_k_to_model()
+    ps.kperpbins = np.linspace(0, 0.09, 10)
+    ps.kparabins = np.linspace(0, 0.06, 7)
+    pscy, _ = ps.get_cy_power(
+        "auto_power_matter_model",
+        filter_dependent_k=True,
+    )
+    kperpcen = (ps.kperpbins[1:] + ps.kperpbins[:-1]) / 2
+    kparacen = (ps.kparabins[1:] + ps.kparabins[:-1]) / 2
+    k_1d = np.sqrt(kperpcen[:, None] ** 2 + kparacen[None, :] ** 2)
+    assert np.all(np.abs(ps.matter_power_spectrum_fnc(k_1d) / pscy - 1) < 1e-1)
+
+
 def test_power_weights_renorm():
     # uniform weights should give 1
     weights = np.ones([10, 10, 10])

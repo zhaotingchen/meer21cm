@@ -1341,19 +1341,46 @@ def bin_3d_to_cy(
     kperp_i,
     kperpedges,
     weights=None,
+    average=True,
 ):
+    """
+    Function to bin a 3D distribution (e.g. power spectrum) into cylindrical average.
+    The arrays are unravelled to 2D before binning by keeping the last axis.
+    The 2D array is then binned along the first axis.
+
+    The output is flipped so that the first axis is the original last axis.
+    Therefore, to bin a 3D power spectrum to a cylindrical average,
+    one can simply run ``bin_3d_to_cy`` twice
+    (see ``PowerSpectrum.get_cy_power``).
+
+    Parameters
+    ----------
+    ps3d: array.
+        The 3D distribution to be binned.
+    kperp_i: array.
+        The perpendicular k-mode corresponding to the first axis.
+    kperpedges: array.
+        The bin edges for the perpendicular k-mode.
+    weights: array, None.
+        The weights for each 3D k-mode of the power spectrum.
+    average: bool, default True.
+        If ``True``, calculate the weighted average of the power spectrum
+        in each bin. Else, calculate the weighted sum.
+    """
     ps3d = np.array(ps3d)
     kperpedges = np.array(kperpedges)
     kperp_i = np.array(kperp_i).ravel()
     ps3d = ps3d.reshape((len(kperp_i), -1))
     if weights is None:
         weights = np.ones_like(ps3d)
-    weights = np.array(weights)
+    weights = np.array(weights).reshape((len(kperp_i), -1))
     indx = (kperp_i[:, None] >= kperpedges[None, :-1]) * (
         kperp_i[:, None] < kperpedges[None, 1:]
     )
     weights = indx[:, None, :] * weights[:, :, None]
-    pscy = np.sum(ps3d[:, :, None] * weights, 0) / np.sum(weights, 0)
+    pscy = np.sum(ps3d[:, :, None] * weights, 0)
+    if average:
+        pscy = pscy / np.sum(weights, 0)
     return pscy
 
 
@@ -1624,6 +1651,31 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         k1dweights=None,
         filter_dependent_k=False,
     ):
+        """
+        Bin the 3D power spectrum into 1D power spectrum.
+        If the input ``power3d`` is a string, it is assumed to be an attribute of the class,
+        for example ``auto_power_3d_1``.
+
+        Parameters
+        ----------
+        power3d: np.ndarray or str
+            The 3D power spectrum.
+        k1dbins: np.ndarray, default None
+            The bins for the 1D power spectrum. Default is the same as the class attribute.
+        k1dweights: np.ndarray, default None
+            The weights for the 3D power spectrum. Default is equal weights for every k-mode.
+        filter_dependent_k: bool, default False
+            Whether to filter out dependent k-modes (+k and -k will only be counted once).
+
+        Returns
+        -------
+        power1d: np.ndarray
+            The 1D power spectrum.
+        k1deff: np.ndarray
+            The effective k-mode for each bin.
+        nmodes: np.ndarray
+            The number of modes in each bin.
+        """
         if k1dbins is None:
             k1dbins = self.k1dbins
         if k1dweights is None:
@@ -1640,6 +1692,78 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             weights=indep_modes * k1dweights,
         )
         return power1d, k1deff, nmodes
+
+    def get_cy_power(
+        self,
+        power3d,
+        kperpbins=None,
+        kparabins=None,
+        kcyweights=None,
+        filter_dependent_k=False,
+    ):
+        """
+        Bin the 3D power spectrum into cylindrical k_perp-k_para power spectrum.
+        If the input ``power3d`` is a string, it is assumed to be an attribute of the class,
+        for example ``auto_power_3d_1``.
+
+        Parameters
+        ----------
+        power3d: np.ndarray or str
+            The 3D power spectrum.
+        kperpbins: np.ndarray, default None
+            The k_perp bins for the cylindrical ps. Default is the same as the class attribute.
+        kparabins: np.ndarray, default None
+            The k_para bins for the cylindrical ps. Default is the same as the class attribute.
+        kcyweights: np.ndarray, default None
+            The weights for the 3D power spectrum. Default is equal weights for every k-mode.
+        filter_dependent_k: bool, default False
+            Whether to filter out dependent k-modes (+k and -k will only be counted once).
+
+        Returns
+        -------
+        powercy: np.ndarray
+            The cylindrical power spectrum.
+        weightscy: np.ndarray
+            The weights for the cylindrical k-modes.
+        """
+        if kperpbins is None:
+            kperpbins = self.kperpbins
+        if kparabins is None:
+            kparabins = self.kparabins
+        if kcyweights is None:
+            kcyweights = np.ones(self.box_ndim)
+        if isinstance(power3d, str):
+            power3d = getattr(self, power3d)
+        indep_modes = 1.0
+        if filter_dependent_k:
+            indep_modes = get_independent_fourier_modes(self.box_ndim)
+        powercy = bin_3d_to_cy(
+            power3d,
+            self.k_perp,
+            kperpbins,
+            weights=indep_modes * kcyweights,
+        )
+        weightscy = bin_3d_to_cy(
+            indep_modes * kcyweights,
+            self.k_perp,
+            kperpbins,
+            weights=indep_modes * kcyweights,
+            average=False,
+        )
+        powercy = bin_3d_to_cy(
+            powercy,
+            np.abs(self.k_para),
+            kparabins,
+            weights=weightscy,
+        )
+        weightscy = bin_3d_to_cy(
+            weightscy,
+            np.abs(self.k_para),
+            kparabins,
+            weights=weightscy,
+            average=False,
+        )
+        return powercy, weightscy
 
     # calculate on-the-fly, no cache
     def step_sampling(self, sampling_resol=None, p=1):
