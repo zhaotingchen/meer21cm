@@ -34,6 +34,34 @@ mass_intflux_coeff = (
 )
 
 
+def get_nd_slicer(ndim=3):
+    """
+    Get a list of slice objects that can be used to slice an ndarray.
+    For example, if you have a list of k-vectors, then you can this to match
+    the vectors for array index propagation.
+
+    Parameters
+    ----------
+    ndim: int, default 3.
+        The number of dimensions of the array to slice.
+
+    Returns
+    -------
+    out: list of slice objects.
+    """
+    out = []
+    for i in range(ndim):
+        slice_i = [
+            None,
+        ] * ndim
+        slice_i[i] = slice(None)
+        slice_i = tuple(slice_i)
+        out += [
+            slice_i,
+        ]
+    return out
+
+
 def create_wcs_with_range(
     ra_range,
     dec_range,

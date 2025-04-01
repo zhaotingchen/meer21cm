@@ -8,6 +8,14 @@ from halomod import TracerHaloModel
 from meer21cm import Specification
 
 
+def test_get_nd_slicer():
+    slicer = get_nd_slicer(3)
+    assert len(slicer) == 3
+    assert slicer[0] == (slice(None), None, None)
+    assert slicer[1] == (None, slice(None), None)
+    assert slicer[2] == (None, None, slice(None))
+
+
 def test_dft_matrix():
     assert np.allclose(dft_matrix(10), np.fft.fft(np.eye(10)))
     assert np.allclose(
