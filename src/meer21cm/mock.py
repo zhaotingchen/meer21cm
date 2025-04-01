@@ -413,23 +413,23 @@ class MockSimulation(PowerSpectrum):
         self._z_gal = z[inside_range]
 
     def propagate_mock_field_to_data(
-        self, field, beam=True, highres=None, average=True
+        self, field, beam=True, highres_sim=None, average=True
     ):
         """
         Grid the mock tracer field onto the sky map and
         """
-        if highres is None:
-            highres = self.highres_sim
+        if highres_sim is None:
+            highres_sim = self.highres_sim
         if self.sigma_beam_ch is None:
             beam = False
-        if highres is None:
+        if highres_sim is None:
             wproj_hires = self.wproj
             num_pix_x = self.num_pix_x
             num_pix_y = self.num_pix_y
         else:
-            wproj_hires = create_udres_wproj(self.wproj, highres)
-            num_pix_x = self.num_pix_x * highres
-            num_pix_y = self.num_pix_y * highres
+            wproj_hires = create_udres_wproj(self.wproj, highres_sim)
+            num_pix_x = self.num_pix_x * highres_sim
+            num_pix_y = self.num_pix_y * highres_sim
         map_highres, _ = self.grid_field_to_sky_map(
             field,
             average=average,
@@ -438,8 +438,8 @@ class MockSimulation(PowerSpectrum):
             num_pix_x=num_pix_x,
             num_pix_y=num_pix_y,
         )
-        if highres is None and not beam:
-            return map_highres
+        # if highres_sim is None and not beam:
+        #    return map_highres
         if beam:
             beam_image = self.get_beam_image(
                 wproj_hires, num_pix_x, num_pix_y, cache=False
@@ -447,7 +447,7 @@ class MockSimulation(PowerSpectrum):
             map_highres, _ = weighted_convolution(
                 map_highres, beam_image, np.ones_like(map_highres)
             )
-        if highres is None:
+        if highres_sim is None:
             return map_highres
         spec = Specification(
             wproj=wproj_hires,
