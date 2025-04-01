@@ -1497,6 +1497,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         interlace_shift=0.0,
         num_particle_per_pixel=1,
         seed=None,
+        kperpbins=None,
+        kparabins=None,
         **params,
     ):
         if seed is None:
@@ -1552,6 +1554,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             **params,
         )
         self.k1dbins = k1dbins
+        self.kperpbins = kperpbins
+        self.kparabins = kparabins
         self.downres_factor_transverse = downres_factor_transverse
         self.downres_factor_radial = downres_factor_radial
         init_attr = [
