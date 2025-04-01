@@ -707,7 +707,8 @@ class FieldPowerSpectrum(Specification):
         """
         The Nyquist frequency of the 3D box along each axis.
         """
-        return np.pi / self.box_resol
+        k_max = np.array([np.abs(self.k_vec[i]).max() for i in range(len(self.k_vec))])
+        return k_max
 
     @property
     def k_perp(self):
