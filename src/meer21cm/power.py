@@ -1939,11 +1939,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         ndim_rg = self.box_len / box_resol
         ndim_rg = ndim_rg.astype("int")
-        for i in range(3):
-            if ndim_rg[i] % 2 != 0:
-                ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
-        # self._box_resol = box_resol
         self.box_ndim = ndim_rg
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
@@ -1985,14 +1981,11 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             hi_map_rg,
             hi_map_rg2,
             self.interlace_shift,
-            # self.box_resol,
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
         self.pixel_counts_hi_rg = pixel_counts_hi_rg
-        # taper_HI = self.taper_func(self.box_ndim[-1])
-        # weights_hi = hi_weights_rg * taper_HI[None, None, :]
         weights_hi = hi_weights_rg
         self.field_1 = hi_map_rg
         self.weights_1 = weights_hi
@@ -2050,7 +2043,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_map_rg,
             gal_map_rg2,
             self.interlace_shift,
-            # self.box_resol,
         )
         pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
             0
@@ -2069,9 +2061,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
         self.field_2 = gal_map_rg
-        # taper_g = self.taper_func(self.box_ndim[-1])
         # only pixels sampled by the lightcone is used
-        # weights_g = (pixel_counts_hi_rg > 0) * taper_g[None, None, :]
         weights_g = pixel_counts_hi_rg > 0
         self.weights_2 = weights_g
         self.apply_taper_to_field(2)
