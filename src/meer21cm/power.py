@@ -1269,6 +1269,7 @@ def bin_3d_to_1d(
     k1dedges,
     weights=None,
     error=False,
+    vectorize=False,
 ):
     r"""
     Bin a 3d distribution, e.g. power spectrum :math:`P_{3D}(\vec{k})`, into 1D average.
@@ -1289,33 +1290,47 @@ def bin_3d_to_1d(
     .. math::
         (\Delta P_{\rm 1D}^{\rm i})^2 = \big(\sum_j (P_{\rm 3D}^{\rm j}-\hat{P}_{\rm 1D}^{\rm i})^2 w_{\rm j}^2 \big) \Big/ \big(\sum_j w_{\rm j}\big)^2.
 
-
-
     Parameters
     ----------
-        ps3d: array.
-            The 3D distribution to be binned
-        weights2: array, None.
-            If cross-correlation, the weights for the second field.
+    ps3d: np.ndarray
+        The 3D distribution to be binned.
+    kfield: np.ndarray
+        The k-field of the 3D distribution.
+    k1dedges: np.ndarray
+        The bin edges for the 1D power spectrum.
+    weights: np.ndarray, default None
+        The weights for each 3D k-mode of the power spectrum.
+    error: bool, default False
+        Whether to calculate the sampling error.
+    vectorize: bool, default False
+        Whether to vectorize the calculation, assuming the first axis is independent realisations.
 
     Returns
     -------
-        weights_norm: float.
-           The renormalization coefficient.
+    ps1d: np.ndarray
+        The 1D power spectrum.
+    ps1derr: np.ndarray
+        The sampling error for the 1D power spectrum. Returned only if ``error`` is ``True``.
+    k1deff: np.ndarray
+        The effective k-mode for each bin.
+    nmodes: np.ndarray
+        The number of modes in each bin.
     """
-    ps3d = np.ravel(ps3d)
-    kfield = np.ravel(kfield)
+    if not vectorize:
+        ps3d = np.array(ps3d)[None, ...]
     if weights is None:
-        weights = np.ones_like(ps3d)
+        weights = np.ones_like(ps3d[0])
+    ps3d = np.array(ps3d).reshape(len(ps3d), -1)
+    kfield = np.array(kfield).ravel()
     weights = np.array(weights).ravel()
 
     indx = (kfield[:, None] >= k1dedges[None, :-1]) * (
         kfield[:, None] < k1dedges[None, 1:]
     )
     with np.errstate(divide="ignore", invalid="ignore"):
-        ps1d = np.sum(ps3d[:, None] * indx * weights[:, None], 0) / np.sum(
-            indx * weights[:, None], 0
-        )
+        ps1d = np.sum(
+            ps3d[:, :, None] * indx[None, :, :] * weights[None, :, None], 1
+        ) / np.sum(indx[None, :, :] * weights[None, :, None], 1)
         k1deff = np.sum(kfield[:, None] * indx * weights[:, None], 0) / np.sum(
             indx * weights[:, None], 0
         )
@@ -1323,12 +1338,16 @@ def bin_3d_to_1d(
         with np.errstate(divide="ignore", invalid="ignore"):
             ps1derr = np.sqrt(
                 np.sum(
-                    (ps3d[:, None] - ps1d[None, :]) ** 2
-                    * (indx * weights[:, None]) ** 2,
-                    0,
+                    (ps3d[:, :, None] - ps1d[:, None, :]) ** 2
+                    * (indx[None, :, :] * weights[None, :, None]) ** 2,
+                    1,
                 )
-                / np.sum((indx * weights[:, None]), 0) ** 2
+                / np.sum((indx[None, :, :] * weights[None, :, None]), 1) ** 2
             )
+        if not vectorize:
+            ps1derr = ps1derr[0]
+    if not vectorize:
+        ps1d = ps1d[0]
     nmodes = np.sum(indx * (weights[:, None] > 0), 0)
 
     if error is True:
@@ -1343,6 +1362,7 @@ def bin_3d_to_cy(
     kperpedges,
     weights=None,
     average=True,
+    vectorize=False,
 ):
     """
     Function to bin a 3D distribution (e.g. power spectrum) into cylindrical average.
@@ -1367,21 +1387,32 @@ def bin_3d_to_cy(
     average: bool, default True.
         If ``True``, calculate the weighted average of the power spectrum
         in each bin. Else, calculate the weighted sum.
+    vectorize: bool, default False
+        Whether to vectorize the calculation, assuming the first axis is independent realisations.
+
+    Returns
+    -------
+    pscy: np.ndarray
+        The cylindrical average of the 3D distribution.
     """
     ps3d = np.array(ps3d)
+    if not vectorize:
+        ps3d = ps3d[None, ...]
     kperpedges = np.array(kperpedges)
     kperp_i = np.array(kperp_i).ravel()
-    ps3d = ps3d.reshape((len(kperp_i), -1))
+    ps3d = ps3d.reshape((len(ps3d), len(kperp_i), -1))
     if weights is None:
-        weights = np.ones_like(ps3d)
+        weights = np.ones_like(ps3d[0])
     weights = np.array(weights).reshape((len(kperp_i), -1))
     indx = (kperp_i[:, None] >= kperpedges[None, :-1]) * (
         kperp_i[:, None] < kperpedges[None, 1:]
     )
     weights = indx[:, None, :] * weights[:, :, None]
-    pscy = np.sum(ps3d[:, :, None] * weights, 0)
+    pscy = np.sum(ps3d[:, :, :, None] * weights[None], 1)
     if average:
-        pscy = pscy / np.sum(weights, 0)
+        pscy = pscy / np.sum(weights, 0)[None]
+    if not vectorize:
+        pscy = pscy[0]
     return pscy
 
 
