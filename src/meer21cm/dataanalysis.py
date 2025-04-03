@@ -650,6 +650,7 @@ class Specification:
         self.data = data
         self.w_HI = w_HI
 
+    @property
     def z_as_func_of_comov_dist(self):
         """
         Returns a function that returns the redshift

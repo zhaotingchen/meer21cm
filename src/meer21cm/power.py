@@ -2090,7 +2090,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
         pos_arr = np.einsum("ij,aj->ai", rot_back, pos_arr)
         pos_comov_dist = np.sqrt(np.sum(pos_arr**2, axis=-1))
-        pos_z = self.z_as_func_of_comov_dist()(pos_comov_dist)
+        pos_z = self.z_as_func_of_comov_dist(pos_comov_dist)
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
         return pos_ra, pos_dec, pos_z
 
@@ -2187,7 +2187,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         ra_rand += rand_disp[:num_g_rand]
         dec_rand += rand_disp[num_g_rand:]
-        z_rand = rng.uniform(self.z_ch.min(), self.z_ch.max(), size=num_g_rand)
+        # in future this should be a dNdz
+        cov_dist_limit = [
+            self.comoving_distance(self.z_ch.min()).to("Mpc").value,
+            self.comoving_distance(self.z_ch.max()).to("Mpc").value,
+        ]
+        cov_dist_rand = rng.uniform(
+            cov_dist_limit[0], cov_dist_limit[1], size=num_g_rand
+        )
+        z_rand = self.z_as_func_of_comov_dist(cov_dist_rand)
         return ra_rand, dec_rand, redshift_to_freq(z_rand)
 
     def apply_taper_to_field(
