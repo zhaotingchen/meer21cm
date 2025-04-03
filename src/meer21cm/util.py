@@ -101,7 +101,6 @@ def create_wcs_with_range(
 
     num_pix_y: int.
         Number of pixels on the second axis.
-
     """
     w = WCS(naxis=2)
     ra_min = ra_range[0]
@@ -120,6 +119,53 @@ def create_wcs_with_range(
     w.wcs.crval = [ra_cen, dec_cen]
     w.wcs.ctype = ctype
     return w, num_pix_x, num_pix_y
+
+
+def create_wcs(
+    ra_cr,
+    dec_cr,
+    ngrid,
+    resol,
+    crpix=None,
+    ctype=["RA---ZEA", "DEC--ZEA"],
+):
+    """
+    Create a wcs object that can be used to map a index array to sky cooridnates,
+    for a given central coordinate and grid dimensions.
+
+    Parameters
+    ----------
+    ra_cr: float.
+        The coordinate of the critical pixel in RA in degree.
+    dec_cr: float.
+        The coordinate of the critical pixel in Dec in degree.
+    ngrid: array-like of 2 elements.
+        The number of pixels on the two axis.
+    resol: array-like of 2 elements.
+        The resolution along the two axis in degree.
+    crpix: array-like of 2 elements, default None.
+        The index of the critical pixel. Default is the center of the array.
+    ctype: list of two strings, default ['RA---ZEA', 'DEC--ZEA'].
+        The projection type.
+
+    Returns
+    -------
+    w: :class:`astropy.wcs.WCS` object.
+        The output wcs.
+    """
+    if type(resol) == float:
+        resol = [resol, resol]
+    if type(ngrid) == int:
+        ngrid = [ngrid, ngrid]
+    w = WCS(naxis=2)
+    num_pix_x, num_pix_y = ngrid
+    if crpix is None:
+        crpix = [num_pix_x // 2, num_pix_y // 2]
+    w.wcs.crpix = crpix
+    w.wcs.cdelt = resol
+    w.wcs.crval = [ra_cr, dec_cr]
+    w.wcs.ctype = ctype
+    return w
 
 
 def angle_in_range(alpha, lower, upper):

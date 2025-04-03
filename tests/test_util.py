@@ -37,6 +37,15 @@ def test_create_wcs_with_range():
     assert flag.mean() == 1
 
 
+def test_create_wcs():
+    wproj = create_wcs(0, 0, 21, 0.3)
+    assert np.allclose(wproj.wcs.crpix, [10, 10])
+    assert np.allclose(wproj.wcs.cdelt, [0.3, 0.3])
+    assert np.allclose(wproj.wcs.crval, [0, 0])
+    assert wproj.wcs.ctype[0] == "RA---ZEA"
+    assert wproj.wcs.ctype[1] == "DEC--ZEA"
+
+
 def test_angle_in_range():
     assert angle_in_range(-10, 0, 360)
     assert angle_in_range(350, 340, 10)
