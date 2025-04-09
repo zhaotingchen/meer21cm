@@ -36,7 +36,7 @@ pytest --cov=meer21cm tests/ --cov-report term --cov-report html:coverage.html
 ```
 This will generate a folder `coverage.html` (do not commit it, leave it untracked). You can open the html files inside to see the coverage.
 
-When you push, Github Actions have been set up so the tests will be checked and a coverage report will also be generated on codecov. Although I do not recommend it, you can just check the coverage in the pull request instead of checking locally.
+When you push, Github Actions have been set up so the tests will be checked and a coverage report will also be generated on codecov. **There is a rate limit for the runtime on Github Actions**. That is to say, you should always first check locally that the tests are good before pushing to a PR to trigger the tests on Github, so that we can avoid exceeding the limit quickly.
 
 ## Documentation
 When you write new functions and classes, they should be properly documented with docstrings. You can check how they will look in the documentation website by creating the website locally. In the `meer21cm` directory:

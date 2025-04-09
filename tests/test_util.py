@@ -8,6 +8,14 @@ from halomod import TracerHaloModel
 from meer21cm import Specification
 
 
+def test_get_nd_slicer():
+    slicer = get_nd_slicer(3)
+    assert len(slicer) == 3
+    assert slicer[0] == (slice(None), None, None)
+    assert slicer[1] == (None, slice(None), None)
+    assert slicer[2] == (None, None, slice(None))
+
+
 def test_dft_matrix():
     assert np.allclose(dft_matrix(10), np.fft.fft(np.eye(10)))
     assert np.allclose(
@@ -27,6 +35,15 @@ def test_create_wcs_with_range():
     x_indx, y_indx = radec_to_indx(ra_xx, dec_yy, w_test)
     flag = (x_indx >= 0) * (x_indx < num_pix_x) * (y_indx >= 0) * (y_indx < num_pix_y)
     assert flag.mean() == 1
+
+
+def test_create_wcs():
+    wproj = create_wcs(0, 0, 21, 0.3)
+    assert np.allclose(wproj.wcs.crpix, [10, 10])
+    assert np.allclose(wproj.wcs.cdelt, [0.3, 0.3])
+    assert np.allclose(wproj.wcs.crval, [0, 0])
+    assert wproj.wcs.ctype[0] == "RA---ZEA"
+    assert wproj.wcs.ctype[1] == "DEC--ZEA"
 
 
 def test_angle_in_range():

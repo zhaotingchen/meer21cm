@@ -205,7 +205,7 @@ def test_update_beam_type():
 
 def test_z_interp():
     ps = Specification()
-    func = ps.z_as_func_of_comov_dist()
+    func = ps.z_as_func_of_comov_dist
     z_rand = np.random.uniform(ps.z_ch.min(), ps.z_ch.max(), size=100)
     assert np.allclose(func(ps.comoving_distance(z_rand).value), z_rand)
 
