@@ -36,6 +36,7 @@ from .util import (
     Obuljen18,
     create_udres_wproj,
     sample_map_from_highres,
+    angle_in_range,
 )
 from .plot import plot_map
 from .grid import (
@@ -309,7 +310,10 @@ class MockSimulation(PowerSpectrum):
             rng.uniform(-0.5, 0.5, size=(np.sum(n_per_cell), len(self.box_ndim)))
             * self.box_resol[None, :]
         )
+        tracer_which_cell = np.arange(pos_value.size)
+        tracer_which_cell = np.repeat(tracer_which_cell, n_per_cell)
         self._mock_tracer_position_in_box = tracer_positions
+        self._mock_tracer_which_cell = tracer_which_cell
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_1", "tracer_2", "discrete", "rsd")
@@ -359,18 +363,18 @@ class MockSimulation(PowerSpectrum):
             ra_mock_tracer,
             dec_mock_tracer,
             z_mock_tracer,
+            tracer_comov_dist,
         ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
         freq_tracer = redshift_to_freq(z_mock_tracer)
         tracer_ch_id = find_ch_id(freq_tracer, self.nu)
         # num_ch id is for tracer outside the frequency range
         z_sel = tracer_ch_id < len(self.nu)
-        ra_temp = ra_mock_tracer.copy()
-        ra_temp[ra_temp > 180] -= 360
-        ra_range = np.array(self.ra_range)
-        ra_range[ra_range > 180] -= 360
+        # ra_temp = ra_mock_tracer.copy()
+        # ra_temp[ra_temp > 180] -= 360
+        # ra_range = np.array(self.ra_range)
+        # ra_range[ra_range > 180] -= 360
         radec_sel = (
-            (ra_temp > ra_range[0])
-            * (ra_temp < ra_range[1])
+            angle_in_range(ra_mock_tracer, self.ra_range[0], self.ra_range[1])
             * (dec_mock_tracer > self.dec_range[0])
             * (dec_mock_tracer < self.dec_range[1])
         )
@@ -396,6 +400,7 @@ class MockSimulation(PowerSpectrum):
             z_mock_tracer,
             mock_inside_range,
         )
+        self._tracer_comov_dist = tracer_comov_dist
 
     def propagate_mock_tracer_to_gal_cat(self, trim=True):
         """

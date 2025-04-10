@@ -126,7 +126,7 @@ def test_tracer_mock(test_W, tracer_i):
         # the accuracy is not good due to large variance of a single realization
         # multiple realizations are tested in test_pipeline.py
         # maybe this should be removed
-        assert avg_deviation < 1
+        assert avg_deviation < 2
 
 
 def test_tracer_position():

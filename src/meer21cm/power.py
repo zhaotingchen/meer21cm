@@ -2086,13 +2086,33 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return n_bar2 / n_bar
 
     def ra_dec_z_for_coord_in_box(self, pos_in_box):
+        """
+        Convert the coordinates in the box to ra, dec, z,
+        and also return the comoving distance to the observer for each point.
+
+        Parameters
+        ----------
+        pos_in_box: array.
+            The coordinates in the box.
+
+        Returns
+        -------
+        pos_ra: array.
+            The ra of the points.
+        pos_dec: array.
+            The dec of the points.
+        pos_z: array.
+            The redshift of the points.
+        pos_comov_dist: array.
+            The comoving distance to the observer for each point.
+        """
         pos_arr = pos_in_box + self.box_origin
         rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
         pos_arr = np.einsum("ij,aj->ai", rot_back, pos_arr)
         pos_comov_dist = np.sqrt(np.sum(pos_arr**2, axis=-1))
         pos_z = self.z_as_func_of_comov_dist(pos_comov_dist)
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
-        return pos_ra, pos_dec, pos_z
+        return pos_ra, pos_dec, pos_z, pos_comov_dist
 
     def grid_field_to_sky_map(
         self,
@@ -2155,7 +2175,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         rand_arr[:, :, :, :, 0] = 0.0
         par_coor_in_box += rand_arr
         pos_xyz = np.array(par_coor_in_box.reshape((3, -1)).T)
-        pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
+        pos_ra, pos_dec, pos_z, _ = self.ra_dec_z_for_coord_in_box(pos_xyz)
         pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
         pos_indx_z = redshift_to_freq(pos_z)
         indx_num = [np.arange(num_pix_x), np.arange(num_pix_y), self.nu]
