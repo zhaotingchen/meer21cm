@@ -311,7 +311,7 @@ class MockSimulation(PowerSpectrum):
             * self.box_resol[None, :]
         )
         tracer_which_cell = np.arange(pos_value.size)
-        tracer_which_cell = np.repeat(tracer_which_cell, n_per_cell)
+        tracer_which_cell = np.repeat(tracer_which_cell, n_per_cell.flatten())
         self._mock_tracer_position_in_box = tracer_positions
         self._mock_tracer_which_cell = tracer_which_cell
 
