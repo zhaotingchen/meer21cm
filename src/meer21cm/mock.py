@@ -400,7 +400,7 @@ class MockSimulation(PowerSpectrum):
             z_mock_tracer,
             mock_inside_range,
         )
-        self._tracer_comov_dist = tracer_comov_dist
+        self._mock_tracer_comov_dist = tracer_comov_dist
 
     def propagate_mock_tracer_to_gal_cat(self, trim=True):
         """
