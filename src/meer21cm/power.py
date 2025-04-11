@@ -1939,6 +1939,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         ndim_rg = self.box_len / box_resol
         ndim_rg = ndim_rg.astype("int")
+        for i in range(3):
+            if ndim_rg[i] % 2 == 0:
+                ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
         self.box_ndim = ndim_rg
         if self.model_k_from_field:

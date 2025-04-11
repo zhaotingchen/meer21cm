@@ -79,54 +79,18 @@ def test_matter_mock(test_W, density):
             mock.field_1 = mock.mock_matter_field
 
 
-@pytest.mark.parametrize("tracer_i", [(1), (2)])
-def test_tracer_mock(test_W, tracer_i):
-    k1dedges = np.geomspace(0.05, 1.5, 20)
-
+@pytest.mark.parametrize("tracer_i, parallel_plane", [(1, True), (2, False)])
+def test_tracer_mock(tracer_i, parallel_plane):
     mock = MockSimulation(
-        tracer_bias_1=1.5,
-        tracer_bias_2=1.9,
-        cosmo="WMAP1",
-        k1dbins=k1dedges,
         kaiser_rsd=True,
-        # mock is generated on the grid so no sampling effects
-        include_sky_sampling=[False, False],
-        downres_factor_transverse=0.8,
-        downres_factor_radial=0.8,
-        model_k_from_field=True,
-        upgrade_sampling_from_gridding=True,
-        # mean_amp_1='average_hi_temp',
+        parallel_plane=parallel_plane,
+        tracer_bias_1=1.5,
+        tracer_bias_2=1.5,
     )
-    setattr(mock, "mean_amp_" + str(tracer_i), "average_hi_temp")
-    mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
-    # mock.get_mock_tracer_field()
-    mock.field_1 = mock.mock_tracer_field_1
-    mock.field_2 = mock.mock_tracer_field_2
-
-    pfield_1_rsd, keff, nmodes = mock.get_1d_power(
-        "auto_power_3d_1",
-    )
-    pfield_2_rsd, keff, nmodes = mock.get_1d_power(
-        "auto_power_3d_2",
-    )
-    pfield_c_rsd, keff, nmodes = mock.get_1d_power(
-        "cross_power_3d",
-    )
-
-    pmod_1, _, _ = mock.get_1d_power((mock.auto_power_tracer_1_model))
-    pmod_2, _, _ = mock.get_1d_power((mock.auto_power_tracer_2_model))
-    pmod_c, _, _ = mock.get_1d_power((mock.cross_power_tracer_model))
-    pfield = [pfield_1_rsd, pfield_2_rsd, pfield_c_rsd]
-    pmod = [pmod_1, pmod_2, pmod_c]
-    for i in range(3):
-        avg_deviation = np.sqrt(
-            ((np.abs((pfield[i] - pmod[i]) / pmod[i])) ** 2 * nmodes).sum()
-            / nmodes.sum()
-        )
-        # the accuracy is not good due to large variance of a single realization
-        # multiple realizations are tested in test_pipeline.py
-        # maybe this should be removed
-        assert avg_deviation < 2
+    mock.field_2 = getattr(mock, f"mock_tracer_field_{tracer_i}")
+    ratio = mock.auto_power_3d_2 / mock.auto_power_tracer_2_model
+    # mumode will be slightly smaller if not using parallel plane
+    assert np.abs(ratio.mean() - 1) < 5e-2
 
 
 def test_tracer_position():
