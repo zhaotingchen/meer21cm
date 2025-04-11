@@ -593,27 +593,15 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):
-        # pars = self.camb_pars
-        # pars.set_matter_power(
-        #    redshifts=np.unique(np.array([self.z, 0.0])).tolist(),
-        #    kmax=self.kmax / self.h,
-        # )
-        # pars.NonLinear = getattr(camb.model, "NonLinear_" + self.nonlinear)
-        # results = camb.get_results(pars)
-        # kh, z, pk = results.get_matter_power_spectrum(
-        #    minkh=self.kmin / self.h, maxkh=self.kmax / self.h, npoints=200
-        # )
-        # karr = kh * self.h
-        # pkarr = pk[-1] / self.h**3
-        # matter_power_func = interp1d(
-        #    karr, pkarr, bounds_error=False, fill_value="extrapolate"
-        # )
         kh = self.karr_in_h
         pk = getattr(self, f"get_matter_power_spectrum_{self.backend}")()
         karr = kh * self.h
         pkarr = pk / self.h**3
         matter_power_func = interp1d(
-            karr, pkarr, bounds_error=False, fill_value="extrapolate"
+            np.append(0, karr),
+            np.append(0, pkarr),
+            bounds_error=False,
+            fill_value="extrapolate",
         )
         self._matter_power_spectrum_fnc = matter_power_func
 
