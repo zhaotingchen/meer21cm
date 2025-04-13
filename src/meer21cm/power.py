@@ -1947,7 +1947,38 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
-    def grid_data_to_field(self):
+    def grid_data_to_field(self, flat_sky=False):
+        """
+        Grid the stored data map to a rectangular grid field.
+
+        If flat_sky is True, no gridding is performed. Instead, the map cube
+        dimensions are taken to be a rectangular grid, with the grid length
+        corresponding to the pixel resolution on x/y and los frequency resolution
+        as z.
+
+        If flat_sky is False, the data is gridded onto a regular grid using the
+        input grid scheme and performing the proper curved sky projection.
+
+        The gridded field is stored as field_1 and the weights are stored as weights_1.
+        """
+        if flat_sky:
+            self.field_1 = self.data
+            self.weights_1 = self.W_HI.astype(float)
+            self.box_len = np.array(self.data.shape, dtype="float") * np.array(
+                [
+                    self.pix_resol_in_mpc,
+                    self.pix_resol_in_mpc,
+                    self.los_resol_in_mpc,
+                ]
+            )
+            self.box_ndim = np.array(self.data.shape)
+            self.propagate_field_k_to_model()
+            self.mean_center_1 = False
+            self.unitless_1 = False
+            self.include_sky_sampling = [True, False]
+            self.compensate = False
+            self.include_beam = [True, False]
+            return self.field_1, self.weights_1, (self.weights_1 > 0).astype(float)
         if self.box_origin[0] is None:
             self.get_enclosing_box()
         data_particle = self.data[self.W_HI].ravel()
@@ -1991,8 +2022,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.pixel_counts_hi_rg = pixel_counts_hi_rg
         weights_hi = hi_weights_rg
         self.field_1 = hi_map_rg
-        self.weights_1 = weights_hi
-        self.apply_taper_to_field(1)
+        self.weights_1 = (pixel_counts_hi_rg > 0).astype(float)
+        # self.apply_taper_to_field(1)
         self.unitless_1 = False
         include_beam = np.array(self.include_beam)
         include_beam[0] = True
