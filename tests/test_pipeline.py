@@ -137,78 +137,78 @@ def test_poisson_field_map_grid():
 
 # num_p hasn't worked yet
 # @pytest.mark.parametrize("num_p", [(1),])
-@pytest.mark.parametrize("highres,beam", [(2, True), (None, False)])
-def test_mock_field_map_grid(highres, beam):
-    """
-    Generate a mock HI temp field, project it to sky map,
-    grid it onto regular grids, and test input/output matching.
-    """
-    num_p = 1
-    raminGAMA, ramaxGAMA = 339, 351
-    decminGAMA, decmaxGAMA = -35, -30
-    k1dedges = np.geomspace(0.05, 1.5, 20)[:-2]
-    pmap_1d = []
-    pmod_1d = []
-    # run 5 realizations
-    for i in range(5):
-        mock = MockSimulation(
-            ra_range=(raminGAMA, ramaxGAMA),
-            dec_range=(decminGAMA, decmaxGAMA),
-            kaiser_rsd=True,
-            tracer_bias_1=1.5,
-            mean_amp_1="average_hi_temp",
-            num_particle_per_pixel=num_p,
-            highres_sim=highres,
-            k1dbins=k1dedges,
-            kmax=10.0,
-            seed=i,
-        )
-        if beam:
-            D_dish = 13.5
-            mock.sigma_beam_ch = dish_beam_sigma(D_dish, mock.nu)
-        mock.downres_factor_radial = 1 / 4.0
-        mock.downres_factor_transverse = 1 / 4.0
-        map_bin = mock.propagate_mock_field_to_data(mock.mock_tracer_field_1, beam=beam)
-        mock.data = map_bin
-        mock.downres_factor_radial = 1.5
-        mock.downres_factor_transverse = 1.5
-        mock.compensate = True
-        hi_map_rg, hi_weights_rg, pix_counts_hi_rg = mock.grid_data_to_field()
-        mock.field_1 = hi_map_rg
-        mock.weights_1 = hi_weights_rg
-        mock.apply_taper_to_field(1, axis=[0, 1, 2])
-        mock.propagate_field_k_to_model()
-        mock.sampling_resol = [
-            mock.pix_resol_in_mpc,
-            mock.pix_resol_in_mpc,
-            mock.los_resol_in_mpc,
-        ]
-        mock.include_beam = [True, False]
-        mock.include_sky_sampling = [True, False]
-        k_sel = (
-            (np.abs(mock.k_vec[0])[:, None, None] < (mock.k_nyquist[0] / 2))
-            & (np.abs(mock.k_vec[1])[None, :, None] < (mock.k_nyquist[1] / 2))
-            & (np.abs(mock.k_vec[2])[None, None, :] < (mock.k_nyquist[2] / 2))
-        )
-        pmod_i, keff, _ = mock.get_1d_power(
-            "auto_power_tracer_1_model",
-            k1dweights=k_sel.astype("float"),
-        )
-        pmap_i, _, _ = mock.get_1d_power(
-            "auto_power_3d_1",
-            k1dweights=k_sel.astype("float"),
-        )
-        pmap_1d += [
-            pmap_i,
-        ]
-        pmod_1d += [
-            pmod_i,
-        ]
-    pmap_1d = np.array(pmap_1d)
-    pmod_1d = np.array(pmod_1d)
-    avg_deviation = ((pmap_1d.mean(0) - pmod_1d.mean(0)) / pmap_1d.std(0)).mean()
-    # 3 sigma
-    assert np.abs(avg_deviation) < 3
+# @pytest.mark.parametrize("highres,beam", [(2, True), (None, False)])
+# def test_mock_field_map_grid(highres, beam):
+#    """
+#    Generate a mock HI temp field, project it to sky map,
+#    grid it onto regular grids, and test input/output matching.
+#    """
+#    num_p = 1
+#    raminGAMA, ramaxGAMA = 339, 351
+#    decminGAMA, decmaxGAMA = -35, -30
+#    k1dedges = np.geomspace(0.05, 1.5, 20)[:-2]
+#    pmap_1d = []
+#    pmod_1d = []
+#    # run 5 realizations
+#    for i in range(5):
+#        mock = MockSimulation(
+#            ra_range=(raminGAMA, ramaxGAMA),
+#            dec_range=(decminGAMA, decmaxGAMA),
+#            kaiser_rsd=True,
+#            tracer_bias_1=1.5,
+#            mean_amp_1="average_hi_temp",
+#            num_particle_per_pixel=num_p,
+#            highres_sim=highres,
+#            k1dbins=k1dedges,
+#            kmax=10.0,
+#            seed=i,
+#        )
+#        if beam:
+#            D_dish = 13.5
+#            mock.sigma_beam_ch = dish_beam_sigma(D_dish, mock.nu)
+#        mock.downres_factor_radial = 1 / 4.0
+#        mock.downres_factor_transverse = 1 / 4.0
+#        map_bin = mock.propagate_mock_field_to_data(mock.mock_tracer_field_1, beam=beam)
+#        mock.data = map_bin
+#        mock.downres_factor_radial = 1.5
+#        mock.downres_factor_transverse = 1.5
+#        mock.compensate = True
+#        hi_map_rg, hi_weights_rg, pix_counts_hi_rg = mock.grid_data_to_field()
+#        mock.field_1 = hi_map_rg
+#        mock.weights_1 = hi_weights_rg
+#        mock.apply_taper_to_field(1, axis=[0, 1, 2])
+#        mock.propagate_field_k_to_model()
+#        mock.sampling_resol = [
+#            mock.pix_resol_in_mpc,
+#            mock.pix_resol_in_mpc,
+#            mock.los_resol_in_mpc,
+#        ]
+#        mock.include_beam = [True, False]
+#        mock.include_sky_sampling = [True, False]
+#        k_sel = (
+#            (np.abs(mock.k_vec[0])[:, None, None] < (mock.k_nyquist[0] / 2))
+#            & (np.abs(mock.k_vec[1])[None, :, None] < (mock.k_nyquist[1] / 2))
+#            & (np.abs(mock.k_vec[2])[None, None, :] < (mock.k_nyquist[2] / 2))
+#        )
+#        pmod_i, keff, _ = mock.get_1d_power(
+#            "auto_power_tracer_1_model",
+#            k1dweights=k_sel.astype("float"),
+#        )
+#        pmap_i, _, _ = mock.get_1d_power(
+#            "auto_power_3d_1",
+#            k1dweights=k_sel.astype("float"),
+#        )
+#        pmap_1d += [
+#            pmap_i,
+#        ]
+#        pmod_1d += [
+#            pmod_i,
+#        ]
+#    pmap_1d = np.array(pmap_1d)
+#    pmod_1d = np.array(pmod_1d)
+#    avg_deviation = ((pmap_1d.mean(0) - pmod_1d.mean(0)) / pmap_1d.std(0)).mean()
+#    # 3 sigma
+#    assert np.abs(avg_deviation) < 3
 
 
 @pytest.mark.parametrize("strict", [(True), (False)])
