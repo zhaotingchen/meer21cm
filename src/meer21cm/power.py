@@ -2157,40 +2157,26 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             The number of grids in each sky map pixel.
 
         """
-        num_particle_per_pixel = self.num_particle_per_pixel
         if wproj is None:
             wproj = self.wproj
         if num_pix_x is None:
             num_pix_x = self.num_pix_x
         if num_pix_y is None:
             num_pix_y = self.num_pix_y
-        grid_coor_in_box = np.array(np.meshgrid(*self.x_vec, indexing="ij"))
-        par_coor_in_box = (
-            np.zeros(grid_coor_in_box.shape + (num_particle_per_pixel,))
-            + grid_coor_in_box[:, :, :, :, None]
-        )
-        par_value = np.zeros(par_coor_in_box.shape[1:])
-        par_value += field[:, :, :, None]
-        rng = np.random.default_rng(seed=self.seed)
-        rand_arr = rng.uniform(-1 / 2, 1 / 2, size=par_coor_in_box.shape)
-        rand_arr *= self.box_resol[:, None, None, None, None]
-        # first particle always at centre of grid
-        rand_arr[:, :, :, :, 0] = 0.0
-        par_coor_in_box += rand_arr
-        pos_xyz = np.array(par_coor_in_box.reshape((3, -1)).T)
+        pos_xyz = np.array(np.meshgrid(*self.x_vec, indexing="ij")).reshape((3, -1)).T
         pos_ra, pos_dec, pos_z, _ = self.ra_dec_z_for_coord_in_box(pos_xyz)
         pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
-        pos_indx_z = redshift_to_freq(pos_z)
-        indx_num = [np.arange(num_pix_x), np.arange(num_pix_y), self.nu]
-        indx_bins = [center_to_edges(indx_num[i]) for i in range(3)]
-        pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
-        map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=par_value.ravel())
-        count_bin, _ = np.histogramdd(
-            pos_indx,
-            bins=indx_bins,
+        pos_indx_z = redshift_to_freq(pos_z) - self.nu.min()
+        pos_indx_array = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
+        map_bin, _, count_bin = project_particle_to_regular_grid(
+            pos_indx_array,
+            np.array([num_pix_x, num_pix_y, self.nu.max() - self.nu.min()]),
+            np.array([num_pix_x, num_pix_y, self.nu.size]),
+            particle_mass=field.ravel(),
+            average=average,
+            compensate=False,
+            grid_scheme="nnb",
         )
-        if average:
-            map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
         if mask:
             map_bin *= self.W_HI
         return map_bin, count_bin

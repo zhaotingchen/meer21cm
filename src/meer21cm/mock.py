@@ -679,7 +679,7 @@ class MockSimulation(PowerSpectrum):
             wproj_hires = create_udres_wproj(self.wproj, highres_sim)
             num_pix_x = self.num_pix_x * highres_sim
             num_pix_y = self.num_pix_y * highres_sim
-        map_highres, _ = self.grid_field_to_sky_map(
+        map_highres, map_counts = self.grid_field_to_sky_map(
             field,
             average=average,
             mask=False,
@@ -694,7 +694,7 @@ class MockSimulation(PowerSpectrum):
                 wproj_hires, num_pix_x, num_pix_y, cache=False
             )
             map_highres, _ = weighted_convolution(
-                map_highres, beam_image, np.ones_like(map_highres)
+                map_highres, beam_image, (map_counts > 0).astype(float)
             )
         if highres_sim is None:
             return map_highres
