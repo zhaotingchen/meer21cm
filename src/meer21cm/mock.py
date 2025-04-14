@@ -482,13 +482,13 @@ class MockSimulation(PowerSpectrum):
         return delta_x
 
     def get_mock_tracer_field(self, tracer_i):
-        if self.rsd_from_field:
+        if self.rsd_from_field and self.kaiser_rsd:
             delta_x = self.get_mock_field_in_redshift_space(
                 delta_x=getattr(self, f"mock_tracer_field_{tracer_i}_r"),
                 field=f"tracer_{tracer_i}",
                 sigma_v=getattr(self, f"sigma_v_{tracer_i}"),
             )
-        else:
+        elif self.kaiser_rsd:
             if self.box_ndim is None:
                 self.get_enclosing_box()
             sigma_v = getattr(self, f"sigma_v_{tracer_i}")
@@ -499,6 +499,8 @@ class MockSimulation(PowerSpectrum):
             )
             fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=self.mumode)
             delta_x = self.get_mock_field_from_power(power_array * fog**2)
+        else:
+            delta_x = getattr(self, f"mock_tracer_field_{tracer_i}_r")
         setattr(self, f"_mock_tracer_field_{tracer_i}", delta_x)
         return delta_x
 
