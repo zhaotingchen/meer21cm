@@ -137,7 +137,7 @@ def test_poisson_field_map_grid():
 
 # num_p hasn't worked yet
 # @pytest.mark.parametrize("num_p", [(1),])
-@pytest.mark.parametrize("highres,beam", [(2, True), (None, False)])
+@pytest.mark.parametrize("highres,beam", [(1, True), (None, False)])
 def test_mock_field_map_grid(highres, beam):
     """
     Generate a mock HI temp field, project it to sky map,
@@ -147,8 +147,8 @@ def test_mock_field_map_grid(highres, beam):
     decminMK, decmaxMK = -35, -26.5
     ra_range = (raminMK, ramaxMK)
     dec_range = (decminMK, decmaxMK)
-    downres_sim_r = 1 / 3.0
-    downres_sim_t = 1 / 3.0
+    downres_sim_r = 1 / 1.0
+    downres_sim_t = 1 / 1.0
     k1dmin = 0.05
     k1dmax = 0.4
     k1dnumbin = 10
