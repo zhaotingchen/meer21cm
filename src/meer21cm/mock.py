@@ -36,6 +36,8 @@ from .util import (
     Obuljen18,
     create_udres_wproj,
     sample_map_from_highres,
+    angle_in_range,
+    get_nd_slicer,
 )
 from .plot import plot_map
 from .grid import (
@@ -61,7 +63,8 @@ class MockSimulation(PowerSpectrum):
         strict_num_source=True,
         auto_relative=False,
         highres_sim=None,
-        grid_pad=4,
+        parallel_plane=True,
+        rsd_from_field=False,
         **params,
     ):
         super().__init__(**params)
@@ -85,6 +88,14 @@ class MockSimulation(PowerSpectrum):
             "_mock_tracer_position_in_radecz",
             "_mock_tracer_field_1",
             "_mock_tracer_field_2",
+            "_mock_tracer_field_1_r",
+            "_mock_tracer_field_2_r",
+            "_mock_kaiser_field_k_matter",
+            "_mock_kaiser_field_k_tracer_1",
+            "_mock_kaiser_field_k_tracer_2",
+            "_mock_velocity_u_matter",
+            "_mock_velocity_u_tracer_1",
+            "_mock_velocity_u_tracer_2",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -94,7 +105,10 @@ class MockSimulation(PowerSpectrum):
         self.strict_num_source = strict_num_source
         self.auto_relative = auto_relative
         self.highres_sim = highres_sim
-        self.grid_pad = grid_pad
+        self.parallel_plane = parallel_plane
+        self.rsd_from_field = rsd_from_field
+        if not rsd_from_field and not parallel_plane:
+            warnings.warn("if rsd_from_field is False, parallel_plane will be ignored")
 
     @property
     def highres_sim(self):
@@ -134,6 +148,34 @@ class MockSimulation(PowerSpectrum):
     def strict_num_source(self, value):
         self._strict_num_source = value
         self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    def parallel_plane(self):
+        """
+        Whether the mock field is generated in the parallel-plane limit.
+        """
+        return self._parallel_plane
+
+    @parallel_plane.setter
+    def parallel_plane(self, value):
+        self._parallel_plane = value
+        self.clean_cache(self.rsd_dep_attr)
+
+    @property
+    def rsd_from_field(self):
+        """
+        If True, the kaiser rsd effect is generated at field level by
+        calculating the corresponding peculiar velocity field.
+        This allows the lognormal mock to go beyond the parallel-plane limit.
+        If False, the kaiser rsd effect is generated at power spectrum level,
+        and then the field is generated from the anistropic power spectrum.
+        """
+        return self._rsd_from_field
+
+    @rsd_from_field.setter
+    def rsd_from_field(self, value):
+        self._rsd_from_field = value
+        self.clean_cache(self.rsd_dep_attr)
 
     @property
     def auto_relative(self):
@@ -199,23 +241,46 @@ class MockSimulation(PowerSpectrum):
         self.clean_cache(self.discrete_dep_attr)
 
     @property
+    @tagging("cosmo", "nu", "mock", "box")
+    def mock_matter_field_r(self):
+        """
+        The simulated dark matter density field in real space.
+        """
+        if self._mock_matter_field_r is None:
+            self.get_mock_matter_field_r()
+        return self._mock_matter_field_r
+
+    @property
     @tagging("cosmo", "nu", "mock", "box", "rsd")
     def mock_matter_field(self):
         """
-        The simulated dark matter density field.
+        The simulated dark matter density field in redshift space.
+        If ``self.kaiser_rsd`` is False, it is simply set to the real space field.
         """
         if self._mock_matter_field is None:
             self.get_mock_matter_field()
         return self._mock_matter_field
 
-    def get_mock_matter_field(self):
-        self._mock_matter_field = self.get_mock_field(bias=1)
+    def get_mock_matter_field_r(self):
+        self._mock_matter_field_r = self.get_mock_field_r(bias=1)
 
-    def get_mock_field(self, bias, sigma_v=0):
+    def get_mock_field_r(self, bias=1):
+        """
+        Generate a mock field in real space that follows the input matter power
+        spectrum ``self.matter_power_spectrum_fnc`` * bias**2.
+        """
         if self.box_ndim is None:
             self.get_enclosing_box()
-        grid_pad = self.grid_pad
         self.propagate_field_k_to_model()
+        power_array = self.matter_power_spectrum_fnc(self.k_mode) * bias**2
+        delta_x = self.get_mock_field_from_power(power_array)
+        return delta_x
+
+    def get_mock_field_from_power(self, power_array):
+        """
+        Generate a mock field that follows the input matter power
+        spectrum ``power_array``.
+        """
         if self.density == "lognormal":
             backend = generate_lognormal_field
         elif self.density == "gaussian":
@@ -224,26 +289,149 @@ class MockSimulation(PowerSpectrum):
             raise ValueError(
                 f"density must be 'lognormal' or 'gaussian', got {self.density}"
             )
-        power_array = self.matter_power_spectrum_fnc(self.kmode)
-        if self.kaiser_rsd:
-            mumode = self.mumode
-            fog = np.fft.fftshift(
-                self.fog_term(sigma_v, kmode=self.kmode, mumode=mumode)
-            )
-            power_array *= ((bias + mumode**2 * self.f_growth) * fog) ** 2
-        else:
-            power_array *= bias**2
         delta_x = backend(self.box_ndim, self.box_len, power_array, self.seed)
+        return delta_x
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd")
+    def mock_velocity_u_matter(self):
+        r"""
+        The normalised peculiar velocity field in real space, defined as
+        .. math::
+            u_i = -\frac{v_i}{\mathcal{H} f}
+        where :math:`v_i` is the peculiar velocity, :math:`\mathcal{H}` is the
+        conformal Hubble parameter, and :math:`f` is the growth rate.
+        """
+        if self._mock_velocity_u_matter is None:
+            self._mock_velocity_u_matter = self.get_mock_velocity_u_field(
+                mock_field=self.mock_matter_field_r
+            )
+        return self._mock_velocity_u_matter
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd", "tracer_1")
+    def mock_velocity_u_tracer_1(self):
+        if self._mock_velocity_u_tracer_1 is None:
+            self._mock_velocity_u_tracer_1 = self.get_mock_velocity_u_field(
+                mock_field=self.mock_tracer_field_1_r / self.tracer_bias_1
+            )
+        return self._mock_velocity_u_tracer_1
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd", "tracer_2")
+    def mock_velocity_u_tracer_2(self):
+        if self._mock_velocity_u_tracer_2 is None:
+            self._mock_velocity_u_tracer_2 = self.get_mock_velocity_u_field(
+                mock_field=self.mock_tracer_field_2_r / self.tracer_bias_2
+            )
+        return self._mock_velocity_u_tracer_2
+
+    def get_mock_velocity_u_field(self, mock_field):
+        r"""
+        Generate the normalised peculiar velocity field in real space
+        """
+        delta_k = np.fft.fftn(mock_field, norm="forward")
+        slicer = get_nd_slicer()
+        with np.errstate(divide="ignore", invalid="ignore"):
+            kvecoverk2 = np.array(
+                [self.k_vec[i][slicer[i]] / self.kmode**2 for i in range(3)]
+            )
+        kvecoverk2[:, self.kmode == 0] = 0
+        u_k = -1j * kvecoverk2 * delta_k[None]
+        u_r = np.array([np.fft.ifftn(u_k[i], norm="forward") for i in range(3)]).real
+        return u_r
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd")
+    def mock_kaiser_field_k_matter(self):
+        """
+        The Kaiser rsd effect correction for the mock matter field in k-space.
+        """
+        if self._mock_kaiser_field_k_matter is None:
+            self.get_mock_kaiser_field_k(field="matter")
+        return self._mock_kaiser_field_k_matter
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd", "tracer_1")
+    def mock_kaiser_field_k_tracer_1(self):
+        """
+        The Kaiser rsd effect correction for the mock tracer field 1 in k-space.
+        """
+        if self._mock_kaiser_field_k_tracer_1 is None:
+            self.get_mock_kaiser_field_k(field="tracer_1")
+        return self._mock_kaiser_field_k_tracer_1
+
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "rsd", "tracer_2")
+    def mock_kaiser_field_k_tracer_2(self):
+        """
+        The Kaiser rsd effect correction for the mock tracer field 2 in k-space.
+        """
+        if self._mock_kaiser_field_k_tracer_2 is None:
+            self.get_mock_kaiser_field_k(field="tracer_2")
+        return self._mock_kaiser_field_k_tracer_2
+
+    def get_mock_kaiser_field_k(self, field):
+        r"""
+        Generate the Kaiser rsd effect for the mock matter field in k-space.
+
+        In the parrallel-plane limit, the Kaiser rsd effect is given by:
+
+        .. math::
+
+            \delta_{\rm rsd} = f \mu^2 \delta_k
+
+        where :math:`f` is the growth rate, :math:`\mu` is the cosine of the angle
+        between the wave vector and the line of sight, and :math:`\delta_k` is the Fourier
+        transform of the real-space matter density field.
+
+        This function returns :math:`\delta_{\rm rsd}` in k-space so that for any mock tracer field,
+        the Kaiser effect can be applied by adding :math:`\delta_{\rm rsd}` to the real-space tracer field in k-space.
+        """
+        u_r = getattr(self, f"mock_velocity_u_{field}")
+        slicer = get_nd_slicer()
+        if self.parallel_plane:
+            box_coord_l = np.zeros((3,) + tuple(self.box_ndim))
+            box_coord_l[-1] = 1.0
+        else:
+            box_coord = np.meshgrid(*self.x_vec, indexing="ij")
+            box_coord = np.array(box_coord) + self.box_origin[:, None, None, None]
+            box_coord_l = box_coord / np.sqrt((box_coord**2).sum(axis=0))[None]
+        self._box_coord_l = box_coord_l
+        u_in_xhat = (u_r * box_coord_l).sum(axis=0)
+        y_k = np.array(
+            [np.fft.fftn(u_in_xhat * box_coord_l[i], norm="forward") for i in range(3)]
+        )
+        y_k_dot_k = np.array(
+            [(y_k[i] * self.k_vec[i][slicer[i]]) for i in range(3)]
+        ).sum(axis=0)
+        delta_rsd_k = 1j * self.f_growth * y_k_dot_k
+        setattr(self, f"_mock_kaiser_field_k_{field}", delta_rsd_k)
+        return delta_rsd_k
+
+    def get_mock_matter_field(self):
+        self._mock_matter_field = self.get_mock_field_in_redshift_space(
+            delta_x=self.mock_matter_field_r, field="matter", sigma_v=0
+        )
+
+    def get_mock_field_in_redshift_space(self, delta_x, field, sigma_v):
+        if self.kaiser_rsd:
+            delta_k = np.fft.fftn(delta_x, norm="forward")
+            delta_k += getattr(self, f"mock_kaiser_field_k_{field}")
+            mumode = self.mumode
+            fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=mumode)
+            delta_k *= fog
+            delta_x = np.fft.ifftn(delta_k, norm="forward").real
         return delta_x
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_1", "rsd")
     def mock_tracer_field_1(self):
         """
-        The simulated tracer field 1.
+        The simulated tracer field 1 in redshift space.
         """
         if self._mock_tracer_field_1 is None:
-            self.get_mock_tracer_field_1()
+            self.get_mock_tracer_field(1)
         mean_amp = self.mean_amp_1
         if isinstance(mean_amp, str):
             mean_amp = getattr(self, mean_amp)
@@ -253,31 +441,72 @@ class MockSimulation(PowerSpectrum):
     @tagging("cosmo", "nu", "mock", "box", "tracer_2", "rsd")
     def mock_tracer_field_2(self):
         """
-        The simulated tracer field 2.
+        The simulated tracer field 2 in redshift space.
         """
-        mean_amp = self.mean_amp_2
         if self._mock_tracer_field_2 is None:
-            self.get_mock_tracer_field_2()
+            self.get_mock_tracer_field(2)
+        mean_amp = self.mean_amp_2
         if isinstance(mean_amp, str):
             mean_amp = getattr(self, mean_amp)
         return self._mock_tracer_field_2 * mean_amp
 
-    def get_mock_tracer_field_1(self):
-        self._mock_tracer_field_1 = self.get_mock_field(
-            bias=self.tracer_bias_1, sigma_v=self.sigma_v_1
-        )
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "tracer_1")
+    def mock_tracer_field_1_r(self):
+        """
+        The simulated tracer field 1 in real space.
+        """
+        if self._mock_tracer_field_1_r is None:
+            self.get_mock_tracer_field_r(1)
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_1_r * mean_amp
 
-    def get_mock_tracer_field_2(self):
-        if self.tracer_bias_2 is not None:
-            self._mock_tracer_field_2 = self.get_mock_field(
-                bias=self.tracer_bias_2, sigma_v=self.sigma_v_2
+    @property
+    @tagging("cosmo", "nu", "mock", "box", "tracer_2")
+    def mock_tracer_field_2_r(self):
+        """
+        The simulated tracer field 2 in real space.
+        """
+        mean_amp = self.mean_amp_2
+        if self._mock_tracer_field_2_r is None:
+            self.get_mock_tracer_field_r(2)
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_2_r * mean_amp
+
+    def get_mock_tracer_field_r(self, tracer_i):
+        delta_x = self.get_mock_field_r(bias=getattr(self, f"tracer_bias_{tracer_i}"))
+        setattr(self, f"_mock_tracer_field_{tracer_i}_r", delta_x)
+        return delta_x
+
+    def get_mock_tracer_field(self, tracer_i):
+        if self.rsd_from_field:
+            delta_x = self.get_mock_field_in_redshift_space(
+                delta_x=getattr(self, f"mock_tracer_field_{tracer_i}_r"),
+                field=f"tracer_{tracer_i}",
+                sigma_v=getattr(self, f"sigma_v_{tracer_i}"),
             )
+        else:
+            if self.box_ndim is None:
+                self.get_enclosing_box()
+            sigma_v = getattr(self, f"sigma_v_{tracer_i}")
+            tracer_bias = getattr(self, f"tracer_bias_{tracer_i}")
+            power_array = (
+                self.matter_power_spectrum_fnc(self.kmode)
+                * (tracer_bias + self.f_growth * self.mumode**2) ** 2
+            )
+            fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=self.mumode)
+            delta_x = self.get_mock_field_from_power(power_array * fog**2)
+        setattr(self, f"_mock_tracer_field_{tracer_i}", delta_x)
+        return delta_x
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_1", "tracer_2", "discrete", "rsd")
     def mock_tracer_position_in_box(self):
         """
-        The simulated tracer positions in the box.
+        The simulated tracer positions in the box in real space.
         """
         if self._mock_tracer_position_in_box is None:
             self.get_mock_tracer_position_in_box(self.discrete_base_field)
@@ -285,7 +514,8 @@ class MockSimulation(PowerSpectrum):
 
     def get_mock_tracer_position_in_box(self, tracer_i):
         """
-        Function to retrieve the tracer positions. Modified from ``powerbox``.
+        Function to retrieve the tracer positions in redshift space.
+        Modified from ``powerbox``.
         """
         rng = default_rng(self.seed)
         # note that `_mock...` does not have mean amplitude so this is what
@@ -293,7 +523,12 @@ class MockSimulation(PowerSpectrum):
         # the simulation
         getattr(self, "mock_tracer_field_" + str(tracer_i))
         # now actually getting the underlying overdensity
+        # if self.rsd_from_field:
+        # pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i) + "_r") + 1
+        # else:
+        #    pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
         pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        pos_value[pos_value < 0] = 0
         if self.auto_relative:
             print("automatically reset target_relative_to_num_g")
             self.target_relative_to_num_g = np.prod(self.box_len) / self.survey_volume
@@ -305,10 +540,23 @@ class MockSimulation(PowerSpectrum):
         X = np.meshgrid(*args, indexing="ij")
         tracer_positions = np.array([x.flatten() for x in X]).T
         tracer_positions = tracer_positions.repeat(n_per_cell.flatten(), axis=0)
+        tracer_which_cell = np.arange(pos_value.size)
+        tracer_which_cell = np.repeat(tracer_which_cell, n_per_cell.flatten())
         tracer_positions += (
             rng.uniform(-0.5, 0.5, size=(np.sum(n_per_cell), len(self.box_ndim)))
             * self.box_resol[None, :]
         )
+        # for some reason I can not get this to work
+        # if self.rsd_from_field and self.kaiser_rsd:
+        #    box_coord_l = self._box_coord_l
+        #    distance_shift = (
+        #        -self.f_growth *
+        #        box_coord_l *
+        #        (box_coord_l *
+        #        getattr(self, f"mock_velocity_u_tracer_{tracer_i}")
+        #        ).sum(axis=0)[None]
+        #    ).reshape((3,-1)).T
+        #    tracer_positions += distance_shift[tracer_which_cell]
         self._mock_tracer_position_in_box = tracer_positions
 
     @property
@@ -359,18 +607,18 @@ class MockSimulation(PowerSpectrum):
             ra_mock_tracer,
             dec_mock_tracer,
             z_mock_tracer,
+            tracer_comov_dist,
         ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
         freq_tracer = redshift_to_freq(z_mock_tracer)
         tracer_ch_id = find_ch_id(freq_tracer, self.nu)
         # num_ch id is for tracer outside the frequency range
         z_sel = tracer_ch_id < len(self.nu)
-        ra_temp = ra_mock_tracer.copy()
-        ra_temp[ra_temp > 180] -= 360
-        ra_range = np.array(self.ra_range)
-        ra_range[ra_range > 180] -= 360
+        # ra_temp = ra_mock_tracer.copy()
+        # ra_temp[ra_temp > 180] -= 360
+        # ra_range = np.array(self.ra_range)
+        # ra_range[ra_range > 180] -= 360
         radec_sel = (
-            (ra_temp > ra_range[0])
-            * (ra_temp < ra_range[1])
+            angle_in_range(ra_mock_tracer, self.ra_range[0], self.ra_range[1])
             * (dec_mock_tracer > self.dec_range[0])
             * (dec_mock_tracer < self.dec_range[1])
         )
@@ -396,6 +644,7 @@ class MockSimulation(PowerSpectrum):
             z_mock_tracer,
             mock_inside_range,
         )
+        self._mock_tracer_comov_dist = tracer_comov_dist
 
     def propagate_mock_tracer_to_gal_cat(self, trim=True):
         """
@@ -430,7 +679,7 @@ class MockSimulation(PowerSpectrum):
             wproj_hires = create_udres_wproj(self.wproj, highres_sim)
             num_pix_x = self.num_pix_x * highres_sim
             num_pix_y = self.num_pix_y * highres_sim
-        map_highres, _ = self.grid_field_to_sky_map(
+        map_highres, map_counts = self.grid_field_to_sky_map(
             field,
             average=average,
             mask=False,
@@ -445,7 +694,7 @@ class MockSimulation(PowerSpectrum):
                 wproj_hires, num_pix_x, num_pix_y, cache=False
             )
             map_highres, _ = weighted_convolution(
-                map_highres, beam_image, np.ones_like(map_highres)
+                map_highres, beam_image, (map_counts > 0).astype(float)
             )
         if highres_sim is None:
             return map_highres

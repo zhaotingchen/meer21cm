@@ -269,9 +269,6 @@ class CosmologyCalculator(Specification, CosmologyParameters):
 
     def __init__(
         self,
-        # nonlinear="none",
-        # kmax=2.0,
-        # kmin=1e-4,
         backend="camb",
         omegahi=5e-4,
         **params,
@@ -289,9 +286,6 @@ class CosmologyCalculator(Specification, CosmologyParameters):
             self.cosmo = self.set_astropy_cosmo()
         else:
             self.cosmo = params["cosmo"]
-        # self.nonlinear = nonlinear
-        # self.kmax = kmax
-        # self.kmin = kmin
         self._matter_power_spectrum_fnc = None
         self.omegahi = omegahi
 
@@ -496,20 +490,6 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         cosmo = self.cosmo
         self.cosmo = cosmo.clone(Ode0=value)
 
-    # @property
-    # def nonlinear(self):
-    #    """
-    #    What nonlinear input model to use for camb.
-    #    Set to ``'none'`` for linear matter power
-    #    """
-    #    return self._nonlinear
-    #
-    # @nonlinear.setter
-    # def nonlinear(self, value):
-    #    self._nonlinear = value
-    #    # cosmology changed, clear cache
-    #    self.clean_cache(self.cosmo_dep_attr)
-
     @property
     def average_hi_temp(self):
         """
@@ -537,50 +517,13 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         self._neutrino_mass = cosmo.m_nu.value.sum()
         self._omega_baryon = cosmo.Ob0
         self._cosmo = cosmo
-        # self.ns = cosmo.meta["n"]
-        # self.sigma8 = cosmo.meta["sigma8"]
-        # self.tau = cosmo.meta["tau"]
-        # self.Oc0 = cosmo.meta["Oc0"]
         # there is probably a more elegant way of doing this, but I dont know how
         # maybe just inheriting astropy cosmology class?
         for key in cosmo.__dir__():
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
-        # self.camb_pars = self.get_camb_pars()
         # cosmology changed, clear cache
         self.clean_cache(self.cosmo_dep_attr)
-
-    # def get_camb_pars(self):
-    #    """
-    #    The associated :class:`camb.model.CAMBparams` set by the input cosmology.
-    #    """
-    #    pars = camb.CAMBparams()
-    #    pars.set_cosmology(
-    #        H0=self.H0.value,
-    #        ombh2=self.Ob0 * self.h**2,
-    #        omch2=self.Oc0 * self.h**2,
-    #        omk=self.Ok0,
-    #        mnu=self.m_nu.value.sum(),
-    #        nnu=self.Neff,
-    #        TCMB=self.Tcmb0.value,
-    #        tau=self.tau,
-    #    )
-    #    # rescale As based on input sigma8
-    #    As_fid = 2e-9
-    #    pars.InitPower.set_params(As=As_fid, ns=self.ns)
-    #    pars.set_matter_power(redshifts=[0.0], kmax=2.0)
-    #    results = camb.get_results(pars)
-    #    s8_fid = results.get_sigma8_0()
-    #    self.As = As_fid * self.sigma8**2 / s8_fid**2
-    #    pars.InitPower.set_params(
-    #        As=self.As,
-    #        ns=self.ns,
-    #    )
-    #    pars.set_matter_power(redshifts=[self.z], kmax=2.0)
-    #    results = camb.get_results(pars)
-    #    self.f_growth = results.get_fsigma8()[0] / results.get_sigma8()[0]
-    #    self.sigma_8_z = results.get_sigma8()[0]
-    #    return pars
 
     @property
     @tagging("cosmo", "nu")
@@ -593,27 +536,15 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):
-        # pars = self.camb_pars
-        # pars.set_matter_power(
-        #    redshifts=np.unique(np.array([self.z, 0.0])).tolist(),
-        #    kmax=self.kmax / self.h,
-        # )
-        # pars.NonLinear = getattr(camb.model, "NonLinear_" + self.nonlinear)
-        # results = camb.get_results(pars)
-        # kh, z, pk = results.get_matter_power_spectrum(
-        #    minkh=self.kmin / self.h, maxkh=self.kmax / self.h, npoints=200
-        # )
-        # karr = kh * self.h
-        # pkarr = pk[-1] / self.h**3
-        # matter_power_func = interp1d(
-        #    karr, pkarr, bounds_error=False, fill_value="extrapolate"
-        # )
         kh = self.karr_in_h
         pk = getattr(self, f"get_matter_power_spectrum_{self.backend}")()
         karr = kh * self.h
         pkarr = pk / self.h**3
         matter_power_func = interp1d(
-            karr, pkarr, bounds_error=False, fill_value="extrapolate"
+            karr,
+            pkarr,
+            bounds_error=False,
+            fill_value="extrapolate",
         )
         self._matter_power_spectrum_fnc = matter_power_func
 

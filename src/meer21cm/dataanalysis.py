@@ -65,7 +65,7 @@ class Specification:
         gal_file=None,
         weighting="counts",
         ra_range=(0, 360),
-        dec_range=(-400, 400),
+        dec_range=(-90, 90),
         beam_model="gaussian",
         data=None,
         weights_map_pixel=None,
@@ -510,11 +510,11 @@ class Specification:
         dec_g = dec_g[z_Lband]
         z_g = z_g[z_Lband]
 
-        # select only ra_range and dec_range
         self._ra_gal = ra_g
         self._dec_gal = dec_g
         self._z_gal = z_g
-        self.trim_gal_to_range()
+        # select only ra_range and dec_range
+        # self.trim_gal_to_range()
 
     def read_from_fits(self):
         if self.map_file is None:

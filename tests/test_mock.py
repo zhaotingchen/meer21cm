@@ -20,6 +20,40 @@ from meer21cm.power import PowerSpectrum
 from meer21cm.util import radec_to_indx, find_ch_id, redshift_to_freq
 
 
+@pytest.mark.parametrize("parallel_plane", [True, False])
+def test_rsd_from_field(parallel_plane):
+    mock = MockSimulation(
+        kaiser_rsd=True,
+        parallel_plane=parallel_plane,
+        density="lognormal",
+        tracer_bias_2=1.5,
+        num_discrete_source=1e7,
+        rsd_from_field=True,
+        kmax=20,
+    )
+    mock.field_2 = mock.mock_tracer_field_2
+    ratio1 = mock.auto_power_3d_2 / mock.auto_power_tracer_2_model
+    assert np.abs(ratio1.mean() - 1) < 2e-1
+    tracer_positions = mock.mock_tracer_position_in_box
+    grid_bins = [center_to_edges(mock.x_vec[i]) for i in range(3)]
+    count, _ = np.histogramdd(tracer_positions, bins=grid_bins)
+    mock.field_2 = count.astype(np.float32)
+    mock.mean_center_2 = True
+    mock.unitless_2 = True
+    shot_noise = np.prod(mock.box_len) / count.sum()
+    ratio2 = (mock.auto_power_3d_2 - shot_noise) / mock.auto_power_tracer_2_model
+    # curved sky the galaxy mock at small scales is not accurate
+    assert np.abs(ratio2.mean() - 1) < 2e-1
+    # trigger the warning
+    if not parallel_plane:
+        with pytest.warns(UserWarning):
+            mock = MockSimulation(
+                kaiser_rsd=True,
+                parallel_plane=parallel_plane,
+                rsd_from_field=False,
+            )
+
+
 @pytest.mark.parametrize("density", [("lognormal"), ("gaussian"), ("test")])
 def test_matter_mock(test_W, density):
     # default is Planck18, so use WMAP1 to test
@@ -79,54 +113,21 @@ def test_matter_mock(test_W, density):
             mock.field_1 = mock.mock_matter_field
 
 
-@pytest.mark.parametrize("tracer_i", [(1), (2)])
-def test_tracer_mock(test_W, tracer_i):
-    k1dedges = np.geomspace(0.05, 1.5, 20)
-
+@pytest.mark.parametrize("tracer_i, parallel_plane", [(1, True), (2, False)])
+def test_tracer_mock(tracer_i, parallel_plane):
     mock = MockSimulation(
-        tracer_bias_1=1.5,
-        tracer_bias_2=1.9,
-        cosmo="WMAP1",
-        k1dbins=k1dedges,
         kaiser_rsd=True,
-        # mock is generated on the grid so no sampling effects
-        include_sky_sampling=[False, False],
-        downres_factor_transverse=0.8,
-        downres_factor_radial=0.8,
-        model_k_from_field=True,
-        upgrade_sampling_from_gridding=True,
-        # mean_amp_1='average_hi_temp',
+        parallel_plane=parallel_plane,
+        tracer_bias_1=1.5,
+        tracer_bias_2=1.5,
+        rsd_from_field=True,
     )
-    setattr(mock, "mean_amp_" + str(tracer_i), "average_hi_temp")
-    mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
-    # mock.get_mock_tracer_field()
-    mock.field_1 = mock.mock_tracer_field_1
-    mock.field_2 = mock.mock_tracer_field_2
-
-    pfield_1_rsd, keff, nmodes = mock.get_1d_power(
-        "auto_power_3d_1",
-    )
-    pfield_2_rsd, keff, nmodes = mock.get_1d_power(
-        "auto_power_3d_2",
-    )
-    pfield_c_rsd, keff, nmodes = mock.get_1d_power(
-        "cross_power_3d",
-    )
-
-    pmod_1, _, _ = mock.get_1d_power((mock.auto_power_tracer_1_model))
-    pmod_2, _, _ = mock.get_1d_power((mock.auto_power_tracer_2_model))
-    pmod_c, _, _ = mock.get_1d_power((mock.cross_power_tracer_model))
-    pfield = [pfield_1_rsd, pfield_2_rsd, pfield_c_rsd]
-    pmod = [pmod_1, pmod_2, pmod_c]
-    for i in range(3):
-        avg_deviation = np.sqrt(
-            ((np.abs((pfield[i] - pmod[i]) / pmod[i])) ** 2 * nmodes).sum()
-            / nmodes.sum()
-        )
-        # the accuracy is not good due to large variance of a single realization
-        # multiple realizations are tested in test_pipeline.py
-        # maybe this should be removed
-        assert avg_deviation < 1
+    mock.ones_func = 1
+    setattr(mock, f"mean_amp_{tracer_i}", "ones_func")
+    mock.field_2 = getattr(mock, f"mock_tracer_field_{tracer_i}")
+    ratio = mock.auto_power_3d_2 / mock.auto_power_tracer_2_model
+    # mumode will be slightly smaller if not using parallel plane
+    assert np.abs(ratio.mean() - 1) < 1e-1
 
 
 def test_tracer_position():

@@ -232,3 +232,14 @@ def test_buffer():
         range_buffer=1e-3,
     )
     assert len(np.unique(sp_mock.W_HI[:, :, 0].mean(-1))) == 2
+
+
+def test_trim_gal():
+    sp = Specification(
+        ra_range=[-1, 1],
+        dec_range=[-1, 1],
+    )
+    sp._ra_gal = np.array([0, 0, 2])
+    sp._dec_gal = np.array([0, -2, 0])
+    sp._z_gal = np.array([0.42, 0.42, 0.42])
+    assert np.allclose(sp.trim_gal_to_range(), [1, 0, 0])

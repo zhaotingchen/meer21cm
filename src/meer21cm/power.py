@@ -1939,12 +1939,46 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         ndim_rg = self.box_len / box_resol
         ndim_rg = ndim_rg.astype("int")
+        for i in range(3):
+            if ndim_rg[i] % 2 == 0:
+                ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
         self.box_ndim = ndim_rg
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
-    def grid_data_to_field(self):
+    def grid_data_to_field(self, flat_sky=False):
+        """
+        Grid the stored data map to a rectangular grid field.
+
+        If flat_sky is True, no gridding is performed. Instead, the map cube
+        dimensions are taken to be a rectangular grid, with the grid length
+        corresponding to the pixel resolution on x/y and los frequency resolution
+        as z.
+
+        If flat_sky is False, the data is gridded onto a regular grid using the
+        input grid scheme and performing the proper curved sky projection.
+
+        The gridded field is stored as field_1 and the weights are stored as weights_1.
+        """
+        if flat_sky:
+            self.field_1 = self.data
+            self.weights_1 = self.W_HI.astype(float)
+            self.box_len = np.array(self.data.shape, dtype="float") * np.array(
+                [
+                    self.pix_resol_in_mpc,
+                    self.pix_resol_in_mpc,
+                    self.los_resol_in_mpc,
+                ]
+            )
+            self.box_ndim = np.array(self.data.shape)
+            self.propagate_field_k_to_model()
+            self.mean_center_1 = False
+            self.unitless_1 = False
+            self.include_sky_sampling = [True, False]
+            self.compensate = False
+            self.include_beam = [True, False]
+            return self.field_1, self.weights_1, (self.weights_1 > 0).astype(float)
         if self.box_origin[0] is None:
             self.get_enclosing_box()
         data_particle = self.data[self.W_HI].ravel()
@@ -1988,8 +2022,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.pixel_counts_hi_rg = pixel_counts_hi_rg
         weights_hi = hi_weights_rg
         self.field_1 = hi_map_rg
-        self.weights_1 = weights_hi
-        self.apply_taper_to_field(1)
+        self.weights_1 = (pixel_counts_hi_rg > 0).astype(float)
+        # self.apply_taper_to_field(1)
         self.unitless_1 = False
         include_beam = np.array(self.include_beam)
         include_beam[0] = True
@@ -2086,13 +2120,33 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return n_bar2 / n_bar
 
     def ra_dec_z_for_coord_in_box(self, pos_in_box):
+        """
+        Convert the coordinates in the box to ra, dec, z,
+        and also return the comoving distance to the observer for each point.
+
+        Parameters
+        ----------
+        pos_in_box: array.
+            The coordinates in the box.
+
+        Returns
+        -------
+        pos_ra: array.
+            The ra of the points.
+        pos_dec: array.
+            The dec of the points.
+        pos_z: array.
+            The redshift of the points.
+        pos_comov_dist: array.
+            The comoving distance to the observer for each point.
+        """
         pos_arr = pos_in_box + self.box_origin
         rot_back = np.linalg.inv(self.rot_mat_sky_to_box)
         pos_arr = np.einsum("ij,aj->ai", rot_back, pos_arr)
         pos_comov_dist = np.sqrt(np.sum(pos_arr**2, axis=-1))
         pos_z = self.z_as_func_of_comov_dist(pos_comov_dist)
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
-        return pos_ra, pos_dec, pos_z
+        return pos_ra, pos_dec, pos_z, pos_comov_dist
 
     def grid_field_to_sky_map(
         self,
@@ -2134,40 +2188,26 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             The number of grids in each sky map pixel.
 
         """
-        num_particle_per_pixel = self.num_particle_per_pixel
         if wproj is None:
             wproj = self.wproj
         if num_pix_x is None:
             num_pix_x = self.num_pix_x
         if num_pix_y is None:
             num_pix_y = self.num_pix_y
-        grid_coor_in_box = np.array(np.meshgrid(*self.x_vec, indexing="ij"))
-        par_coor_in_box = (
-            np.zeros(grid_coor_in_box.shape + (num_particle_per_pixel,))
-            + grid_coor_in_box[:, :, :, :, None]
-        )
-        par_value = np.zeros(par_coor_in_box.shape[1:])
-        par_value += field[:, :, :, None]
-        rng = np.random.default_rng(seed=self.seed)
-        rand_arr = rng.uniform(-1 / 2, 1 / 2, size=par_coor_in_box.shape)
-        rand_arr *= self.box_resol[:, None, None, None, None]
-        # first particle always at centre of grid
-        rand_arr[:, :, :, :, 0] = 0.0
-        par_coor_in_box += rand_arr
-        pos_xyz = np.array(par_coor_in_box.reshape((3, -1)).T)
-        pos_ra, pos_dec, pos_z = self.ra_dec_z_for_coord_in_box(pos_xyz)
+        pos_xyz = np.array(np.meshgrid(*self.x_vec, indexing="ij")).reshape((3, -1)).T
+        pos_ra, pos_dec, pos_z, _ = self.ra_dec_z_for_coord_in_box(pos_xyz)
         pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
-        pos_indx_z = redshift_to_freq(pos_z)
-        indx_num = [np.arange(num_pix_x), np.arange(num_pix_y), self.nu]
-        indx_bins = [center_to_edges(indx_num[i]) for i in range(3)]
-        pos_indx = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
-        map_bin, _ = np.histogramdd(pos_indx, bins=indx_bins, weights=par_value.ravel())
-        count_bin, _ = np.histogramdd(
-            pos_indx,
-            bins=indx_bins,
+        pos_indx_z = redshift_to_freq(pos_z) - self.nu.min()
+        pos_indx_array = np.array([pos_indx_1, pos_indx_2, pos_indx_z]).T
+        map_bin, _, count_bin = project_particle_to_regular_grid(
+            pos_indx_array,
+            np.array([num_pix_x, num_pix_y, self.nu.max() - self.nu.min()]),
+            np.array([num_pix_x, num_pix_y, self.nu.size]),
+            particle_mass=field.ravel(),
+            average=average,
+            compensate=False,
+            grid_scheme="nnb",
         )
-        if average:
-            map_bin[count_bin > 0] = map_bin[count_bin > 0] / count_bin[count_bin > 0]
         if mask:
             map_bin *= self.W_HI
         return map_bin, count_bin

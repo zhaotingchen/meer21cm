@@ -672,34 +672,24 @@ def test_temp_amp():
 
 
 def test_noise_power_from_map(test_W):
-    sp = PowerSpectrum(
-        ra_range=(334, 357),
-    )
-    sp.map_has_sampling = (test_W * np.ones(sp.nu.size)[None, None, :]) > 0
+    sp = PowerSpectrum(sampling_resol="auto")
     sp.data = np.random.normal(size=sp.map_has_sampling.shape) * sp.map_has_sampling
-    sp.weights_map_pixel = sp.map_has_sampling
-    nkbin = 16
-    # in Mpc
-    kmin, kmax = 0.1, 0.4
-    kbins = np.linspace(kmin, kmax, nkbin + 1)  # k-bin edges [using linear binning]
     ps = sp
     ps.downres_factor_transverse = 1.5
     ps.downres_factor_radial = 2.0
-    ps.k1dbins = kbins
     ps.box_buffkick = 10
     ps.compensate = False
-    ps.get_enclosing_box()
-    v_cell = ps.pix_resol_in_mpc**2 * ps.los_resol_in_mpc
-    ps.grid_data_to_field()
-    pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
-        "auto_power_3d_1",
-        filter_dependent_k=True,
+    noise_map, noise_weights, pix_counts = ps.grid_data_to_field()
+    renorm = power_weights_renorm(ps.weights_1)
+    sigma_n = np.zeros_like(ps.weights_1)
+    sigma_n[pix_counts > 0] = np.sqrt(1 / pix_counts[pix_counts > 0])
+    ptn = (sigma_n**2).mean() * np.prod(ps.box_resol) * renorm
+    assert np.abs((ps.auto_power_3d_1.mean() - ptn) / ptn) < 1e-2
+    gaussian_ness = np.abs(
+        (ps.auto_power_3d_1.mean() - ps.auto_power_3d_1.std())
+        / ps.auto_power_3d_1.mean()
     )
-    avg_deviation = np.sqrt(
-        ((np.abs((pdata_1d_hi - v_cell) / v_cell)) ** 2 * nmodes_hi).sum()
-        / nmodes_hi.sum()
-    )
-    assert avg_deviation < 2e-1
+    assert gaussian_ness < 0.05
 
 
 def test_cache():
@@ -734,59 +724,6 @@ def test_cache():
     ps.mean_center_2 = False
     assert ps._fourier_field_2 is None
     ps.fourier_field_2
-
-
-def test_gal_poisson_power(test_W):
-    sp = PowerSpectrum(
-        ra_range=(334, 357),
-        dec_range=(-35, -26.5),
-        sampling_resol="auto",
-        tracer_bias_2=1.0,  # just for invoke clean tracer_2
-    )
-    num_g = 10000
-    gal_pix_indx = np.random.choice(np.arange(sp.W_HI.sum()), size=num_g, replace=False)
-    has_gal = np.zeros(sp.W_HI.sum())
-    has_gal[gal_pix_indx] += 1
-    data = np.zeros(sp.W_HI.shape)
-    data[sp.W_HI] += has_gal
-    sp = PowerSpectrum(
-        ra_range=(334, 357),
-        dec_range=(-35, -26.5),
-        sampling_resol="auto",
-        tracer_bias_2=1.0,  # just for invoke clean tracer_2
-        data=data,
-        weights_map_pixel=sp.map_has_sampling,
-        map_has_sampling=sp.map_has_sampling,
-        field_from_map_data=True,
-        model_k_from_field=True,
-    )
-    sp.data = data
-    sp.weights_map_pixel = sp.map_has_sampling
-    nkbin = 16
-    # in Mpc
-    kmin, kmax = 0.1, 0.4
-    kbins = np.linspace(kmin, kmax, nkbin + 1)  # k-bin edges [using linear binning]
-    ps = sp
-    ps.downres_factor_transverse = 2.0
-    ps.downres_factor_radial = 4.0
-    ps.k1dbins = kbins
-    ps.box_buffkick = 1.5
-    ps.compensate = False
-    ps.get_enclosing_box()
-    gal_map_rg, weights_gal_rg, pix_count_rg = ps.grid_data_to_field()
-    ps.mean_center_1 = True
-    ps.unitless_1 = True
-    pdata_1d_hi, keff_hi, nmodes_hi = ps.get_1d_power(
-        "auto_power_3d_1",
-    )
-    B_samp = ps.step_sampling()
-    p_sn = ps.survey_volume / num_g * B_samp**2
-    psn_1d, _, _ = ps.get_1d_power(p_sn)
-    avg_deviation = np.sqrt(
-        ((np.abs((pdata_1d_hi - psn_1d) / psn_1d)) ** 2 * nmodes_hi).sum()
-        / nmodes_hi.sum()
-    )
-    assert avg_deviation < 2e-1
 
 
 def test_grid_gal(test_gal_fits, test_W):
@@ -854,7 +791,7 @@ def test_rot_back():
     )
     ps.W_HI = np.ones_like(ps.W_HI)
     ps.get_enclosing_box()
-    ra_test, dec_test, z_test = ps.ra_dec_z_for_coord_in_box(ps.pix_coor_in_box)
+    ra_test, dec_test, z_test, _ = ps.ra_dec_z_for_coord_in_box(ps.pix_coor_in_box)
     z_test = z_test.reshape((-1, len(ps.nu)))
     ra_test = ra_test.reshape((-1, len(ps.nu)))
     dec_test = dec_test.reshape((-1, len(ps.nu)))
@@ -896,6 +833,9 @@ def test_poisson_gal_gen():
     k1dedges = np.geomspace(0.05, 1, 21)
     ps.k1dbins = k1dedges
     psn = volume / ps.ra_gal.size
-    psn1d, _, _ = ps.get_1d_power("auto_power_3d_2")
+    psn1d, _, _ = ps.get_1d_power(
+        "auto_power_3d_2",
+        filter_dependent_k=True,
+    )
     plateau = psn1d[-5:].mean()
     assert np.abs(plateau - psn) / psn < 2.5e-1
