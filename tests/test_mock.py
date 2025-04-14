@@ -113,10 +113,13 @@ def test_matter_mock(test_W, density):
             mock.field_1 = mock.mock_matter_field
 
 
-@pytest.mark.parametrize("tracer_i, parallel_plane", [(1, True), (2, False)])
-def test_tracer_mock(tracer_i, parallel_plane):
+@pytest.mark.parametrize(
+    "tracer_i, kaiser_rsd, parallel_plane",
+    [(1, True, True), (2, True, False), (1, False, False)],
+)
+def test_tracer_mock(tracer_i, kaiser_rsd, parallel_plane):
     mock = MockSimulation(
-        kaiser_rsd=True,
+        kaiser_rsd=kaiser_rsd,
         parallel_plane=parallel_plane,
         tracer_bias_1=1.5,
         tracer_bias_2=1.5,
