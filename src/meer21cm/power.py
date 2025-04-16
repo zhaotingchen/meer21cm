@@ -1904,25 +1904,36 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         dec_sample = [
             dec,
         ] * num_p
+        nu_sample = [
+            self.nu,
+        ] * num_p
         ra_sample = np.array(ra_sample)
         dec_sample = np.array(dec_sample)
+        nu_sample = np.array(nu_sample)
         rng = np.random.default_rng(seed=self.seed)
         rand_angle = rng.uniform(
-            -self.pix_resol, self.pix_resol, size=(2,) + ra_sample[1:].shape
+            -self.pix_resol / 2, self.pix_resol / 2, size=(2,) + ra_sample[1:].shape
+        )
+        rand_nu = rng.uniform(
+            -self.freq_resol / 2, self.freq_resol / 2, size=(1,) + nu_sample[1:].shape
         )
         ra_sample[1:] += rand_angle[0]
         dec_sample[1:] += rand_angle[1]
-        ra_sample = ra_sample.ravel()
-        dec_sample = dec_sample.ravel()
-        (_, _, _, _, _, _, _, pos_arr) = minimum_enclosing_box_of_lightcone(
-            ra_sample,
-            dec_sample,
-            self.nu,
-            cosmo=self.cosmo,
-            return_coord=True,
-            buffkick=self.box_buffkick,
-            rot_mat=self.rot_mat_sky_to_box,
-        )
+        nu_sample[1:] += rand_nu[0]
+        pos_arr = []
+        for i in range(num_p):
+            (_, _, _, _, _, _, _, pos_arr_i) = minimum_enclosing_box_of_lightcone(
+                ra_sample[i],
+                dec_sample[i],
+                nu_sample[i],
+                cosmo=self.cosmo,
+                return_coord=True,
+                buffkick=self.box_buffkick,
+                rot_mat=self.rot_mat_sky_to_box,
+            )
+            pos_arr.append(pos_arr_i)
+        pos_arr = np.array(pos_arr)
+        pos_arr = pos_arr.reshape((-1, 3))
 
         self._pix_coor_in_cartesian = pos_arr
         downres = np.array(
@@ -2020,7 +2031,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         hi_weights_rg = np.array(hi_weights_rg)
         pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
         self.pixel_counts_hi_rg = pixel_counts_hi_rg
-        weights_hi = hi_weights_rg
         self.field_1 = hi_map_rg
         self.weights_1 = (pixel_counts_hi_rg > 0).astype(float)
         # self.apply_taper_to_field(1)
