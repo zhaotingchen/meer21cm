@@ -432,10 +432,7 @@ class MockSimulation(PowerSpectrum):
         """
         if self._mock_tracer_field_1 is None:
             self.get_mock_tracer_field(1)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._mock_tracer_field_1 * mean_amp
+        return self._mock_tracer_field_1
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_2", "rsd")
@@ -445,10 +442,7 @@ class MockSimulation(PowerSpectrum):
         """
         if self._mock_tracer_field_2 is None:
             self.get_mock_tracer_field(2)
-        mean_amp = self.mean_amp_2
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._mock_tracer_field_2 * mean_amp
+        return self._mock_tracer_field_2
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_1")
