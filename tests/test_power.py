@@ -809,7 +809,7 @@ def test_poisson_gal_gen():
     ps = PowerSpectrum(
         ra_range=ra_range,
         dec_range=dec_range,
-        omegahi=5.4e-4,
+        omega_hi=5.4e-4,
         mean_amp_1="average_hi_temp",
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
