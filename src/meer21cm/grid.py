@@ -378,9 +378,9 @@ def project_particle_to_regular_grid(
     indx_grid = np.array(indx_grid).T
     shift_limit = np.floor(p / 2 + 0.5)
     shift_mat = np.meshgrid(
-        np.arange(shift_limit + 1),
-        np.arange(shift_limit + 1),
-        np.arange(shift_limit + 1),
+        np.arange(-shift_limit, shift_limit + 1),
+        np.arange(-shift_limit, shift_limit + 1),
+        np.arange(-shift_limit, shift_limit + 1),
         indexing="ij",
     )
     shift_mat = np.array([shift_mat[i].ravel() for i in range(3)]).T

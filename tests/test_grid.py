@@ -135,6 +135,30 @@ def test_project_function():
         s_arr = np.linspace(-1.5, 1.5, 601)
         weight_arr = project_function(s_arr, scheme)
         assert np.abs(np.trapz(weight_arr, s_arr) - 1) < 1e-2
+        s_test = 0.25
+        func_value = project_function(s_test, scheme)
+        if scheme == "nnb":
+            assert func_value == 1
+        elif scheme == "cic":
+            assert func_value == 0.75
+        elif scheme == "tsc":
+            assert func_value == (0.75 - s_test**2)
+        elif scheme == "pcs":
+            assert func_value == (4 - 6 * s_test**2 + 3 * s_test**3) / 6
+        s_test = 0.75
+        func_value = project_function(s_test, scheme)
+        if scheme == "nnb":
+            assert func_value == 0
+        elif scheme == "cic":
+            assert func_value == 0.25
+        elif scheme == "tsc":
+            assert func_value == 0.5 * (1.5 - s_test) ** 2
+        elif scheme == "pcs":
+            assert func_value == (4 - 6 * s_test**2 + 3 * s_test**3) / 6
+        s_test = 1.5
+        func_value = project_function(s_test, scheme)
+        if scheme == "pcs":
+            assert func_value == (2 - s_test) ** 3 / 6
     scheme = "test"
     with pytest.raises(ValueError):
         weight_arr = project_function(s_arr, scheme)
