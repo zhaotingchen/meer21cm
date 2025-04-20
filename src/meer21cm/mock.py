@@ -428,47 +428,47 @@ class MockSimulation(PowerSpectrum):
     @tagging("cosmo", "nu", "mock", "box", "tracer_1", "rsd")
     def mock_tracer_field_1(self):
         """
-        The simulated tracer field 1 in redshift space.
+        The simulated tracer field 1 in redshift space with unit if ``mean_amp_1`` is given.
         """
         if self._mock_tracer_field_1 is None:
             self.get_mock_tracer_field(1)
-        return self._mock_tracer_field_1
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_1 * mean_amp
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_2", "rsd")
     def mock_tracer_field_2(self):
         """
-        The simulated tracer field 2 in redshift space.
+        The simulated tracer field 2 in redshift space with unit if ``mean_amp_2`` is given.
         """
         if self._mock_tracer_field_2 is None:
             self.get_mock_tracer_field(2)
-        return self._mock_tracer_field_2
+        mean_amp = self.mean_amp_2
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._mock_tracer_field_2 * mean_amp
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_1")
     def mock_tracer_field_1_r(self):
         """
-        The simulated tracer field 1 in real space.
+        The simulated tracer field 1 **unitsless density contrast** in real space.
         """
         if self._mock_tracer_field_1_r is None:
             self.get_mock_tracer_field_r(1)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._mock_tracer_field_1_r * mean_amp
+        return self._mock_tracer_field_1_r
 
     @property
     @tagging("cosmo", "nu", "mock", "box", "tracer_2")
     def mock_tracer_field_2_r(self):
         """
-        The simulated tracer field 2 in real space.
+        The simulated tracer field 2 **unitsless density contrast** in real space.
         """
-        mean_amp = self.mean_amp_2
         if self._mock_tracer_field_2_r is None:
             self.get_mock_tracer_field_r(2)
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._mock_tracer_field_2_r * mean_amp
+        return self._mock_tracer_field_2_r
 
     def get_mock_tracer_field_r(self, tracer_i):
         delta_x = self.get_mock_field_r(bias=getattr(self, f"tracer_bias_{tracer_i}"))
