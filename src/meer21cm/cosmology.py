@@ -270,7 +270,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     def __init__(
         self,
         backend="camb",
-        omegahi=5e-4,
+        omega_hi=5e-4,
         **params,
     ):
         # super().__init__(**params)
@@ -287,7 +287,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         else:
             self.cosmo = params["cosmo"]
         self._matter_power_spectrum_fnc = None
-        self.omegahi = omegahi
+        self.omega_hi = omega_hi
 
     @property
     @tagging("nu")
@@ -495,8 +495,20 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         """
         The average HI brightness temperature in Kelvin.
         """
-        tbar = omega_hi_to_average_temp(self.omegahi, z=self.z, cosmo=self)
+        tbar = omega_hi_to_average_temp(self.omega_hi, z=self.z, cosmo=self)
         return tbar
+
+    @property
+    def omega_hi(self):
+        """
+        The HI density at a given redshift ``self.z``,
+        over the critical density of the Universe at z=0.
+        """
+        return self._omega_hi
+
+    @omega_hi.setter
+    def omega_hi(self, value):
+        self._omega_hi = value
 
     @Specification.cosmo.setter
     def cosmo(self, value):

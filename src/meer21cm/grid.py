@@ -178,7 +178,7 @@ def fourier_window_for_assignment(
         "Accurate Estimators of Correlation Functions in Fourier Space",
         https://ui.adsabs.harvard.edu/abs/2016MNRAS.460.3624S.
     """
-    p = float(allowed_window_scheme.index(window) + 1) / 2
+    p = float(allowed_window_scheme.index(window) + 1)
     wx, wy, wz = [np.sinc(np.fft.fftfreq(num_mesh[i])) for i in range(3)]
     window_in_fourier = (wx[:, None, None] * wy[None, :, None] * wz[None, None, :]) ** p
     return window_in_fourier
@@ -378,9 +378,9 @@ def project_particle_to_regular_grid(
     indx_grid = np.array(indx_grid).T
     shift_limit = np.floor(p / 2 + 0.5)
     shift_mat = np.meshgrid(
-        np.arange(shift_limit + 1),
-        np.arange(shift_limit + 1),
-        np.arange(shift_limit + 1),
+        np.arange(-shift_limit, shift_limit + 1),
+        np.arange(-shift_limit, shift_limit + 1),
+        np.arange(-shift_limit, shift_limit + 1),
         indexing="ij",
     )
     shift_mat = np.array([shift_mat[i].ravel() for i in range(3)]).T
