@@ -13,8 +13,6 @@ from scipy.signal import windows
 from meer21cm.util import (
     tagging,
     radec_to_indx,
-    find_ch_id,
-    center_to_edges,
     redshift_to_freq,
 )
 from meer21cm.dataanalysis import Specification
@@ -41,6 +39,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         include_sky_sampling=[True, False],
         compensate=[True, True],
         kaiser_rsd=True,
+        sigma_z_1=0.0,
+        sigma_z_2=0.0,
         **params,
     ):
         super().__init__(**params)
@@ -80,6 +80,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.kaiser_rsd = kaiser_rsd
         self._compensate = [None, None]  # for initialization
         self.compensate = compensate
+        self.sigma_z_1 = sigma_z_1
+        self.sigma_z_2 = sigma_z_2
 
     @property
     def kaiser_rsd(self):
@@ -122,6 +124,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.clean_cache(self.tracer_1_dep_attr)
 
     @property
+    def sigma_z_1(self):
+        """
+        The redshift error of the first tracer.
+        """
+        return self._sigma_z_1
+
+    @sigma_z_1.setter
+    def sigma_z_1(self, value):
+        self._sigma_z_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @property
     def sigma_v_2(self):
         """
         The velocity dispersion of the second tracer.
@@ -131,6 +146,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @sigma_v_2.setter
     def sigma_v_2(self, value):
         self._sigma_v_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def sigma_z_2(self):
+        """
+        The redshift error of the second tracer.
+        """
+        return self._sigma_z_2
+
+    @sigma_z_2.setter
+    def sigma_z_2(self, value):
+        self._sigma_z_2 = value
         if "tracer_2_dep_attr" in dir(self):
             self.clean_cache(self.tracer_2_dep_attr)
 
@@ -177,12 +205,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
             if "tracer_2_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_2_dep_attr)
 
-    def fog_lorentz(self, sigma_v, kmode=None, mumode=None):
+    def fog_gaussian(self, sigma_r, kmode=None, mumode=None):
         r"""
-        The Lorentzian finger-of-god profile.
+        The Gaussian finger-of-god profile.
 
         .. math::
-            {\rm FoG} = \sqrt{1/(1+(\sigma_v k_\parallel/H_0)^2)}
+            {\rm FoG} = {\rm exp}(-(\sigma_v k_\parallel/H)^2/2)
 
         Note the power spectrum has FoG squared with the two FoG terms that can
         be different for two tracers.
@@ -205,12 +233,43 @@ class ModelPowerSpectrum(CosmologyCalculator):
             mumode = self.mumode
         if kmode is None:
             kmode = self.kmode
-        H_0 = self.H0.to("km s^-1 Mpc^-1").value
         k_parallel = kmode * mumode
-        fog = np.sqrt(1 / (1 + (sigma_v * k_parallel / H_0) ** 2))
+        fog = np.exp(-((sigma_r * k_parallel) ** 2) / 2)
         return fog
 
-    def fog_term(self, sigma_v, kmode=None, mumode=None):
+    def fog_lorentz(self, sigma_r, kmode=None, mumode=None):
+        r"""
+        The Lorentzian finger-of-god profile.
+
+        .. math::
+            {\rm FoG} = \sqrt{1/(1+(\sigma_v k_\parallel/H)^2)}
+
+        Note the power spectrum has FoG squared with the two FoG terms that can
+        be different for two tracers.
+
+        Parameters
+        ----------
+        sigma_v: float.
+            The velocity dispersion.
+        kmode: float, None.
+            The mode of 3D k in Mpc-1. If None, self.kmode will be used.
+        mumode: float, None.
+            The mu values of each 3D k-mode. In None, self.mumode will be used.
+
+        Returns
+        -------
+        fog: float.
+            The FoG term.
+        """
+        if mumode is None:
+            mumode = self.mumode
+        if kmode is None:
+            kmode = self.kmode
+        k_parallel = kmode * mumode
+        fog = np.sqrt(1 / (1 + (sigma_r * k_parallel) ** 2))
+        return fog
+
+    def fog_term(self, sigma_r, kmode=None, mumode=None):
         """
         The FoG term for the model calculation.
         It reads the profile type from the attribute ``fog_profile``.
@@ -229,7 +288,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         fog: float.
             The FoG term.
         """
-        return getattr(self, "fog_" + self.fog_profile)(sigma_v, kmode, mumode)
+        return getattr(self, "fog_" + self.fog_profile)(sigma_r, kmode, mumode)
 
     @property
     def tracer_bias_1(self):
@@ -460,8 +519,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         power_in_redshift_space = (
             power_in_real_space
             * (r + (beta1 + beta2) * mumode**2 + beta1 * beta2 * mumode**4)
-            * self.fog_term(sigmav_1, mumode=mumode)
-            * self.fog_term(sigmav_2, mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigmav_1), mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigmav_2), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_1), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_2), mumode=mumode)
         )
         return power_in_redshift_space
 

@@ -586,3 +586,41 @@ class CosmologyCalculator(Specification, CosmologyParameters):
             self.clean_cache(self.field_2_dep_attr)
         if "tracer_2_dep_attr" in dir(self):
             self.clean_cache(self.tracer_2_dep_attr)
+
+    def deltaz_to_deltar(self, delta_z):
+        """
+        Convert a redshift interval delta_z to a comoving distance interval delta_r.
+
+        Note that, the usual redshift error defined in galaxy survey is usually delta_z / (1+z).
+
+        Parameters
+        ----------
+        delta_z: float.
+            The redshift interval.
+
+        Returns
+        -------
+        delta_r: float.
+            The comoving distance interval in Mpc.
+        """
+        H_z = self.H(self.z)
+        delta_r = (delta_z * astropy.constants.c / H_z).to("Mpc").value
+        return delta_r
+
+    def deltav_to_deltar(self, delta_v):
+        """
+        Convert a velocity interval delta_v to a comoving distance interval delta_r.
+
+        Parameters
+        ----------
+        delta_v: float.
+            The velocity interval in km/s.
+
+        Returns
+        -------
+        delta_r: float.
+            The comoving distance interval in Mpc.
+        """
+        H_z = self.H(self.z)
+        delta_r = (1 + self.z) * delta_v / H_z.to("km s^-1 Mpc^-1").value
+        return delta_r

@@ -419,7 +419,9 @@ class MockSimulation(PowerSpectrum):
             delta_k = np.fft.fftn(delta_x, norm="forward")
             delta_k += getattr(self, f"mock_kaiser_field_k_{field}")
             mumode = self.mumode
-            fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=mumode)
+            fog = self.fog_term(
+                self.deltav_to_deltar(sigma_v), kmode=self.kmode, mumode=mumode
+            )
             delta_k *= fog
             delta_x = np.fft.ifftn(delta_k, norm="forward").real
         return delta_x
@@ -491,7 +493,9 @@ class MockSimulation(PowerSpectrum):
                 self.matter_power_spectrum_fnc(self.kmode)
                 * (tracer_bias + self.f_growth * self.mumode**2) ** 2
             )
-            fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=self.mumode)
+            fog = self.fog_term(
+                self.deltav_to_deltar(sigma_v), kmode=self.kmode, mumode=self.mumode
+            )
             delta_x = self.get_mock_field_from_power(power_array * fog**2)
         else:
             delta_x = getattr(self, f"mock_tracer_field_{tracer_i}_r")
