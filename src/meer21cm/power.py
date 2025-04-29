@@ -14,6 +14,7 @@ from meer21cm.util import (
     tagging,
     radec_to_indx,
     redshift_to_freq,
+    freq_to_redshift,
 )
 from meer21cm.dataanalysis import Specification
 import healpy as hp
@@ -1592,6 +1593,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         seed=None,
         kperpbins=None,
         kparabins=None,
+        flat_sky=False,
         **params,
     ):
         if seed is None:
@@ -1660,6 +1662,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_z_len",
             "_rot_mat_sky_to_box",
             "_pix_coor_in_cartesian",
+            "_counts_in_box",
+            "_flat_sky",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -1670,6 +1674,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.get_enclosing_box()
         self.grid_scheme = grid_scheme
         self.interlace_shift = interlace_shift
+        self.flat_sky = flat_sky
 
     @property
     def num_particle_per_pixel(self):
@@ -1707,6 +1712,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_x_start",
             "_y_start",
             "_z_start",
+            "_counts_in_box",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -1723,6 +1729,40 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_x_start",
             "_y_start",
             "_z_start",
+            "_counts_in_box",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def counts_in_box(self):
+        """
+        The counts of the map cube voxels in the rectangular box.
+        """
+        if self._counts_in_box is None:
+            self._counts_in_box = self.get_counts_in_box()
+        return self._counts_in_box
+
+    @property
+    def flat_sky(self):
+        """
+        Whether to use flat sky approximation.
+        If True, no proper projection and sky rotation is considered.
+        Instead, the sky map cube is assumed to be a rectangular grid
+        with equal voxel size specified by ``pix_resol_in_mpc`` and
+        ``los_resol_in_mpc``.
+        """
+        return self._flat_sky
+
+    @flat_sky.setter
+    def flat_sky(self, value):
+        self._flat_sky = bool(value)
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_counts_in_box",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -1921,11 +1961,30 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return self.pix_coor_in_cartesian - self.box_origin[None, :]
 
+    def use_flat_sky_box(self):
+        """
+        Use flat sky approximation to calculate the box dimensions.
+        """
+        self.box_len = np.array(self.data.shape, dtype="float") * np.array(
+            [
+                self.pix_resol_in_mpc,
+                self.pix_resol_in_mpc,
+                self.los_resol_in_mpc,
+            ]
+        )
+        self.box_ndim = np.array(self.data.shape)
+        self.propagate_field_k_to_model()
+
     def get_enclosing_box(self, rot_mat=None):
         """
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
         """
+        if self.flat_sky:
+            self.use_flat_sky_box()
+            if self.model_k_from_field:
+                self.propagate_field_k_to_model()
+            return 1
         ra = self.ra_map.copy()
         dec = self.dec_map.copy()
         map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
@@ -2019,7 +2078,28 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
-    def grid_data_to_field(self, flat_sky=False):
+    def get_counts_in_box(self):
+        """
+        Grid the counts of the map cube voxels into the rectangular box, and return the
+        effective counts per rectangular grid.
+        """
+        if self.flat_sky:
+            counts_in_grids = self.w_HI
+        else:
+            pix_coor_orig = self.pix_coor_in_box.reshape(
+                (self.num_particle_per_pixel, -1)
+            )[0].reshape((-1, 3))
+            counts_in_grids, _, _ = project_particle_to_regular_grid(
+                pix_coor_orig,
+                self.box_len,
+                self.box_ndim,
+                grid_scheme=self.grid_scheme,
+                particle_mass=self.w_HI[self.W_HI].ravel(),
+                compensate=False,  # compensate should be at model level
+            )
+        return counts_in_grids
+
+    def grid_data_to_field(self, flat_sky=None):
         """
         Grid the stored data map to a rectangular grid field.
 
@@ -2033,18 +2113,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
         The gridded field is stored as field_1 and the weights are stored as weights_1.
         """
+        if flat_sky is None:
+            flat_sky = self.flat_sky
         if flat_sky:
             self.field_1 = self.data
-            self.weights_1 = self.W_HI.astype(float)
-            self.box_len = np.array(self.data.shape, dtype="float") * np.array(
-                [
-                    self.pix_resol_in_mpc,
-                    self.pix_resol_in_mpc,
-                    self.los_resol_in_mpc,
-                ]
-            )
-            self.box_ndim = np.array(self.data.shape)
-            self.propagate_field_k_to_model()
+            self.weights_1 = self.w_HI.astype(float)
+            self.use_flat_sky_box()
             self.mean_center_1 = False
             self.unitless_1 = False
             self.include_sky_sampling = [True, False]
@@ -2090,10 +2164,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
-        pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
-        self.pixel_counts_hi_rg = pixel_counts_hi_rg
+        # pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
+        # self.pixel_counts_hi_rg = pixel_counts_hi_rg
         self.field_1 = hi_map_rg
-        self.weights_1 = (pixel_counts_hi_rg > 0).astype(float)
+        self.weights_1 = (self.counts_in_box).astype(float)
         # self.apply_taper_to_field(1)
         self.unitless_1 = False
         include_beam = np.array(self.include_beam)
@@ -2104,25 +2178,41 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.include_sky_sampling = include_sky_sampling
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
-    def grid_gal_to_field(self, radecfreq=None):
+    def grid_gal_to_field(self, radecfreq=None, flat_sky=None):
         if self.box_origin[0] is None:
             self.get_enclosing_box()
+        if flat_sky is None:
+            flat_sky = self.flat_sky
         if radecfreq is None:
             ra_gal = self.ra_gal
             dec_gal = self.dec_gal
             freq_gal = self.freq_gal
         else:
             ra_gal, dec_gal, freq_gal = radecfreq
-        (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
-            ra_gal,
-            dec_gal,
-            freq_gal,
-            cosmo=self.cosmo,
-            return_coord=True,
-            tile=False,
-            rot_mat=self.rot_mat_sky_to_box,
-        )
-        gal_pos_in_box = gal_pos_arr - self.box_origin[None, :]
+        if flat_sky:
+            z_gal = freq_to_redshift(freq_gal)
+            self.use_flat_sky_box()
+            pos_indx_1, pos_indx_2 = radec_to_indx(
+                ra_gal, dec_gal, self.wproj, to_int=False
+            )
+            gal_pos_in_box = np.zeros((ra_gal.size, 3))
+            gal_pos_in_box[:, 0] = pos_indx_1 / self.num_pix_x * self.box_len[0]
+            gal_pos_in_box[:, 1] = pos_indx_2 / self.num_pix_y * self.box_len[1]
+            gal_pos_in_box[:, 2] = (
+                self.comoving_distance(z_gal).value
+                - self.comoving_distance(self.z_ch.min()).value
+            )
+        else:
+            (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
+                ra_gal,
+                dec_gal,
+                freq_gal,
+                cosmo=self.cosmo,
+                return_coord=True,
+                tile=False,
+                rot_mat=self.rot_mat_sky_to_box,
+            )
+            gal_pos_in_box = gal_pos_arr - self.box_origin[None, :]
         (
             gal_map_rg,
             gal_weights_rg,
@@ -2149,27 +2239,27 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_map_rg2,
             self.interlace_shift,
         )
-        pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
-            0
-        ].reshape((-1, 3))
+        # pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
+        #    0
+        # ].reshape((-1, 3))
         # get which pixels in the rg box are not covered by the lightcone
-        _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
-            pix_coor_orig,
-            self.box_len,
-            self.box_ndim,
-            grid_scheme=self.grid_scheme,
-            particle_mass=self.data[self.W_HI].ravel(),
-            particle_weights=self.w_HI[self.W_HI].ravel(),
-            compensate=False,
-        )
+        # _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
+        #    pix_coor_orig,
+        #    self.box_len,
+        #    self.box_ndim,
+        #    grid_scheme=self.grid_scheme,
+        #    particle_mass=self.data[self.W_HI].ravel(),
+        #    particle_weights=self.w_HI[self.W_HI].ravel(),
+        #    compensate=False,
+        # )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
         self.field_2 = gal_map_rg
         # only pixels sampled by the lightcone is used
-        weights_g = pixel_counts_hi_rg > 0
+        weights_g = (self.counts_in_box > 0).astype(float)
         self.weights_2 = weights_g
-        self.apply_taper_to_field(2)
+        # self.apply_taper_to_field(2)
         self.mean_center_2 = True
         self.unitless_2 = True
         include_beam = np.array(self.include_beam)

@@ -744,6 +744,7 @@ def test_grid_gal(test_gal_fits, test_W):
     )
     ps.read_gal_cat()
     ps.grid_gal_to_field()
+    ps.apply_taper_to_field(2)
 
 
 def test_shot_noise_tapering():

@@ -60,7 +60,7 @@ class MockSimulation(PowerSpectrum):
         target_relative_to_num_g=1.5,
         num_discrete_source=100,
         discrete_base_field=2,
-        strict_num_source=True,
+        strict_num_source=False,
         auto_relative=False,
         highres_sim=None,
         parallel_plane=True,
@@ -100,6 +100,9 @@ class MockSimulation(PowerSpectrum):
         for attr in init_attr:
             setattr(self, attr, None)
         self.target_relative_to_num_g = target_relative_to_num_g
+        if self.flat_sky:
+            print("Ignoring target_relative_to_num_g, auto setting to 1/W_HI.mean()")
+            self.target_relative_to_num_g = 1 / self.W_HI.mean()
         self.num_discrete_source = num_discrete_source
         self.discrete_base_field = discrete_base_field
         self.strict_num_source = strict_num_source
@@ -108,7 +111,7 @@ class MockSimulation(PowerSpectrum):
         self.parallel_plane = parallel_plane
         self.rsd_from_field = rsd_from_field
         if not rsd_from_field and not parallel_plane:
-            warnings.warn("if rsd_from_field is False, parallel_plane will be ignored")
+            warnings.warn("rsd_from_field is False, parallel_plane will be ignored")
 
     @property
     def highres_sim(self):
@@ -603,20 +606,37 @@ class MockSimulation(PowerSpectrum):
         return self.mock_tracer_position_in_radecz[3]
 
     def get_mock_tracer_position_in_radecz(self):
-        (
-            ra_mock_tracer,
-            dec_mock_tracer,
-            z_mock_tracer,
-            tracer_comov_dist,
-        ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
+        if self.flat_sky:
+            self._mock_tracer_comov_dist = (
+                self.mock_tracer_position_in_box[:, -1]
+                + self.comoving_distance(self.z_ch.min()).value
+            )
+            z_mock_tracer = self.z_as_func_of_comov_dist(self._mock_tracer_comov_dist)
+            pos_indx_1 = (
+                self.mock_tracer_position_in_box[:, 0]
+                / self.box_len[0]
+                * self.num_pix_x
+            )
+            pos_indx_2 = (
+                self.mock_tracer_position_in_box[:, 1]
+                / self.box_len[1]
+                * self.num_pix_y
+            )
+            ra_mock_tracer, dec_mock_tracer = get_wcs_coor(
+                self.wproj, pos_indx_1, pos_indx_2
+            )
+        else:
+            (
+                ra_mock_tracer,
+                dec_mock_tracer,
+                z_mock_tracer,
+                tracer_comov_dist,
+            ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
+            self._mock_tracer_comov_dist = tracer_comov_dist
         freq_tracer = redshift_to_freq(z_mock_tracer)
         tracer_ch_id = find_ch_id(freq_tracer, self.nu)
         # num_ch id is for tracer outside the frequency range
         z_sel = tracer_ch_id < len(self.nu)
-        # ra_temp = ra_mock_tracer.copy()
-        # ra_temp[ra_temp > 180] -= 360
-        # ra_range = np.array(self.ra_range)
-        # ra_range[ra_range > 180] -= 360
         radec_sel = (
             angle_in_range(ra_mock_tracer, self.ra_range[0], self.ra_range[1])
             * (dec_mock_tracer > self.dec_range[0])
@@ -644,7 +664,6 @@ class MockSimulation(PowerSpectrum):
             z_mock_tracer,
             mock_inside_range,
         )
-        self._mock_tracer_comov_dist = tracer_comov_dist
 
     def propagate_mock_tracer_to_gal_cat(self, trim=True):
         """
@@ -679,14 +698,37 @@ class MockSimulation(PowerSpectrum):
             wproj_hires = create_udres_wproj(self.wproj, highres_sim)
             num_pix_x = self.num_pix_x * highres_sim
             num_pix_y = self.num_pix_y * highres_sim
-        map_highres, map_counts = self.grid_field_to_sky_map(
-            field,
-            average=average,
-            mask=False,
-            wproj=wproj_hires,
-            num_pix_x=num_pix_x,
-            num_pix_y=num_pix_y,
-        )
+        if self.flat_sky:
+            pad = highres_sim
+            if highres_sim is None:
+                pad = 1
+            map_highres = np.zeros(
+                (
+                    self.num_pix_x,
+                    pad,
+                    self.num_pix_y,
+                    pad,
+                    self.nu.size,
+                )
+            )
+            map_highres += field[:, None, :, None, :]
+            map_highres = map_highres.reshape(
+                (
+                    num_pix_x,
+                    num_pix_y,
+                    -1,
+                )
+            )
+            map_counts = np.ones_like(map_highres)
+        else:
+            map_highres, map_counts = self.grid_field_to_sky_map(
+                field,
+                average=average,
+                mask=False,
+                wproj=wproj_hires,
+                num_pix_x=num_pix_x,
+                num_pix_y=num_pix_y,
+            )
         # if highres_sim is None and not beam:
         #    return map_highres
         if beam:
