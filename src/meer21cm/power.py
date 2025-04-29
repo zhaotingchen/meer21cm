@@ -235,7 +235,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if kmode is None:
             kmode = self.kmode
         k_parallel = kmode * mumode
-        fog = np.exp(-((sigma_r * k_parallel) ** 2) / 2)
+        fog = np.exp(-((sigma_r * k_parallel) ** 2))
         return fog
 
     def fog_lorentz(self, sigma_r, kmode=None, mumode=None):
