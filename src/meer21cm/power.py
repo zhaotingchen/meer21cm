@@ -235,7 +235,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if kmode is None:
             kmode = self.kmode
         k_parallel = kmode * mumode
-        fog = np.exp(-((sigma_r * k_parallel) ** 2))
+        fog = np.exp(-((sigma_r * k_parallel) ** 2 / 2))
         return fog
 
     def fog_lorentz(self, sigma_r, kmode=None, mumode=None):
@@ -1594,6 +1594,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         kperpbins=None,
         kparabins=None,
         flat_sky=False,
+        flat_sky_padding=[0, 0, 0],
         **params,
     ):
         if seed is None:
@@ -1675,6 +1676,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.grid_scheme = grid_scheme
         self.interlace_shift = interlace_shift
         self.flat_sky = flat_sky
+        self.flat_sky_padding = flat_sky_padding
 
     @property
     def num_particle_per_pixel(self):
@@ -1757,6 +1759,30 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     @flat_sky.setter
     def flat_sky(self, value):
         self._flat_sky = bool(value)
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_counts_in_box",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def flat_sky_padding(self):
+        """
+        Pad the rectangular box in the flat sky approximation.
+
+        The input should be a list of 3 integers, corresponding to number of padding cells along
+        each dimension in both directions.
+        For example, [1,1,1] will pad 2x2x2 cells.
+        """
+        return self._flat_sky_padding
+
+    @flat_sky_padding.setter
+    def flat_sky_padding(self, value):
+        self._flat_sky_padding = value
         # clean cache
         init_attr = [
             "_x_start",
@@ -1965,14 +1991,14 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         Use flat sky approximation to calculate the box dimensions.
         """
-        self.box_len = np.array(self.data.shape, dtype="float") * np.array(
+        self.box_ndim = np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding)
+        self.box_len = np.array(self.box_ndim) * np.array(
             [
                 self.pix_resol_in_mpc,
                 self.pix_resol_in_mpc,
                 self.los_resol_in_mpc,
             ]
         )
-        self.box_ndim = np.array(self.data.shape)
         self.propagate_field_k_to_model()
 
     def get_enclosing_box(self, rot_mat=None):
