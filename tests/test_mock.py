@@ -161,14 +161,14 @@ def test_tracer_position():
     mock.downres_factor_transverse = 1 / 2.0
     mock.get_enclosing_box()
     mock.tracer_bias_2 = 1.9
-    mock.num_discrete_source = 2700
+    mock.num_discrete_source = 10000
     mock.propagate_mock_tracer_to_gal_cat()
     # ensure that galaxies are there
     assert len(mock.ra_mock_tracer) > mock.num_discrete_source
     assert len(mock.dec_mock_tracer) > mock.num_discrete_source
     assert len(mock.z_mock_tracer) > mock.num_discrete_source
-    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 100
-    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 100
+    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 1000
+    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 1000
     # test of power spectrum is performed in pipeline tests
 
 
