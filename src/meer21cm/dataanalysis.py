@@ -166,6 +166,7 @@ class Specification:
         self.beam_type = None
         self.beam_model = beam_model
         self._beam_image = None
+        self._z_as_func_of_comov_dist = None
 
     @property
     def map_unit_type(self):
@@ -651,19 +652,21 @@ class Specification:
         self.w_HI = w_HI
 
     @property
+    @tagging("cosmo")
     def z_as_func_of_comov_dist(self):
         """
         Returns a function that returns the redshift
         for input comoving distance.
         """
-        zarr = np.linspace(
-            self.z_ch.min() * 0.9,
-            self.z_ch.max() * 1.1,
-            501,
-        )
+        if self._z_as_func_of_comov_dist is None:
+            self.get_z_as_func_of_comov_dist()
+        return self._z_as_func_of_comov_dist
+
+    def get_z_as_func_of_comov_dist(self):
+        zarr = np.linspace(0, 6.0, 1001)
         xarr = self.comoving_distance(zarr).value
-        func = interp1d(xarr, zarr, bounds_error=False, fill_value="extrapolate")
-        return func
+        func = interp1d(xarr, zarr)
+        self._z_as_func_of_comov_dist = func
 
     @property
     def survey_volume(self):
