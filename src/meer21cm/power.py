@@ -1987,11 +1987,13 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return self.pix_coor_in_cartesian - self.box_origin[None, :]
 
-    def use_flat_sky_box(self):
+    def use_flat_sky_box(self, flat_sky_padding=None):
         """
         Use flat sky approximation to calculate the box dimensions.
         """
-        self.box_ndim = np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding)
+        if flat_sky_padding is None:
+            flat_sky_padding = self.flat_sky_padding
+        self.box_ndim = np.array(self.data.shape) + 2 * np.array(flat_sky_padding)
         self.box_len = np.array(self.box_ndim) * np.array(
             [
                 self.pix_resol_in_mpc,
@@ -2144,7 +2146,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if flat_sky:
             self.field_1 = self.data
             self.weights_1 = self.w_HI.astype(float)
-            self.use_flat_sky_box()
+            self.use_flat_sky_box(flat_sky_padding=[0, 0, 0])
             self.mean_center_1 = False
             self.unitless_1 = False
             self.include_sky_sampling = [True, False]
@@ -2217,7 +2219,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             ra_gal, dec_gal, freq_gal = radecfreq
         if flat_sky:
             z_gal = freq_to_redshift(freq_gal)
-            self.use_flat_sky_box()
+            self.use_flat_sky_box(flat_sky_padding=[0, 0, 0])
             pos_indx_1, pos_indx_2 = radec_to_indx(
                 ra_gal, dec_gal, self.wproj, to_int=False
             )
