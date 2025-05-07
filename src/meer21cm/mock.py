@@ -57,11 +57,8 @@ class MockSimulation(PowerSpectrum):
         self,
         density="lognormal",
         relative_resol_to_pix=0.5,
-        target_relative_to_num_g=1.5,
         num_discrete_source=100,
         discrete_base_field=2,
-        strict_num_source=True,
-        auto_relative=False,
         highres_sim=None,
         parallel_plane=True,
         rsd_from_field=False,
@@ -99,16 +96,29 @@ class MockSimulation(PowerSpectrum):
         ]
         for attr in init_attr:
             setattr(self, attr, None)
-        self.target_relative_to_num_g = target_relative_to_num_g
         self.num_discrete_source = num_discrete_source
         self.discrete_base_field = discrete_base_field
-        self.strict_num_source = strict_num_source
-        self.auto_relative = auto_relative
         self.highres_sim = highres_sim
         self.parallel_plane = parallel_plane
         self.rsd_from_field = rsd_from_field
         if not rsd_from_field and not parallel_plane:
-            warnings.warn("if rsd_from_field is False, parallel_plane will be ignored")
+            warnings.warn("rsd_from_field is False, parallel_plane will be ignored")
+
+    @property
+    def tot_num_source_in_box(self):
+        """
+        The total number of mock sources in the box needed to achieve
+        ``self.num_discrete_source`` number of sources in the survey volume.
+        """
+        if self.flat_sky:
+            target_relative_to_num_g = 1 / self.W_HI.mean()
+            ratio = np.prod(
+                np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding)
+            ) / np.prod(self.data.shape)
+            return self.num_discrete_source * ratio * target_relative_to_num_g
+        else:
+            ratio = np.prod(self.box_len) / self.survey_volume
+            return self.num_discrete_source * ratio
 
     @property
     def highres_sim(self):
@@ -123,31 +133,6 @@ class MockSimulation(PowerSpectrum):
     @highres_sim.setter
     def highres_sim(self, value):
         self._highres_sim = value
-
-    @property
-    def strict_num_source(self):
-        """
-        Whether the number of galaxies simulated in the galaxy catalogue,
-        i.e. the size of ``self.ra_gal.size``, strictly equals to
-        ``self.num_discrete_source``. Note that due to Poisson sampling and
-        the fact that survey volume is smaller than the enclosing box,
-        the number of mock tracers will be larger than the input
-        ``self.num_discrete_source``. The exact number is determined by
-        ``self.num_discrete_source * self.target_relative_to_num_g``.
-
-        The mock tracers inside the specified ``self.W_HI`` range will be counted
-        and propagate into the galaxy catalogue. If ``strict_num_source`` is true,
-        and if number of tracers inside the range is larger than
-        ``self.num_discrete_source``, a random sampling is performed to trim off
-        the excess number of sources. Doing this may result in small mismatch between
-        the input and output power spectrum.
-        """
-        return self._strict_num_source
-
-    @strict_num_source.setter
-    def strict_num_source(self, value):
-        self._strict_num_source = value
-        self.clean_cache(self.discrete_dep_attr)
 
     @property
     def parallel_plane(self):
@@ -176,40 +161,6 @@ class MockSimulation(PowerSpectrum):
     def rsd_from_field(self, value):
         self._rsd_from_field = value
         self.clean_cache(self.rsd_dep_attr)
-
-    @property
-    def auto_relative(self):
-        """
-        Whether ``target_relative_to_num_g`` is automatically calculated.
-        If True, it will be set to the ratio between the volume of the
-        enclosing box and the survey volume.
-        """
-        return self._auto_relative
-
-    @auto_relative.setter
-    def auto_relative(self, value):
-        self._auto_relative = value
-        self.clean_cache(self.discrete_dep_attr)
-
-    @property
-    def target_relative_to_num_g(self):
-        """
-        The target number of discrete tracers to simulate
-        at the field level comparing to the desired number
-        ``num_discrete_source``. Needs to be larger than 1
-        because some tracers are trimmed off when projecting
-        the field to the sky map.
-
-        Note that the random sampling does not exactly return
-        ``target_relative_to_num_g * num_discrete_source`` number
-        of tracers but a very close value.
-        """
-        return self._target_relative_to_num_g
-
-    @target_relative_to_num_g.setter
-    def target_relative_to_num_g(self, value):
-        self._target_relative_to_num_g = value
-        self.clean_cache(self.discrete_dep_attr)
 
     @property
     def num_discrete_source(self):
@@ -419,7 +370,9 @@ class MockSimulation(PowerSpectrum):
             delta_k = np.fft.fftn(delta_x, norm="forward")
             delta_k += getattr(self, f"mock_kaiser_field_k_{field}")
             mumode = self.mumode
-            fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=mumode)
+            fog = self.fog_term(
+                self.deltav_to_deltar(sigma_v), kmode=self.kmode, mumode=mumode
+            )
             delta_k *= fog
             delta_x = np.fft.ifftn(delta_k, norm="forward").real
         return delta_x
@@ -491,7 +444,9 @@ class MockSimulation(PowerSpectrum):
                 self.matter_power_spectrum_fnc(self.kmode)
                 * (tracer_bias + self.f_growth * self.mumode**2) ** 2
             )
-            fog = self.fog_term(sigma_v, kmode=self.kmode, mumode=self.mumode)
+            fog = self.fog_term(
+                self.deltav_to_deltar(sigma_v), kmode=self.kmode, mumode=self.mumode
+            )
             delta_x = self.get_mock_field_from_power(power_array * fog**2)
         else:
             delta_x = getattr(self, f"mock_tracer_field_{tracer_i}_r")
@@ -525,10 +480,7 @@ class MockSimulation(PowerSpectrum):
         #    pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
         pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
         pos_value[pos_value < 0] = 0
-        if self.auto_relative:
-            print("automatically reset target_relative_to_num_g")
-            self.target_relative_to_num_g = np.prod(self.box_len) / self.survey_volume
-        num_g = self.target_relative_to_num_g * self.num_discrete_source
+        num_g = self.tot_num_source_in_box
         pos_value /= pos_value.sum() / num_g
         # taken from powerbox
         n_per_cell = rng.poisson(pos_value)
@@ -542,6 +494,10 @@ class MockSimulation(PowerSpectrum):
             rng.uniform(-0.5, 0.5, size=(np.sum(n_per_cell), len(self.box_ndim)))
             * self.box_resol[None, :]
         )
+        if self.flat_sky:
+            tracer_positions -= (
+                np.array(self.flat_sky_padding) * np.array(self.box_resol)
+            )[None, :]
         # for some reason I can not get this to work
         # if self.rsd_from_field and self.kaiser_rsd:
         #    box_coord_l = self._box_coord_l
@@ -599,40 +555,43 @@ class MockSimulation(PowerSpectrum):
         return self.mock_tracer_position_in_radecz[3]
 
     def get_mock_tracer_position_in_radecz(self):
-        (
-            ra_mock_tracer,
-            dec_mock_tracer,
-            z_mock_tracer,
-            tracer_comov_dist,
-        ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
+        if self.flat_sky:
+            self._mock_tracer_comov_dist = (
+                self.mock_tracer_position_in_box[:, -1]
+                + self.comoving_distance(self.z_ch.min()).value
+            )
+            z_mock_tracer = self.z_as_func_of_comov_dist(self._mock_tracer_comov_dist)
+            pos_indx_1 = (
+                self.mock_tracer_position_in_box[:, 0]
+                / self.box_len[0]
+                * self.num_pix_x
+            )
+            pos_indx_2 = (
+                self.mock_tracer_position_in_box[:, 1]
+                / self.box_len[1]
+                * self.num_pix_y
+            )
+            ra_mock_tracer, dec_mock_tracer = get_wcs_coor(
+                self.wproj, pos_indx_1, pos_indx_2
+            )
+        else:
+            (
+                ra_mock_tracer,
+                dec_mock_tracer,
+                z_mock_tracer,
+                tracer_comov_dist,
+            ) = self.ra_dec_z_for_coord_in_box(self.mock_tracer_position_in_box)
+            self._mock_tracer_comov_dist = tracer_comov_dist
         freq_tracer = redshift_to_freq(z_mock_tracer)
         tracer_ch_id = find_ch_id(freq_tracer, self.nu)
         # num_ch id is for tracer outside the frequency range
         z_sel = tracer_ch_id < len(self.nu)
-        # ra_temp = ra_mock_tracer.copy()
-        # ra_temp[ra_temp > 180] -= 360
-        # ra_range = np.array(self.ra_range)
-        # ra_range[ra_range > 180] -= 360
         radec_sel = (
             angle_in_range(ra_mock_tracer, self.ra_range[0], self.ra_range[1])
             * (dec_mock_tracer > self.dec_range[0])
             * (dec_mock_tracer < self.dec_range[1])
         )
         inside_range = z_sel * radec_sel
-        # there may be an excess
-        num_tracer_in = inside_range.sum()
-        if num_tracer_in < self.num_discrete_source:
-            warnings.warn(
-                "Not enough tracers inside the ra, dec, z range. "
-                + "Try increasing target_relative_to_num_g."
-            )
-        elif self.strict_num_source:
-            inside_indx = np.where(inside_range)[0]
-            rand_indx = random_sample_indx(
-                len(inside_indx), self.num_discrete_source, seed=self.seed
-            )
-            inside_range = np.zeros_like(inside_range)
-            inside_range[inside_indx[rand_indx]] = True
         mock_inside_range = inside_range
         self._mock_tracer_position_in_radecz = (
             ra_mock_tracer,
@@ -640,7 +599,6 @@ class MockSimulation(PowerSpectrum):
             z_mock_tracer,
             mock_inside_range,
         )
-        self._mock_tracer_comov_dist = tracer_comov_dist
 
     def propagate_mock_tracer_to_gal_cat(self, trim=True):
         """
@@ -675,14 +633,37 @@ class MockSimulation(PowerSpectrum):
             wproj_hires = create_udres_wproj(self.wproj, highres_sim)
             num_pix_x = self.num_pix_x * highres_sim
             num_pix_y = self.num_pix_y * highres_sim
-        map_highres, map_counts = self.grid_field_to_sky_map(
-            field,
-            average=average,
-            mask=False,
-            wproj=wproj_hires,
-            num_pix_x=num_pix_x,
-            num_pix_y=num_pix_y,
-        )
+        if self.flat_sky:
+            pad = highres_sim
+            if highres_sim is None:
+                pad = 1
+            map_highres = np.zeros(
+                (
+                    self.num_pix_x,
+                    pad,
+                    self.num_pix_y,
+                    pad,
+                    self.nu.size,
+                )
+            )
+            map_highres += field[:, None, :, None, :]
+            map_highres = map_highres.reshape(
+                (
+                    num_pix_x,
+                    num_pix_y,
+                    -1,
+                )
+            )
+            map_counts = np.ones_like(map_highres)
+        else:
+            map_highres, map_counts = self.grid_field_to_sky_map(
+                field,
+                average=average,
+                mask=False,
+                wproj=wproj_hires,
+                num_pix_x=num_pix_x,
+                num_pix_y=num_pix_y,
+            )
         # if highres_sim is None and not beam:
         #    return map_highres
         if beam:

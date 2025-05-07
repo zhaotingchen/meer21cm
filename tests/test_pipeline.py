@@ -185,8 +185,7 @@ def test_mock_field_map_grid(highres, beam):
     assert p1d.std() < 0.2
 
 
-@pytest.mark.parametrize("strict", [(True), (False)])
-def test_mock_tracer_grid(strict):
+def test_mock_tracer_grid():
     """
     Generate a mock galaxy caralogue,
     grid it onto regular grids, and test input/output matching.
@@ -207,8 +206,6 @@ def test_mock_tracer_grid(strict):
             discrete_base_field=2,
             k1dbins=k1dedges,
             target_relative_to_num_g=2.0,
-            strict_num_source=strict,
-            auto_relative=(not strict),
         )
         mock.data = np.ones(mock.W_HI.shape)
         mock.w_HI = np.ones(mock.W_HI.shape)
@@ -226,9 +223,6 @@ def test_mock_tracer_grid(strict):
         gal_map_rg, gal_weights_rg, pixel_counts_gal_rg = mock.grid_gal_to_field()
         _, _, pixel_counts_hi_rg = mock.grid_data_to_field()
         mock.get_n_bar_correction()
-        # test inrange exactly num_g
-        if strict:
-            assert np.allclose(gal_map_rg.sum(), mock.num_discrete_source)
         taper = mock.taper_func(mock.box_ndim[-1])
         mock.weights_2 = (pixel_counts_hi_rg > 0) * taper[None, None, :]
         shot_noise_g = (

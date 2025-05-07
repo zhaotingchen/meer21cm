@@ -72,10 +72,8 @@ class Specification:
         counts=None,
         survey="meerklass_L_deep",
         band="L",
-        range_buffer=0.0,
         **kwparams,
     ):
-        self.range_buffer = range_buffer
         self.survey = survey
         self.band = band
         self.dependency_dict = find_property_with_tags(self)
@@ -166,6 +164,7 @@ class Specification:
         self.beam_type = None
         self.beam_model = beam_model
         self._beam_image = None
+        self._z_as_func_of_comov_dist = None
 
     @property
     def map_unit_type(self):
@@ -557,8 +556,8 @@ class Specification:
         The map data and counts outside the range will be set to zero.
         The map_has_sampling and weights_map_pixel will be set to False outside the range.
         """
-        ra_range = np.array(self.ra_range) + [-self.range_buffer, self.range_buffer]
-        dec_range = np.array(self.dec_range) + [-self.range_buffer, self.range_buffer]
+        ra_range = np.array(self.ra_range)
+        dec_range = np.array(self.dec_range)
         ra_sel = angle_in_range(self.ra_map, ra_range[0], ra_range[1])
         dec_sel = (self.dec_map > dec_range[0]) * (self.dec_map < dec_range[1])
         map_sel = (ra_sel * dec_sel)[:, :, None]
@@ -572,8 +571,8 @@ class Specification:
         Trim the galaxy catalogue to the specified range.
         The galaxy catalogue outside the ra-dec-z range will be removed.
         """
-        ra_range = np.array(self.ra_range) + [-self.range_buffer, self.range_buffer]
-        dec_range = np.array(self.dec_range) + [-self.range_buffer, self.range_buffer]
+        ra_range = np.array(self.ra_range)
+        dec_range = np.array(self.dec_range)
         gal_sel = (
             angle_in_range(self.ra_gal, ra_range[0], ra_range[1])
             * (self.dec_gal > dec_range[0])
@@ -651,19 +650,21 @@ class Specification:
         self.w_HI = w_HI
 
     @property
+    @tagging("cosmo")
     def z_as_func_of_comov_dist(self):
         """
         Returns a function that returns the redshift
         for input comoving distance.
         """
-        zarr = np.linspace(
-            self.z_ch.min() * 0.9,
-            self.z_ch.max() * 1.1,
-            501,
-        )
+        if self._z_as_func_of_comov_dist is None:
+            self.get_z_as_func_of_comov_dist()
+        return self._z_as_func_of_comov_dist
+
+    def get_z_as_func_of_comov_dist(self):
+        zarr = np.linspace(0, 6.0, 1001)
         xarr = self.comoving_distance(zarr).value
-        func = interp1d(xarr, zarr, bounds_error=False, fill_value="extrapolate")
-        return func
+        func = interp1d(xarr, zarr)
+        self._z_as_func_of_comov_dist = func
 
     @property
     def survey_volume(self):

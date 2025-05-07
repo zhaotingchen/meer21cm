@@ -152,7 +152,6 @@ def test_tracer_position():
         dec_range=dec_range,
         kaiser_rsd=True,
         discrete_base_field=2,
-        target_relative_to_num_g=2.5,
     )
     mock.data = np.ones(mock.W_HI.shape)
     mock.w_HI = np.ones(mock.W_HI.shape)
@@ -162,19 +161,15 @@ def test_tracer_position():
     mock.downres_factor_transverse = 1 / 2.0
     mock.get_enclosing_box()
     mock.tracer_bias_2 = 1.9
-    mock.num_discrete_source = 2700
+    mock.num_discrete_source = 10000
     mock.propagate_mock_tracer_to_gal_cat()
     # ensure that galaxies are there
     assert len(mock.ra_mock_tracer) > mock.num_discrete_source
     assert len(mock.dec_mock_tracer) > mock.num_discrete_source
     assert len(mock.z_mock_tracer) > mock.num_discrete_source
-    assert (mock.mock_inside_range).sum() == mock.num_discrete_source
-    assert len(mock.ra_gal) == mock.num_discrete_source
+    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 1000
+    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 1000
     # test of power spectrum is performed in pipeline tests
-    # test warining raised
-    mock.target_relative_to_num_g = 0.1
-    with pytest.warns(UserWarning):
-        mock.propagate_mock_tracer_to_gal_cat()
 
 
 def test_hi_mass_to_flux():
@@ -189,7 +184,6 @@ def test_hi_mass_to_flux():
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
         num_discrete_source=num_g,
-        target_relative_to_num_g=1.1,
     )
     mock.propagate_mock_tracer_to_gal_cat()
     # some random galaxies
@@ -256,7 +250,6 @@ def test_mock_hi_profile():
         tracer_bias_1=1.5,
         # tracer_bias_2=1.9,
         num_discrete_source=num_g,
-        target_relative_to_num_g=1.1,
     )
     # test initialization
     assert hisim.tracer_bias_2 == 1.0
@@ -317,7 +310,6 @@ def test_project_hi_profile(highres):
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
         num_discrete_source=10,
-        target_relative_to_num_g=1.0,
         downres_factor_radial=1 / 3,
         downres_factor_transverse=1 / 3,
         kmax=20,
@@ -396,3 +388,28 @@ def test_generate_colored_noise():
     rand_arr = np.array(rand_arr)
     assert np.allclose(rand_arr.mean(), 0.0)
     assert np.abs(rand_arr.std() - 1.0) < 0.1
+
+
+def test_flat_sky():
+    mock = MockSimulation(
+        highres_sim=None,
+        num_discrete_source=1000000,
+        tracer_bias_2=1.0,
+        kmax=10.0,
+        flat_sky=True,
+        mean_amp_1="average_hi_temp",
+    )
+    mock.data = mock.propagate_mock_field_to_data(mock.mock_tracer_field_1)
+    mock.grid_data_to_field()
+    mock.weights_1 = np.ones_like(mock.data)
+    mock.include_sky_sampling = [False, False]
+    mock.compensate = False
+    ratio = mock.auto_power_3d_1 / mock.auto_power_tracer_1_model
+    assert np.abs(ratio.mean() - 1) < 1e-1
+    mock.propagate_mock_tracer_to_gal_cat()
+    mock.grid_gal_to_field()
+    mock.weights_2 = np.ones_like(mock.field_2)
+    mock.compensate = False
+    shot_noise = np.prod(mock.box_len) / mock.field_2.sum()
+    ratio = (mock.auto_power_3d_2 - shot_noise) / mock.auto_power_tracer_2_model
+    assert np.abs(ratio.mean() - 1) < 1e-1

@@ -444,15 +444,16 @@ def test_model_in_real_space():
     assert np.allclose(model.cross_power_tracer_model, matter_ps_real * 6)
 
 
-def test_ModelPowerSpectrum():
+@pytest.mark.parametrize("fog_profile", ["gaussian", "lorentz"])
+def test_ModelPowerSpectrum(fog_profile):
     # test fog
-    model = ModelPowerSpectrum()
+    model = ModelPowerSpectrum(fog_profile=fog_profile)
     assert np.allclose(model.fog_term(1), np.ones(len(model.kmode)))
     model.mumode = np.ones_like(model.kmode)
     assert np.allclose(model.fog_term(np.inf), np.zeros(len(model.kmode)))
 
     # test matter power with no rsd
-    model = ModelPowerSpectrum()
+    model = ModelPowerSpectrum(fog_profile=fog_profile)
     matter_ps_real = model.matter_power_spectrum_fnc(model.kmode)
     assert np.allclose(model.auto_power_matter_model, matter_ps_real)
 
@@ -466,7 +467,7 @@ def test_ModelPowerSpectrum():
     assert np.allclose(model.auto_power_matter_model, matter_ps_real)
 
     # test tracer with no rsd but with bias
-    model = ModelPowerSpectrum(tracer_bias_1=2.0)
+    model = ModelPowerSpectrum(tracer_bias_1=2.0, fog_profile=fog_profile)
     assert model.auto_power_tracer_2_model is None
     assert model.cross_power_tracer_model is None
     tracer_ps_rsd = model.auto_power_tracer_1_model
@@ -484,6 +485,7 @@ def test_ModelPowerSpectrum():
         tracer_bias_1=2.0,
         tracer_bias_2=2.0,
         cross_coeff=0.5,
+        fog_profile=fog_profile,
     )
     # test tracer 2 dep
     model.auto_power_tracer_2_model
@@ -742,6 +744,7 @@ def test_grid_gal(test_gal_fits, test_W):
     )
     ps.read_gal_cat()
     ps.grid_gal_to_field()
+    ps.apply_taper_to_field(2)
 
 
 def test_shot_noise_tapering():

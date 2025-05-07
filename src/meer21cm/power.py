@@ -13,9 +13,8 @@ from scipy.signal import windows
 from meer21cm.util import (
     tagging,
     radec_to_indx,
-    find_ch_id,
-    center_to_edges,
     redshift_to_freq,
+    freq_to_redshift,
 )
 from meer21cm.dataanalysis import Specification
 import healpy as hp
@@ -41,6 +40,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         include_sky_sampling=[True, False],
         compensate=[True, True],
         kaiser_rsd=True,
+        sigma_z_1=0.0,
+        sigma_z_2=0.0,
         **params,
     ):
         super().__init__(**params)
@@ -80,6 +81,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.kaiser_rsd = kaiser_rsd
         self._compensate = [None, None]  # for initialization
         self.compensate = compensate
+        self.sigma_z_1 = sigma_z_1
+        self.sigma_z_2 = sigma_z_2
 
     @property
     def kaiser_rsd(self):
@@ -122,6 +125,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.clean_cache(self.tracer_1_dep_attr)
 
     @property
+    def sigma_z_1(self):
+        """
+        The redshift error of the first tracer.
+        """
+        return self._sigma_z_1
+
+    @sigma_z_1.setter
+    def sigma_z_1(self, value):
+        self._sigma_z_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @property
     def sigma_v_2(self):
         """
         The velocity dispersion of the second tracer.
@@ -131,6 +147,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @sigma_v_2.setter
     def sigma_v_2(self, value):
         self._sigma_v_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def sigma_z_2(self):
+        """
+        The redshift error of the second tracer.
+        """
+        return self._sigma_z_2
+
+    @sigma_z_2.setter
+    def sigma_z_2(self, value):
+        self._sigma_z_2 = value
         if "tracer_2_dep_attr" in dir(self):
             self.clean_cache(self.tracer_2_dep_attr)
 
@@ -177,12 +206,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
             if "tracer_2_dep_attr" in dir(self):
                 self.clean_cache(self.tracer_2_dep_attr)
 
-    def fog_lorentz(self, sigma_v, kmode=None, mumode=None):
+    def fog_gaussian(self, sigma_r, kmode=None, mumode=None):
         r"""
-        The Lorentzian finger-of-god profile.
+        The Gaussian finger-of-god profile.
 
         .. math::
-            {\rm FoG} = \sqrt{1/(1+(\sigma_v k_\parallel/H_0)^2)}
+            {\rm FoG} = {\rm exp}(-(\sigma_v k_\parallel/H)^2/2)
 
         Note the power spectrum has FoG squared with the two FoG terms that can
         be different for two tracers.
@@ -205,12 +234,43 @@ class ModelPowerSpectrum(CosmologyCalculator):
             mumode = self.mumode
         if kmode is None:
             kmode = self.kmode
-        H_0 = self.H0.to("km s^-1 Mpc^-1").value
         k_parallel = kmode * mumode
-        fog = np.sqrt(1 / (1 + (sigma_v * k_parallel / H_0) ** 2))
+        fog = np.exp(-((sigma_r * k_parallel) ** 2 / 2))
         return fog
 
-    def fog_term(self, sigma_v, kmode=None, mumode=None):
+    def fog_lorentz(self, sigma_r, kmode=None, mumode=None):
+        r"""
+        The Lorentzian finger-of-god profile.
+
+        .. math::
+            {\rm FoG} = \sqrt{1/(1+(\sigma_v k_\parallel/H)^2)}
+
+        Note the power spectrum has FoG squared with the two FoG terms that can
+        be different for two tracers.
+
+        Parameters
+        ----------
+        sigma_v: float.
+            The velocity dispersion.
+        kmode: float, None.
+            The mode of 3D k in Mpc-1. If None, self.kmode will be used.
+        mumode: float, None.
+            The mu values of each 3D k-mode. In None, self.mumode will be used.
+
+        Returns
+        -------
+        fog: float.
+            The FoG term.
+        """
+        if mumode is None:
+            mumode = self.mumode
+        if kmode is None:
+            kmode = self.kmode
+        k_parallel = kmode * mumode
+        fog = np.sqrt(1 / (1 + (sigma_r * k_parallel) ** 2))
+        return fog
+
+    def fog_term(self, sigma_r, kmode=None, mumode=None):
         """
         The FoG term for the model calculation.
         It reads the profile type from the attribute ``fog_profile``.
@@ -229,7 +289,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         fog: float.
             The FoG term.
         """
-        return getattr(self, "fog_" + self.fog_profile)(sigma_v, kmode, mumode)
+        return getattr(self, "fog_" + self.fog_profile)(sigma_r, kmode, mumode)
 
     @property
     def tracer_bias_1(self):
@@ -460,8 +520,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         power_in_redshift_space = (
             power_in_real_space
             * (r + (beta1 + beta2) * mumode**2 + beta1 * beta2 * mumode**4)
-            * self.fog_term(sigmav_1, mumode=mumode)
-            * self.fog_term(sigmav_2, mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigmav_1), mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigmav_2), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_1), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_2), mumode=mumode)
         )
         return power_in_redshift_space
 
@@ -1531,6 +1593,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         seed=None,
         kperpbins=None,
         kparabins=None,
+        flat_sky=False,
+        flat_sky_padding=[0, 0, 0],
         **params,
     ):
         if seed is None:
@@ -1599,6 +1663,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_z_len",
             "_rot_mat_sky_to_box",
             "_pix_coor_in_cartesian",
+            "_counts_in_box",
+            "_flat_sky",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -1609,6 +1675,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.get_enclosing_box()
         self.grid_scheme = grid_scheme
         self.interlace_shift = interlace_shift
+        self.flat_sky = flat_sky
+        self.flat_sky_padding = flat_sky_padding
 
     @property
     def num_particle_per_pixel(self):
@@ -1646,6 +1714,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_x_start",
             "_y_start",
             "_z_start",
+            "_counts_in_box",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -1662,6 +1731,64 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_x_start",
             "_y_start",
             "_z_start",
+            "_counts_in_box",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def counts_in_box(self):
+        """
+        The counts of the map cube voxels in the rectangular box.
+        """
+        if self._counts_in_box is None:
+            self._counts_in_box = self.get_counts_in_box()
+        return self._counts_in_box
+
+    @property
+    def flat_sky(self):
+        """
+        Whether to use flat sky approximation.
+        If True, no proper projection and sky rotation is considered.
+        Instead, the sky map cube is assumed to be a rectangular grid
+        with equal voxel size specified by ``pix_resol_in_mpc`` and
+        ``los_resol_in_mpc``.
+        """
+        return self._flat_sky
+
+    @flat_sky.setter
+    def flat_sky(self, value):
+        self._flat_sky = bool(value)
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_counts_in_box",
+        ]
+        for attr in init_attr:
+            setattr(self, attr, None)
+
+    @property
+    def flat_sky_padding(self):
+        """
+        Pad the rectangular box in the flat sky approximation.
+
+        The input should be a list of 3 integers, corresponding to number of padding cells along
+        each dimension in both directions.
+        For example, [1,1,1] will pad 2x2x2 cells.
+        """
+        return self._flat_sky_padding
+
+    @flat_sky_padding.setter
+    def flat_sky_padding(self, value):
+        self._flat_sky_padding = value
+        # clean cache
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_counts_in_box",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -1860,11 +1987,32 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         return self.pix_coor_in_cartesian - self.box_origin[None, :]
 
+    def use_flat_sky_box(self, flat_sky_padding=None):
+        """
+        Use flat sky approximation to calculate the box dimensions.
+        """
+        if flat_sky_padding is None:
+            flat_sky_padding = self.flat_sky_padding
+        self.box_ndim = np.array(self.data.shape) + 2 * np.array(flat_sky_padding)
+        self.box_len = np.array(self.box_ndim) * np.array(
+            [
+                self.pix_resol_in_mpc,
+                self.pix_resol_in_mpc,
+                self.los_resol_in_mpc,
+            ]
+        )
+        self.propagate_field_k_to_model()
+
     def get_enclosing_box(self, rot_mat=None):
         """
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
         """
+        if self.flat_sky:
+            self.use_flat_sky_box()
+            if self.model_k_from_field:
+                self.propagate_field_k_to_model()
+            return 1
         ra = self.ra_map.copy()
         dec = self.dec_map.copy()
         map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
@@ -1958,7 +2106,28 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
-    def grid_data_to_field(self, flat_sky=False):
+    def get_counts_in_box(self):
+        """
+        Grid the counts of the map cube voxels into the rectangular box, and return the
+        effective counts per rectangular grid.
+        """
+        if self.flat_sky:
+            counts_in_grids = self.w_HI
+        else:
+            pix_coor_orig = self.pix_coor_in_box.reshape(
+                (self.num_particle_per_pixel, -1)
+            )[0].reshape((-1, 3))
+            counts_in_grids, _, _ = project_particle_to_regular_grid(
+                pix_coor_orig,
+                self.box_len,
+                self.box_ndim,
+                grid_scheme=self.grid_scheme,
+                particle_mass=self.w_HI[self.W_HI].ravel(),
+                compensate=False,  # compensate should be at model level
+            )
+        return counts_in_grids
+
+    def grid_data_to_field(self, flat_sky=None):
         """
         Grid the stored data map to a rectangular grid field.
 
@@ -1972,18 +2141,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
         The gridded field is stored as field_1 and the weights are stored as weights_1.
         """
+        if flat_sky is None:
+            flat_sky = self.flat_sky
         if flat_sky:
             self.field_1 = self.data
-            self.weights_1 = self.W_HI.astype(float)
-            self.box_len = np.array(self.data.shape, dtype="float") * np.array(
-                [
-                    self.pix_resol_in_mpc,
-                    self.pix_resol_in_mpc,
-                    self.los_resol_in_mpc,
-                ]
-            )
-            self.box_ndim = np.array(self.data.shape)
-            self.propagate_field_k_to_model()
+            self.weights_1 = self.w_HI.astype(float)
+            self.use_flat_sky_box(flat_sky_padding=[0, 0, 0])
             self.mean_center_1 = False
             self.unitless_1 = False
             self.include_sky_sampling = [True, False]
@@ -2029,10 +2192,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         hi_map_rg = np.array(hi_map_rg)
         hi_weights_rg = np.array(hi_weights_rg)
-        pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
-        self.pixel_counts_hi_rg = pixel_counts_hi_rg
+        # pixel_counts_hi_rg = np.array(pixel_counts_hi_rg)
+        # self.pixel_counts_hi_rg = pixel_counts_hi_rg
         self.field_1 = hi_map_rg
-        self.weights_1 = (pixel_counts_hi_rg > 0).astype(float)
+        self.weights_1 = (self.counts_in_box).astype(float)
         # self.apply_taper_to_field(1)
         self.unitless_1 = False
         include_beam = np.array(self.include_beam)
@@ -2043,25 +2206,41 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.include_sky_sampling = include_sky_sampling
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
-    def grid_gal_to_field(self, radecfreq=None):
+    def grid_gal_to_field(self, radecfreq=None, flat_sky=None):
         if self.box_origin[0] is None:
             self.get_enclosing_box()
+        if flat_sky is None:
+            flat_sky = self.flat_sky
         if radecfreq is None:
             ra_gal = self.ra_gal
             dec_gal = self.dec_gal
             freq_gal = self.freq_gal
         else:
             ra_gal, dec_gal, freq_gal = radecfreq
-        (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
-            ra_gal,
-            dec_gal,
-            freq_gal,
-            cosmo=self.cosmo,
-            return_coord=True,
-            tile=False,
-            rot_mat=self.rot_mat_sky_to_box,
-        )
-        gal_pos_in_box = gal_pos_arr - self.box_origin[None, :]
+        if flat_sky:
+            z_gal = freq_to_redshift(freq_gal)
+            self.use_flat_sky_box(flat_sky_padding=[0, 0, 0])
+            pos_indx_1, pos_indx_2 = radec_to_indx(
+                ra_gal, dec_gal, self.wproj, to_int=False
+            )
+            gal_pos_in_box = np.zeros((ra_gal.size, 3))
+            gal_pos_in_box[:, 0] = pos_indx_1 / self.num_pix_x * self.box_len[0]
+            gal_pos_in_box[:, 1] = pos_indx_2 / self.num_pix_y * self.box_len[1]
+            gal_pos_in_box[:, 2] = (
+                self.comoving_distance(z_gal).value
+                - self.comoving_distance(self.z_ch.min()).value
+            )
+        else:
+            (_, _, _, _, _, _, _, gal_pos_arr) = minimum_enclosing_box_of_lightcone(
+                ra_gal,
+                dec_gal,
+                freq_gal,
+                cosmo=self.cosmo,
+                return_coord=True,
+                tile=False,
+                rot_mat=self.rot_mat_sky_to_box,
+            )
+            gal_pos_in_box = gal_pos_arr - self.box_origin[None, :]
         (
             gal_map_rg,
             gal_weights_rg,
@@ -2088,27 +2267,27 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_map_rg2,
             self.interlace_shift,
         )
-        pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
-            0
-        ].reshape((-1, 3))
+        # pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
+        #    0
+        # ].reshape((-1, 3))
         # get which pixels in the rg box are not covered by the lightcone
-        _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
-            pix_coor_orig,
-            self.box_len,
-            self.box_ndim,
-            grid_scheme=self.grid_scheme,
-            particle_mass=self.data[self.W_HI].ravel(),
-            particle_weights=self.w_HI[self.W_HI].ravel(),
-            compensate=False,
-        )
+        # _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
+        #    pix_coor_orig,
+        #    self.box_len,
+        #    self.box_ndim,
+        #    grid_scheme=self.grid_scheme,
+        #    particle_mass=self.data[self.W_HI].ravel(),
+        #    particle_weights=self.w_HI[self.W_HI].ravel(),
+        #    compensate=False,
+        # )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
         self.field_2 = gal_map_rg
         # only pixels sampled by the lightcone is used
-        weights_g = pixel_counts_hi_rg > 0
+        weights_g = (self.counts_in_box > 0).astype(float)
         self.weights_2 = weights_g
-        self.apply_taper_to_field(2)
+        # self.apply_taper_to_field(2)
         self.mean_center_2 = True
         self.unitless_2 = True
         include_beam = np.array(self.include_beam)

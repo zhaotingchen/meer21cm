@@ -132,3 +132,15 @@ def test_update_parameter(par):
     if par != "neutrino_mass" and par != "omega_baryon":
         assert not np.allclose(comov, comov2)
     assert not np.allclose(matterps, matterps2)
+
+
+def test_sigmar():
+    cosmo = CosmologyCalculator()
+    sigma_z = 0.001
+    z_arr = np.random.normal(0, sigma_z, 100000) + cosmo.z
+    sigma_r = cosmo.comoving_distance(z_arr).std().value
+    delta_r = cosmo.deltaz_to_deltar(sigma_z)
+    assert np.abs(sigma_r - delta_r) < 2e-2
+    sigma_v = 100
+    delta_r = cosmo.deltav_to_deltar(sigma_v)
+    assert delta_r < 5
