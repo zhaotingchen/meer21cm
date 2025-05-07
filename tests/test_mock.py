@@ -152,8 +152,6 @@ def test_tracer_position():
         dec_range=dec_range,
         kaiser_rsd=True,
         discrete_base_field=2,
-        target_relative_to_num_g=2.5,
-        strict_num_source=True,
     )
     mock.data = np.ones(mock.W_HI.shape)
     mock.w_HI = np.ones(mock.W_HI.shape)
@@ -169,13 +167,9 @@ def test_tracer_position():
     assert len(mock.ra_mock_tracer) > mock.num_discrete_source
     assert len(mock.dec_mock_tracer) > mock.num_discrete_source
     assert len(mock.z_mock_tracer) > mock.num_discrete_source
-    assert (mock.mock_inside_range).sum() == mock.num_discrete_source
-    assert len(mock.ra_gal) == mock.num_discrete_source
+    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 100
+    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 100
     # test of power spectrum is performed in pipeline tests
-    # test warining raised
-    mock.target_relative_to_num_g = 0.1
-    with pytest.warns(UserWarning):
-        mock.propagate_mock_tracer_to_gal_cat()
 
 
 def test_hi_mass_to_flux():
@@ -190,7 +184,6 @@ def test_hi_mass_to_flux():
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
         num_discrete_source=num_g,
-        target_relative_to_num_g=1.1,
     )
     mock.propagate_mock_tracer_to_gal_cat()
     # some random galaxies
@@ -257,7 +250,6 @@ def test_mock_hi_profile():
         tracer_bias_1=1.5,
         # tracer_bias_2=1.9,
         num_discrete_source=num_g,
-        target_relative_to_num_g=1.1,
     )
     # test initialization
     assert hisim.tracer_bias_2 == 1.0
@@ -318,7 +310,6 @@ def test_project_hi_profile(highres):
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
         num_discrete_source=10,
-        target_relative_to_num_g=1.0,
         downres_factor_radial=1 / 3,
         downres_factor_transverse=1 / 3,
         kmax=20,

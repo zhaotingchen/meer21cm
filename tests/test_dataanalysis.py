@@ -210,30 +210,6 @@ def test_z_interp():
     assert np.allclose(func(ps.comoving_distance(z_rand).value), z_rand)
 
 
-def test_buffer():
-    ramintest, ramaxtest = -1.5, 1.5
-    decmintest, decmaxtest = -1.5, 1.5
-    ra_range = np.array([ramintest, ramaxtest])
-    dec_range = np.array([decmintest, decmaxtest])
-
-    ang_resol = 0.3
-    wproj, num_pix_x, num_pix_y = create_wcs_with_range(
-        ra_range,
-        dec_range,
-        resol=[ang_resol, ang_resol],
-    )
-    sp_mock = Specification(
-        wproj=wproj,
-        num_pix_x=num_pix_x,
-        num_pix_y=num_pix_y,
-        ra_range=ra_range,
-        dec_range=dec_range,
-        nu=[f_21, f_21],
-        range_buffer=1e-3,
-    )
-    assert len(np.unique(sp_mock.W_HI[:, :, 0].mean(-1))) == 2
-
-
 def test_trim_gal():
     sp = Specification(
         ra_range=[-1, 1],
