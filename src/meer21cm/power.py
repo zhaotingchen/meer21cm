@@ -2002,6 +2002,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             ]
         )
         self.propagate_field_k_to_model()
+        self._counts_in_box = None
 
     def get_enclosing_box(self, rot_mat=None):
         """
@@ -2103,6 +2104,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
         self.box_ndim = ndim_rg
+        self._counts_in_box = None
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
