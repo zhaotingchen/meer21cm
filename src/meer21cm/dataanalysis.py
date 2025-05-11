@@ -72,6 +72,7 @@ class Specification:
         counts=None,
         survey="meerklass_L_deep",
         band="L",
+        z_interp_max=6.0,
         **kwparams,
     ):
         self.survey = survey
@@ -165,6 +166,7 @@ class Specification:
         self.beam_model = beam_model
         self._beam_image = None
         self._z_as_func_of_comov_dist = None
+        self.z_interp_max = z_interp_max
 
     @property
     def map_unit_type(self):
@@ -661,7 +663,7 @@ class Specification:
         return self._z_as_func_of_comov_dist
 
     def get_z_as_func_of_comov_dist(self):
-        zarr = np.linspace(0, 6.0, 1001)
+        zarr = np.linspace(0, self.z_interp_max, 20001)
         xarr = self.comoving_distance(zarr).value
         func = interp1d(xarr, zarr)
         self._z_as_func_of_comov_dist = func
