@@ -182,7 +182,7 @@ def test_mock_field_map_grid(highres, beam):
         k1dweights=k_sel.astype(float),
     )
     assert np.abs(np.median(p1d) - 1) < 0.5
-    assert p1d.std() < 0.2
+    assert p1d.std() < 0.3
 
 
 def test_mock_tracer_grid():

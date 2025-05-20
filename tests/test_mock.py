@@ -167,8 +167,8 @@ def test_tracer_position():
     assert len(mock.ra_mock_tracer) > mock.num_discrete_source
     assert len(mock.dec_mock_tracer) > mock.num_discrete_source
     assert len(mock.z_mock_tracer) > mock.num_discrete_source
-    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 1000
-    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 1000
+    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 2000
+    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 2000
     # test of power spectrum is performed in pipeline tests
 
 

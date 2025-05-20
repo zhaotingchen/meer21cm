@@ -276,3 +276,41 @@ def test_project_particle_to_regular_grid(window):
     # effective count is still 1
     assert np.allclose(test_w, np.ones_like(test_w))
     assert np.allclose(test_c, np.ones_like(test_c))
+
+
+def test_rotation_matrix_to_radec0():
+    ra = np.random.uniform(0, 360.0, 1)[0]
+    dec = np.random.uniform(-90.0, 90.0, 1)[0]
+    rot_mat = rotation_matrix_to_radec0(ra, dec)
+    vec = hp.ang2vec(ra, dec, lonlat=True)
+    assert np.allclose(rot_mat @ vec, [1, 0, 0])
+
+
+def test_sky_partition_for_radecrange():
+    ra_range = np.array([130, 250])
+    dec_range = np.array([-5, 7.5])
+    pix_for_i, rot_mat_for_patch_i = sky_partition_for_radecrange(ra_range, dec_range)
+    map_out = np.zeros(hp.nside2npix(128))
+    for i, pix_id in enumerate(pix_for_i):
+        map_out[pix_id] += 1
+    # partition does not overlap
+    assert map_out.max() == 1
+    i = np.random.randint(0, len(pix_for_i))
+    pix_id = pix_for_i[i]
+    rot_mat_i = np.linalg.inv(rot_mat_for_patch_i[i])
+    nside = 128
+    npix = hp.nside2npix(nside)
+    ra_grid, dec_grid = hp.pix2ang(nside, np.arange(npix), lonlat=True)
+    selection_grid_0 = angle_in_range(
+        ra_grid, ra_range[0], ra_range[1]
+    ) * angle_in_range(dec_grid, dec_range[0], dec_range[1])
+    ra_region_0 = ra_grid[selection_grid_0]
+    dec_region_0 = dec_grid[selection_grid_0]
+    vec_region_0 = hp.ang2vec(ra_region_0, dec_region_0, lonlat=True)
+    vec_region_rot = np.dot(rot_mat_i, vec_region_0.T)
+    pix_region_rot = hp.vec2pix(
+        nside, vec_region_rot[0], vec_region_rot[1], vec_region_rot[2]
+    )
+    map_rot = np.zeros(hp.nside2npix(nside))
+    np.add.at(map_rot, pix_region_rot, 1)
+    assert np.isin(np.arange(npix)[map_rot > 0], pix_id).mean() > 0.999
