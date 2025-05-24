@@ -62,6 +62,7 @@ class MockSimulation(PowerSpectrum):
         highres_sim=None,
         parallel_plane=True,
         rsd_from_field=False,
+        discrete_source_dndz=np.ones_like,
         **params,
     ):
         super().__init__(**params)
@@ -103,21 +104,47 @@ class MockSimulation(PowerSpectrum):
         self.rsd_from_field = rsd_from_field
         if not rsd_from_field and not parallel_plane:
             warnings.warn("rsd_from_field is False, parallel_plane will be ignored")
+        self.discrete_source_dndz = discrete_source_dndz
 
     @property
     def tot_num_source_in_box(self):
         """
         The total number of mock sources in the box needed to achieve
         ``self.num_discrete_source`` number of sources in the survey volume.
+        Only used internally, no physical meaning.
         """
         if self.flat_sky:
-            target_relative_to_num_g = 1 / self.W_HI.mean()
-            ratio = np.prod(
-                np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding)
-            ) / np.prod(self.data.shape)
-            return self.num_discrete_source * ratio * target_relative_to_num_g
+            dndz_arr = self.discrete_source_dndz(self._box_voxel_redshift)
+            z_sel = (self._box_voxel_redshift >= self.z_ch.min()) & (
+                self._box_voxel_redshift <= self.z_ch.max()
+            )
+            dndz_arr = dndz_arr[z_sel]
+            dndz_arr /= dndz_arr.max()
+            ratio_dndz = 1 / dndz_arr.mean()
+            self._dndz_renorm = (
+                lambda z: self.discrete_source_dndz(z) / dndz_arr.max() * ratio_dndz
+            )
+            ratio = (
+                np.prod(np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding))
+                / self.W_HI.sum()
+            )
+            return self.num_discrete_source * ratio
         else:
+            nu_ext = center_to_edges(self.nu)
+            z_ext = freq_to_redshift(nu_ext)
+            volume_per_channel = (
+                (self.W_HI[:, :, 0].sum() * self.pixel_area * (np.pi / 180) ** 2)
+                / 3
+                * (
+                    self.comoving_distance(z_ext[:-1]) ** 3
+                    - self.comoving_distance(z_ext[1:]) ** 3
+                ).value
+            )
+            dn_channel = self.discrete_source_dndz(self.z_ch)
+            renorm = self.num_discrete_source / (dn_channel * volume_per_channel).sum()
             ratio = np.prod(self.box_len) / self.survey_volume
+            renorm *= np.prod(self.box_len) / (self.num_discrete_source * ratio)
+            self._dndz_renorm = lambda z: self.discrete_source_dndz(z) * renorm
             return self.num_discrete_source * ratio
 
     @property
@@ -172,6 +199,23 @@ class MockSimulation(PowerSpectrum):
     @num_discrete_source.setter
     def num_discrete_source(self, value):
         self._num_discrete_source = value
+        self.clean_cache(self.discrete_dep_attr)
+
+    @property
+    def discrete_source_dndz(self):
+        """
+        The redshift kernel of the discrete tracer sources.
+        Must be a function of redshift.
+        ** Only the shape of the dndz is used, not the normalization. **
+        The overall number of discrete sources is given by ``self.num_discrete_source``.
+        Must be in the unit of per volume instead of unitless
+        , i.e. the integral of the dndz over redshift must be a number density instead of number of sources.
+        """
+        return self._discrete_source_dndz
+
+    @discrete_source_dndz.setter
+    def discrete_source_dndz(self, value):
+        self._discrete_source_dndz = value
         self.clean_cache(self.discrete_dep_attr)
 
     @property
@@ -463,7 +507,7 @@ class MockSimulation(PowerSpectrum):
             self.get_mock_tracer_position_in_box(self.discrete_base_field)
         return self._mock_tracer_position_in_box
 
-    def get_mock_tracer_position_in_box(self, tracer_i):
+    def get_mock_tracer_position_in_box(self, tracer_i, pos_value=None):
         """
         Function to retrieve the tracer positions in redshift space.
         Modified from ``powerbox``.
@@ -478,10 +522,14 @@ class MockSimulation(PowerSpectrum):
         # pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i) + "_r") + 1
         # else:
         #    pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
-        pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
-        pos_value[pos_value < 0] = 0
+        if pos_value is None:
+            pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
         num_g = self.tot_num_source_in_box
+        # apply a redshift kernel to the source distribution
+        dndz_prob = self._dndz_renorm(self._box_voxel_redshift)
+        pos_value[pos_value < 0] = 0
         pos_value /= pos_value.sum() / num_g
+        pos_value *= dndz_prob
         # taken from powerbox
         n_per_cell = rng.poisson(pos_value)
         args = self.x_vec

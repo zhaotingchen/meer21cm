@@ -15,6 +15,7 @@ from meer21cm.util import (
     radec_to_indx,
     redshift_to_freq,
     freq_to_redshift,
+    get_nd_slicer,
 )
 from meer21cm.dataanalysis import Specification
 import healpy as hp
@@ -2003,6 +2004,14 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         self.propagate_field_k_to_model()
         self._counts_in_box = None
+        nu_ext = np.linspace(
+            self.nu.min() - self.freq_resol * flat_sky_padding[2],
+            self.nu.max() + self.freq_resol * flat_sky_padding[2],
+            len(self.nu) + 2 * flat_sky_padding[2],
+        )[::-1]
+        self._box_voxel_redshift = (
+            np.ones(self.box_ndim) * freq_to_redshift(nu_ext)[None, None, :]
+        )
 
     def get_enclosing_box(self, rot_mat=None):
         """
@@ -2105,6 +2114,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         box_resol = self.box_len / ndim_rg
         self.box_ndim = ndim_rg
         self._counts_in_box = None
+        slicer = get_nd_slicer()
+        vec = [(self.x_vec[i] + self.box_origin[i])[slicer[i]] for i in range(3)]
+        vec_len = np.sqrt(vec[0] ** 2 + vec[1] ** 2 + vec[2] ** 2)
+        self._box_voxel_redshift = self.z_as_func_of_comov_dist(vec_len)
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
@@ -2220,6 +2233,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         else:
             ra_gal, dec_gal, freq_gal = radecfreq
         if flat_sky:
+            self.compensate = False
             z_gal = freq_to_redshift(freq_gal)
             self.use_flat_sky_box(flat_sky_padding=[0, 0, 0])
             pos_indx_1, pos_indx_2 = radec_to_indx(
