@@ -14,7 +14,6 @@ def test_nyquist_k():
     ps = FieldPowerSpectrum(
         delta_x,
         box_len,
-        remove_sn_1=True,
         unitless_1=True,
         mean_center_1=True,
     )
@@ -126,7 +125,6 @@ def test_FieldPowerSpectrum():
     ps = FieldPowerSpectrum(
         delta_x,
         box_len,
-        remove_sn_1=True,
         unitless_1=True,
         mean_center_1=True,
     )
@@ -145,21 +143,19 @@ def test_FieldPowerSpectrum():
     ps.cross_power_3d
     ps.get_fourier_field_2()
     power = ps.auto_power_3d_1
-    assert np.abs(power.mean()) < 1
+    assert np.abs((power - sn).mean() / sn) < 2e-2
 
     ps = PowerSpectrum(
         delta_x,
         box_len,
-        remove_sn_1=True,
         unitless_1=True,
         mean_center_1=True,
         field_2=delta_x,
-        remove_sn_2=True,
         mean_center_2=True,
         unitless_2=True,
     )
     power = ps.auto_power_3d_2
-    assert np.abs(power.mean()) < 1
+    assert np.abs((power.mean() - sn) / sn) < 2e-2
     power = ps.cross_power_3d
     assert np.abs((power.mean() - sn) / sn) < 2e-2
 
@@ -167,11 +163,9 @@ def test_FieldPowerSpectrum():
         delta_x,
         box_len,
         model_k_from_field=True,
-        remove_sn_1=True,
         unitless_1=True,
         mean_center_1=True,
         field_2=delta_x,
-        remove_sn_2=True,
         mean_center_2=True,
         unitless_2=True,
         k1dbins=np.linspace(0.1, 0.5, 5),
@@ -283,12 +277,10 @@ def test_power_weights_renorm():
     # try a random thermal noise
     box_len = np.array([80, 50, 100])
     box_dim = np.array([100, 200, 41])
-    box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
     )
@@ -301,10 +293,9 @@ def test_power_weights_renorm():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
-        weights_1=taper,
+        weights_grid_1=taper,
     )
     power2 = ps.auto_power_3d_1
     floor2 = power2.mean()
@@ -313,12 +304,10 @@ def test_power_weights_renorm():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
-        weights_1=taper,
+        weights_grid_1=taper,
         field_2=rand_noise,
-        remove_sn_2=False,
         mean_center_2=False,
         unitless_2=False,
     )
@@ -334,18 +323,16 @@ def test_power_weights_renorm():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
-        weights_1=taper,
+        weights_grid_1=taper,
         field_2=rand_noise,
-        remove_sn_2=False,
         mean_center_2=False,
         unitless_2=False,
     )
     power3 = ps.cross_power_3d
-    ps.weights_1 = taper
-    ps.weights_2 = taper
+    ps.weights_grid_1 = taper
+    ps.weights_grid_2 = taper
     # an update should clean fourier field
     assert ps._fourier_field_1 is None
     assert ps._fourier_field_2 is None
@@ -389,7 +376,6 @@ def test_get_gaussian_noise_floor():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
     )
@@ -407,7 +393,6 @@ def test_get_gaussian_noise_floor():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
     )
@@ -520,9 +505,9 @@ def test_ModelPowerSpectrum(fog_profile):
     assert np.allclose(model.auto_power_tracer_1_model, np.zeros_like(model.kmode))
     model.sigma_v_2 = 1e20
     assert np.allclose(model.auto_power_tracer_2_model, np.zeros_like(model.kmode))
-    model.weights_1 = 1
+    model.weights_grid_1 = 1
     assert model._auto_power_tracer_1_model is None
-    model.weights_2 = 1
+    model.weights_grid_2 = 1
     assert model._auto_power_tracer_2_model is None
     model = ModelPowerSpectrum()
     model.compensate = False
@@ -607,7 +592,6 @@ def test_set_corrtype():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
     )
@@ -619,11 +603,9 @@ def test_set_corrtype():
     ps.set_corr_type("gal", 1)
     assert ps.mean_center_1 == True
     assert ps.unitless_1 == True
-    assert ps.remove_sn_1 == True
     ps.set_corr_type("HI", 1)
     assert ps.mean_center_1 == False
     assert ps.unitless_1 == False
-    assert ps.remove_sn_1 == False
     power = ps.auto_power_3d_1
     floor1 = ps.auto_power_3d_1.mean()
     floor2 = get_gaussian_noise_floor(
@@ -653,11 +635,9 @@ def test_temp_amp():
     ps = PowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
         field_2=rand_noise,
-        remove_sn_2=False,
         mean_center_2=False,
         unitless_2=False,
         mean_amp_1="average_hi_temp",
@@ -682,8 +662,8 @@ def test_noise_power_from_map(test_W):
     ps.box_buffkick = 10
     ps.compensate = False
     noise_map, noise_weights, pix_counts = ps.grid_data_to_field()
-    renorm = power_weights_renorm(ps.weights_1)
-    sigma_n = np.zeros_like(ps.weights_1)
+    renorm = power_weights_renorm(ps.weights_grid_1)
+    sigma_n = np.zeros_like(ps.weights_grid_1)
     sigma_n[pix_counts > 0] = np.sqrt(1 / pix_counts[pix_counts > 0])
     ptn = (sigma_n**2).mean() * np.prod(ps.box_resol) * renorm
     assert np.abs((ps.auto_power_3d_1.mean() - ptn) / ptn) < 1e-2
@@ -707,11 +687,9 @@ def test_cache():
     ps = FieldPowerSpectrum(
         rand_noise,
         box_len,
-        remove_sn_1=False,
         unitless_1=False,
         mean_center_1=False,
         field_2=rand_noise,
-        remove_sn_2=False,
         mean_center_2=False,
         unitless_2=False,
     )

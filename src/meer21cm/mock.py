@@ -112,6 +112,9 @@ class MockSimulation(PowerSpectrum):
         The total number of mock sources in the box needed to achieve
         ``self.num_discrete_source`` number of sources in the survey volume.
         Only used internally, no physical meaning.
+        Note that if you change the simulation settings such as ``self.num_discrete_source``,
+        ``self.discrete_source_dndz``, ``self.z_ch``, ``self.W_HI``, etc,
+        this property will be automatically updated but the mock catalog is not.
         """
         if self.flat_sky:
             dndz_arr = self.discrete_source_dndz(self._box_voxel_redshift)
