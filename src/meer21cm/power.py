@@ -2242,8 +2242,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             if self.model_k_from_field:
                 self.propagate_field_k_to_model()
             return 1
-        ra = self.ra_map.copy()
-        dec = self.dec_map.copy()
+        ra = self.ra_map.copy()[self.W_HI.sum(-1) > 0]
+        dec = self.dec_map.copy()[self.W_HI.sum(-1) > 0]
         (
             self._x_start,
             self._y_start,

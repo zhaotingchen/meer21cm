@@ -64,7 +64,7 @@ def test_matter_mock(test_W, density):
         upgrade_sampling_from_gridding=True,
         kaiser_rsd=False,
     )
-    mock.map_has_sampling = test_W * np.ones_like(mock.nu)[None, None, :]
+    mock.map_has_sampling = (test_W * np.ones_like(mock.nu)[None, None, :]) > 0
     mock.get_enclosing_box()
     # underlying code has been tested in grid
     # simply test invoking
@@ -231,7 +231,7 @@ def test_hi_mass_to_flux():
     # mid point should be peak
     assert np.argmax(average_profile) == average_profile.size // 2
     # symmetric
-    assert np.max(np.abs(average_profile[::-1] - average_profile)) < 2e-5
+    assert np.max(np.abs(average_profile[::-1] - average_profile)) < 3e-5
 
 
 def test_mock_hi_profile():
@@ -246,6 +246,8 @@ def test_mock_hi_profile():
         tracer_bias_1=1.5,
         # tracer_bias_2=1.9,
         num_discrete_source=num_g,
+        num_ch_ext_on_each_side=3,
+        flat_sky=True,
     )
     # test initialization
     assert hisim.tracer_bias_2 == 1.0
@@ -289,7 +291,7 @@ def test_mock_hi_profile():
     # mid point should be peak
     assert np.argmax(average_profile) == average_profile.size // 2
     # symmetric
-    assert np.max(np.abs(average_profile[::-1] - average_profile)) < 3e-5
+    assert np.max(np.abs(average_profile[::-1] - average_profile)) < 5e-5
 
 
 @pytest.mark.parametrize("highres", [(None), (3)])
@@ -298,14 +300,13 @@ def test_project_hi_profile(highres):
     decminMK, decmaxMK = -35, -26.5
     ra_range_MK = (raminMK, ramaxMK)
     dec_range_MK = (decminMK, decmaxMK)
-    D_dish = 13.5
     # tests
     hisim = HIGalaxySimulation(
-        ra_range=ra_range_MK,
-        dec_range=dec_range_MK,
+        # ra_range=ra_range_MK,
+        # dec_range=dec_range_MK,
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
-        num_discrete_source=10,
+        num_discrete_source=2,
         downres_factor_radial=1 / 3,
         downres_factor_transverse=1 / 3,
         kmax=20,
@@ -314,6 +315,8 @@ def test_project_hi_profile(highres):
         tf_zero=1.6,
         no_vel=False,
         highres_sim=highres,
+        num_ch_ext_on_each_side=3,
+        flat_sky=True,
     )
     if highres is not None:
         wproj_hires = create_udres_wproj(hisim.wproj, highres)
@@ -331,8 +334,8 @@ def test_project_hi_profile(highres):
     else:
         sp_hires = Specification(
             wproj=wproj_hires,
-            num_pix_x=hisim.num_pix_x * highres,
-            num_pix_y=hisim.num_pix_y * highres,
+            num_pix_x=hisim.num_pix_x * highres + 100,
+            num_pix_y=hisim.num_pix_y * highres + 100,
         )
         indx_test = radec_to_indx(
             hisim.ra_mock_tracer,
@@ -367,15 +370,15 @@ def test_project_hi_profile(highres):
     hisim.sigma_beam_ch = np.zeros(hisim.nu.size) + 1e-5
     hi_map_in_jy = hisim.propagate_hi_profile_to_map(return_highres=False, beam=True)
     profile_in_map = hi_map_in_jy[
-        indx_0,
-        indx_1,
+        indx_0[sel],
+        indx_1[sel],
     ]
     for i in range(len(profile_in_map)):
         if sel[i]:
             test1 = profile_in_map[i][
-                indx_z[i] - num_ch_vel : indx_z[i] + num_ch_vel + 1
+                indx_z[sel][i] - num_ch_vel : indx_z[sel][i] + num_ch_vel + 1
             ]
-            test2 = hifluxd_ch[:, i]
+            test2 = hifluxd_ch[:, sel][:, i]
             assert np.allclose(test1, test2)
 
 

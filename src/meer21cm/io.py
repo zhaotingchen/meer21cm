@@ -8,6 +8,7 @@ from astropy.wcs import WCS
 import os
 from .util import get_wcs_coor
 import meer21cm.telescope as telescope
+import pickle
 
 
 def cal_freq(
@@ -121,6 +122,51 @@ def filter_incomplete_los(
     )
 
 
+def read_pickle(
+    pickle_file,
+    nu_min=-np.inf,
+    nu_max=np.inf,
+    los_axis=-1,
+):
+    """
+    Read pickle file of MeerKLASS UHF-band data into arrays.
+    """
+    with open(pickle_file, "rb") as f:
+        data = pickle.load(f)
+    map_data = data["map"]
+    map_has_sampling = np.logical_not(map_data.mask)
+    counts = data["hit"]
+    nu = data["freq"] * 1e6  # MHz to Hz
+    wproj = data["wcs"]
+    nu_sel = np.where((nu > nu_min) & (nu < nu_max))[0]
+    nu_sel_min, nu_sel_max = nu_sel.min(), nu_sel.max()
+    sel_indx = [
+        slice(None, None, 1),
+    ] * 3
+    sel_indx[los_axis] = slice(nu_sel_min, nu_sel_max + 1, 1)
+    sel_indx = tuple(sel_indx)
+    nu = nu[nu_sel]
+    # masked pixels are filled with 0
+    # in case there is nan in the map
+    map_data = np.nan_to_num(map_data.filled(0)[sel_indx])
+    counts = counts[sel_indx]
+    map_has_sampling = map_has_sampling[sel_indx]
+    # in case there is inconsistency between hit and map_has_sampling
+    map_has_sampling = (map_has_sampling * (counts > 0)).astype("bool")
+    counts = counts * map_has_sampling
+    if los_axis < 0:
+        los_axis += 3
+    axes = [0, 1, 2]
+    axes.remove(los_axis)
+    xx, yy = np.meshgrid(
+        np.arange(map_data.shape[axes[0]]),
+        np.arange(map_data.shape[axes[1]]),
+        indexing="ij",
+    )
+    ra, dec = get_wcs_coor(wproj, xx, yy)
+    return map_data, counts, map_has_sampling, ra, dec, nu, wproj
+
+
 def read_map(
     map_file,
     counts_file=None,
@@ -131,7 +177,7 @@ def read_map(
     band="L",
 ):
     """
-    Read fits files of MeerKAT 4k L-band data into arrays.
+    Read fits files of MeerKLASS 4k L-band data into arrays.
 
     Parameters
     ----------
