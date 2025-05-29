@@ -51,9 +51,14 @@ def filter_incomplete_los(
     map_weight,
     map_pix_counts,
     los_axis=-1,
+    soft_mask=False,
 ):
     """
     Filter the map so that along the line-of-sight, only pixels that has sampling at every channel gets selected.
+
+    If `soft_mask` is True, instead of filtering out incomplete los,
+    the filtering is applied by checking the maximum sampling fraction along the los, and
+    the pixels with less than the maximum sampling fraction are masked.
 
     Parameters
     ----------
@@ -67,6 +72,8 @@ def filter_incomplete_los(
             The channel bandwidth.
         los_axis: int, default -1.
             which axis is the los.
+        soft_mask: boolean, default False.
+            whether to apply soft masking.
 
     Returns
     -------
@@ -91,8 +98,11 @@ def filter_incomplete_los(
     map_has_sampling = np.transpose(map_has_sampling, axes=axes)
     map_weight = np.transpose(map_weight, axes=axes)
     map_pix_counts = np.transpose(map_pix_counts, axes=axes)
-
-    full_sample_los = map_has_sampling.mean(axis=-1) == 1.0
+    sampling_fraction = map_has_sampling.mean(axis=-1)
+    if soft_mask:
+        full_sample_los = sampling_fraction == sampling_fraction.max()
+    else:
+        full_sample_los = sampling_fraction == 1.0
     map_intensity *= full_sample_los[:, :, None]
     map_has_sampling *= full_sample_los[:, :, None]
     map_weight *= full_sample_los[:, :, None]
