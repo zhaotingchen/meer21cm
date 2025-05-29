@@ -18,6 +18,7 @@ from meer21cm.io import (
     cal_freq,
     read_map,
     filter_incomplete_los,
+    read_pickle,
 )
 from astropy.wcs.utils import proj_plane_pixel_area
 from itertools import chain
@@ -57,6 +58,7 @@ class Specification:
         map_unit=units.K,
         map_file=None,
         counts_file=None,
+        pickle_file=None,
         los_axis=-1,
         nu_min=None,
         nu_max=None,
@@ -72,6 +74,7 @@ class Specification:
         survey="meerklass_L_deep",
         band="L",
         z_interp_max=6.0,
+        soft_filter_los=True,
         **kwparams,
     ):
         self.survey = survey
@@ -100,18 +103,24 @@ class Specification:
         self.cosmo = cosmo
         self.map_file = map_file
         self.counts_file = counts_file
+        self.pickle_file = pickle_file
         self.los_axis = los_axis
         if nu is None:
             nu = cal_freq(
                 np.arange(4096) + 1,
                 band=self.band,
             )
-            if nu_min is None:
+            if nu_min is None and pickle_file is None:
                 nu_min = getattr(telescope, f"{self.survey}_nu_min")
-            if nu_max is None:
+            if nu_max is None and pickle_file is None:
                 nu_max = getattr(telescope, f"{self.survey}_nu_max")
-            nu_sel = (nu > nu_min) * (nu < nu_max)
-            nu = nu[nu_sel]
+        if nu_min is None:
+            nu_min = -np.inf
+        if nu_max is None:
+            nu_max = np.inf
+        nu = np.array(nu)
+        nu_sel = (nu > nu_min) * (nu < nu_max)
+        nu = nu[nu_sel]
         self.nu_min = nu_min
         self.nu_max = nu_max
         self._nu = np.array(nu)
@@ -142,6 +151,7 @@ class Specification:
         self._ra_map, self._dec_map = get_wcs_coor(wproj, xx, yy)
         self.__dict__.update(kwparams)
         self.filter_map_los = filter_map_los
+        self.soft_filter_los = soft_filter_los
         self.gal_file = gal_file
         self.weighting = weighting
         self.ra_range = ra_range
@@ -516,6 +526,41 @@ class Specification:
         # select only ra_range and dec_range
         # self.trim_gal_to_range()
 
+    def read_from_pickle(self):
+        if self.pickle_file is None:
+            print("no pickle_file specified")
+            return None
+        (
+            self.data,
+            self.counts,
+            self.map_has_sampling,
+            self._ra_map,
+            self._dec_map,
+            self.nu,
+            self.wproj,
+        ) = read_pickle(
+            self.pickle_file,
+            nu_min=self.nu_min,
+            nu_max=self.nu_max,
+            los_axis=self.los_axis,
+        )
+        self.num_pix_x, self.num_pix_y = self._ra_map.shape
+        if self.filter_map_los:
+            print("filtering map los")
+            (self.data, self.map_has_sampling, _, self.counts,) = filter_incomplete_los(
+                self.data,
+                self.map_has_sampling,
+                self.counts,
+                self.counts,
+                soft_mask=self.soft_filter_los,
+            )
+
+        if self.weighting.lower()[:5] == "count":
+            self.weights_map_pixel = self.counts
+        elif self.weighting.lower()[:7] == "uniform":
+            self.weights_map_pixel = (self.counts > 0).astype("float")
+        self.trim_map_to_range()
+
     def read_from_fits(self):
         if self.map_file is None:
             print("no map_file specified")
@@ -543,6 +588,7 @@ class Specification:
                 self.map_has_sampling,
                 self.counts,
                 self.counts,
+                soft_mask=self.soft_filter_los,
             )
 
         if self.weighting.lower()[:5] == "count":

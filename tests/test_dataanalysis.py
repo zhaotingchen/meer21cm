@@ -80,6 +80,19 @@ def test_velocity(test_nu, test_wproj):
     assert np.allclose(spec.pix_resol, np.sqrt(spec.pixel_area))
 
 
+def test_read_pickle(test_pickle):
+    spec = Specification()
+    # should be None
+    spec.read_from_pickle()
+    # set pickle file
+    spec.pickle_file = test_pickle
+    spec.nu_min = -np.inf
+    spec.nu_max = np.inf
+    spec.read_from_pickle()
+    spec.weighting = "uniform"
+    spec.read_from_pickle()
+
+
 def test_read_fits(test_fits):
     sp = Specification(
         nu_min=-np.inf,

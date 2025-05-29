@@ -248,6 +248,14 @@ def test_pcaclean():
     )
     assert res_arr.shape == test_arr.shape
     assert np.abs((res_arr).mean()) < 1e-3
+    test_arr[:, :, :20] = np.nan
+    test_res, test_A = pcaclean(test_arr, 1, return_A=True, ignore_nan=True)
+    # first 20 channels are nan
+    assert np.isnan(test_A).sum() == 20
+    assert np.allclose(test_res[:, :, :20], 0.0)
+    assert np.abs((test_res[:, :, 20:]).mean()) < 3e-3
+    # after 1 mode std barely changed
+    assert np.abs(test_res[:, :, 20:].std() - 1) < 3e-2
 
 
 def test_radec_to_indx(test_wproj):

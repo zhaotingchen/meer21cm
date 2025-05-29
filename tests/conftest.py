@@ -54,6 +54,12 @@ def test_wproj():
 
 
 @pytest.fixture
+def test_pickle():
+    map_file = data_dir + "test_dict.pkl"
+    return map_file
+
+
+@pytest.fixture
 def test_W():
     map_file = data_dir + "test_W.npy"
     return np.load(map_file)[:, :, 0][:, :, None]

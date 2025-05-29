@@ -574,6 +574,7 @@ def pcaclean(
     los_axis=-1,
     return_A=False,
     mean_centre_weights=None,
+    ignore_nan=False,
 ):
     r"""
     Performs PCA cleaning of the map data. If ``mean_centre`` is set to ``True``,
@@ -605,6 +606,9 @@ def pcaclean(
     use different weights for covariance calculation. While it is not encouraged, that flexibility
     is allowed in the function, by setting a different weight ``mean_centre_weights``.
 
+    If there are frequency gaps in the data, you can set ``ignore_nan=True`` to ignore these
+    channels, and treat the rest of the data as a continuous spectrum.
+
     Parameters
     ----------
         signal: array
@@ -625,6 +629,9 @@ def pcaclean(
         mean_centre_weights: array, default None.
             The weights of each element for mean calculation.
             Default follows the ``weights`` argument.
+        ignore_nan: bool, default False.
+            Whether to ignore NaN values in the data.
+            If True, channels with NaN values are skipped.
 
     Returns
     -------
@@ -684,19 +691,29 @@ def pcaclean(
     covariance = (
         np.einsum("ia,ja->ij", signal * weights, signal * weights)
     ) / np.einsum("ia,ja->ij", weights, weights)
-    V = np.linalg.eigh(covariance)[1][
-        :, ::-1
-    ]  # Eigenvectors from covariance matrix with most dominant first
+    nan_flag = ignore_nan and np.any(np.isnan(covariance))
+    if nan_flag:
+        sel = np.logical_not(np.isnan(np.diagonal(covariance)))
+        covariance = covariance[sel][:, sel]
+        signal = np.nan_to_num(signal)
+    eigenval, V = np.linalg.eigh(covariance)
+    if nan_flag:
+        eigenvec = np.zeros((nz, nz)) * np.nan
+        eigenvec[np.where(sel)[0][:, None], np.where(sel)[0]] = V
+        V = eigenvec
+        eval = np.zeros(nz) * np.nan
+        eval[sel] = eigenval
+        eigenval = eval
+    V = V[:, ::-1]  # Eigenvectors from covariance matrix with most dominant first
     if return_analysis:
-        eigenval = np.linalg.eigh(covariance)[0]
         eignumb = np.linspace(1, len(eigenval), len(eigenval))
         eigenval = eigenval[::-1]  # Put largest eigenvals first
         return covariance, eignumb, eigenval, V
     A = V[:, :N_fg]  # Mixing matrix, first N_fg most dominant modes of eigenvectors
-    S = np.dot(
-        A.T, signal
-    )  # not including weights in mode subtraction (as per Yi-Chao's approach)
-    residual = signal - np.dot(A, S)
+    R_pca = np.eye(nz) - A @ A.T
+    if nan_flag:
+        R_pca = np.nan_to_num(R_pca)
+    residual = R_pca @ signal
     residual = np.reshape(residual, (nz, nx, ny))
     residual = np.transpose(residual, axes=np.argsort(axes))
     if return_A:

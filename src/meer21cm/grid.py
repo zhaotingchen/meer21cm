@@ -77,15 +77,11 @@ def minimum_enclosing_box_of_lightcone(
     """
     ra_arr = (ra_arr.ravel() * units.Unit(ang_unit)).to("deg").value
     dec_arr = (dec_arr.ravel() * units.Unit(ang_unit)).to("deg").value
-    ra_temp = ra_arr.copy()
-    ra_temp[ra_temp > 180] -= 360
-    ra_mean = ra_temp.mean()
-    dec_mean = dec_arr.mean()
-    mean_vec = hp.ang2vec(ra_mean, dec_mean, lonlat=True)
+    vec_arr = hp.ang2vec(ra_arr, dec_arr, lonlat=True)
+    mean_vec = vec_arr.mean(axis=0)
     if rot_mat is None:
         rot_mat = find_rotation_matrix(mean_vec)
     z_arr = f_21 / freq.ravel() - 1
-    vec_arr = hp.ang2vec(ra_arr, dec_arr, lonlat=True)
     # rotate so that centre of field is the line-of-sight [0,0,1]
     vec_arr = np.einsum("ab,ib->ia", rot_mat, vec_arr)
     comov_dist_arr = cosmo.comoving_distance(z_arr).value

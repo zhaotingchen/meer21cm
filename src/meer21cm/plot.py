@@ -126,3 +126,10 @@ def plot_eigenspectrum(
     plt.xlabel("Eigennumber")
     plt.ylabel("Eigenvalue")
     plt.title(title)
+
+
+def plot_projected_map(A, data, wproj, W=None):
+    S_pca_full = np.nan_to_num(A[:, None, :] * A[None, :, :])
+    for i in range(A.shape[1]):
+        res_i = np.einsum("ij,abj->abi", S_pca_full[:, :, i], np.nan_to_num(data))
+        plot_map(res_i, wproj, W=W)
