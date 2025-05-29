@@ -15,6 +15,7 @@
    installation
    develop
    examples
+   cookbook
    contributors
    changelog
    meer21cm

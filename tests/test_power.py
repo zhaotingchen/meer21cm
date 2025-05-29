@@ -145,7 +145,7 @@ def test_FieldPowerSpectrum():
     power = ps.auto_power_3d_1
     assert np.abs((power - sn).mean() / sn) < 2e-2
 
-    ps = PowerSpectrum(
+    ps = FieldPowerSpectrum(
         delta_x,
         box_len,
         unitless_1=True,
@@ -170,9 +170,22 @@ def test_FieldPowerSpectrum():
         unitless_2=True,
         k1dbins=np.linspace(0.1, 0.5, 5),
     )
+    power = ps.auto_power_3d_2
+    assert np.abs((power.mean() - sn) / sn) < 2e-2
     power = ps.cross_power_3d
     assert np.abs((power.mean() - sn) / sn) < 2e-2
     p1d, k1d, nmodes = ps.get_1d_power("cross_power_3d")
+
+
+def test_rescale_ps():
+    ps = PowerSpectrum(
+        renorm_weights_field_1=False,
+        renorm_weights_field_2=False,
+        renorm_weights_field_cross=False,
+    )
+    assert ps.rescale_ps_1 == 1.0
+    assert ps.rescale_ps_2 == 1.0
+    assert ps.rescale_ps_cross == 1.0
 
 
 def test_get_shot_noise():
@@ -340,6 +353,7 @@ def test_power_weights_renorm():
     ps.box_len
     ps.box_resol
     ps.box_ndim
+    assert power_weights_renorm(None) == 1.0
 
 
 def test_get_modelpk_conv():
