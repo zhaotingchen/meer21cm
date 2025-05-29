@@ -2,7 +2,7 @@ import numpy as np
 import healpy as hp
 from astropy.cosmology import Planck18
 from astropy import units
-from .util import f_21
+from .util import f_21, angle_in_range
 
 allowed_window_scheme = ("nnb", "cic", "tsc", "pcs")
 
@@ -416,3 +416,118 @@ def project_particle_to_regular_grid(
             grid_scheme,
         )
     return mesh_mass, mesh_weights, mesh_counts
+
+
+def rotation_matrix_to_radec0(ra, dec):
+    """
+    Find the rotation matrix to rotate the input point at (ra, dec) to (0, 0), by first
+    rotating to (0, dec) and then to (0, 0).
+    """
+    # step 1: rotate to RA=0
+    rot_mat_1 = np.array(
+        [
+            [np.cos(np.deg2rad(ra)), np.sin(np.deg2rad(ra)), 0],
+            [-np.sin(np.deg2rad(ra)), np.cos(np.deg2rad(ra)), 0],
+            [0, 0, 1],
+        ]
+    )
+    # step 2: rotate to dec=0
+    rot_mat_2 = np.array(
+        [
+            [np.cos(np.deg2rad(dec)), 0, np.sin(np.deg2rad(dec))],
+            [0, 1, 0],
+            [-np.sin(np.deg2rad(dec)), 0, np.cos(np.deg2rad(dec))],
+        ]
+    )
+    return rot_mat_2 @ rot_mat_1
+
+
+def sky_partition_for_radecrange(
+    ra_range, dec_range, nside_out=128, nside_in=1024, dec_pad=0
+):
+    """
+    Find a partition of the sky, so that each patch can be rotated to cover the specified RA and Dec range.
+
+    Parameters
+    ----------
+    ra_range: array_like
+        The range of RA to cover.
+    dec_range: array_like
+        The range of Dec to cover.
+    nside_out: int, default 128
+        The HEALPix NSIDE of the output map pixel id.
+    nside_in: int, default 1024
+        The HEALPix NSIDE of the map pixel id for inner calculation.
+    dec_pad: int, default 0
+        The number of extra rows to pad in Dec.
+        Increasing this number will result in patches overlapping with each other.
+
+    Returns
+    -------
+    pix_id_for_patch_i: list
+        The list of pixel id for each patch.
+    rot_mat_for_patch_i: list
+        The list of rotation matrix for each patch, to rotate the patch back to cover the range.
+    """
+    npix = hp.nside2npix(nside_in)
+    ra_grid, dec_grid = hp.pix2ang(nside_in, np.arange(npix), lonlat=True)
+    selection_grid = angle_in_range(ra_grid, ra_range[0], ra_range[1]) * angle_in_range(
+        dec_grid, dec_range[0], dec_range[1]
+    )
+    ra_region = ra_grid[selection_grid]
+    dec_region = dec_grid[selection_grid]
+    vec_region = hp.ang2vec(ra_region, dec_region, lonlat=True)
+    vec_mean = vec_region.mean(axis=0)
+    ra_mean, dec_mean = hp.vec2ang(vec_mean, lonlat=True)
+    ra_mean = ra_mean[0]
+    dec_mean = dec_mean[0]
+    # rotate range to ra=0, dec=0
+    rot_mat_0 = rotation_matrix_to_radec0(ra_mean, dec_mean)
+    vec_region_rot = np.dot(rot_mat_0, vec_region.T)
+    pix_region_rot = hp.vec2pix(
+        nside_in, vec_region_rot[0], vec_region_rot[1], vec_region_rot[2]
+    )
+    ra_region_rot, dec_region_rot = hp.pix2ang(nside_in, pix_region_rot, lonlat=True)
+    # find the enclosing rectangle
+    ra_temp = ra_region_rot.copy()
+    ra_temp[ra_temp > 180] -= 360
+    ra_range_0 = [-np.abs(ra_temp).max(), np.abs(ra_temp).max()]
+    dec_range_0 = [-np.abs(dec_region_rot).max(), np.abs(dec_region_rot).max()]
+    delta_dec = dec_range_0[1] - dec_range_0[0]
+    delta_ra = ra_range_0[1] - ra_range_0[0]
+    ra_range_0 = [-np.abs(ra_temp).max(), np.abs(ra_temp).max()]
+    dec_range_0 = [-np.abs(dec_region_rot).max(), np.abs(dec_region_rot).max()]
+    selection_grid_0 = angle_in_range(
+        ra_grid, ra_range_0[0], ra_range_0[1]
+    ) * angle_in_range(dec_grid, dec_range_0[0], dec_range_0[1])
+    ra_region_0 = ra_grid[selection_grid_0]
+    dec_region_0 = dec_grid[selection_grid_0]
+    vec_region_0 = hp.ang2vec(ra_region_0, dec_region_0, lonlat=True)
+    dec_loop_num = int(90 * np.cos(np.deg2rad(ra_range_0[0])) // delta_dec) + dec_pad
+    delta_dec_loop = 90 / max(dec_loop_num, 1)
+    pix_id_for_patch_i = []
+    rot_mat_for_patch_i = []
+    for j in range(-dec_loop_num, dec_loop_num + 1):
+        delta_dec_j = delta_dec_loop * j
+        ra_loop_num_j = max(
+            int(
+                360
+                * np.cos(np.deg2rad(np.abs(delta_dec_j) + delta_dec_loop / 2))
+                // delta_ra
+            ),
+            1,
+        )
+        if ra_loop_num_j == 1 and np.abs(j) != dec_loop_num:
+            ra_loop_num_j = 2
+        for i in range(0, ra_loop_num_j):
+            delta_ra_i = 360 / (ra_loop_num_j) * i
+            rot_mat = np.linalg.inv(rotation_matrix_to_radec0(delta_ra_i, delta_dec_j))
+            vec_region_rot = np.dot(rot_mat, vec_region_0.T)
+            pix_region_rot = hp.vec2pix(
+                nside_out, vec_region_rot[0], vec_region_rot[1], vec_region_rot[2]
+            )
+            pix_id_for_patch_i.append(pix_region_rot)
+            rot_mat_for_patch_i.append(
+                np.linalg.inv(rot_mat_0) @ np.linalg.inv(rot_mat)
+            )
+    return pix_id_for_patch_i, rot_mat_for_patch_i

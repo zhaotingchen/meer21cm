@@ -4,7 +4,6 @@ from astropy.wcs import WCS
 from meer21cm.util import (
     check_unit_equiv,
     get_wcs_coor,
-    radec_to_indx,
     freq_to_redshift,
     f_21,
     center_to_edges,
@@ -72,6 +71,7 @@ class Specification:
         counts=None,
         survey="meerklass_L_deep",
         band="L",
+        z_interp_max=6.0,
         **kwparams,
     ):
         self.survey = survey
@@ -165,6 +165,7 @@ class Specification:
         self.beam_model = beam_model
         self._beam_image = None
         self._z_as_func_of_comov_dist = None
+        self.z_interp_max = z_interp_max
 
     @property
     def map_unit_type(self):
@@ -661,7 +662,7 @@ class Specification:
         return self._z_as_func_of_comov_dist
 
     def get_z_as_func_of_comov_dist(self):
-        zarr = np.linspace(0, 6.0, 1001)
+        zarr = np.linspace(0, self.z_interp_max, 20001)
         xarr = self.comoving_distance(zarr).value
         func = interp1d(xarr, zarr)
         self._z_as_func_of_comov_dist = func
@@ -671,12 +672,14 @@ class Specification:
         """
         Total survey volume in Mpc^3
         """
+        nu_ext = center_to_edges(self.nu)
+        z_ext = freq_to_redshift(nu_ext)
         volume = (
             (self.W_HI[:, :, 0].sum() * self.pixel_area * (np.pi / 180) ** 2)
             / 3
             * (
-                self.comoving_distance(self.z_ch.max()) ** 3
-                - self.comoving_distance(self.z_ch.min()) ** 3
+                self.comoving_distance(z_ext.max()) ** 3
+                - self.comoving_distance(z_ext.min()) ** 3
             ).value
         )
         return volume

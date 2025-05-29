@@ -23,7 +23,7 @@ get_ns_from_astropy = lambda x: getattr(astropy.cosmology, x).meta["n"]
 
 def extract_astropy_cosmo_set(value):
     """
-    Extract predefined astropy cosmology and turn it into a ``w0waCDM`` object.
+    Extract predefined astropy `FlatLambdaCDM` cosmology and turn it into a ``w0waCDM`` object.
 
     Parameters
     ----------
@@ -148,9 +148,6 @@ class CosmologyParameters:
             wa=wa,
             name=name,
         )
-        # print(self._w0)
-        # print(cosmo.w0)
-        # self._cosmo = cosmo
         return cosmo
 
     def get_camb_pars(self):
@@ -559,33 +556,6 @@ class CosmologyCalculator(Specification, CosmologyParameters):
             fill_value="extrapolate",
         )
         self._matter_power_spectrum_fnc = matter_power_func
-
-    # weights_1 and weights_2 are later used in power spectrum
-    @property
-    def weights_1(self):
-        return self._weights_1
-
-    @property
-    def weights_2(self):
-        return self._weights_2
-
-    @weights_1.setter
-    def weights_1(self, value):
-        # if weight is updated, clear fourier field
-        self._weights_1 = value
-        if "field_1_dep_attr" in dir(self):
-            self.clean_cache(self.field_1_dep_attr)
-        if "tracer_1_dep_attr" in dir(self):
-            self.clean_cache(self.tracer_1_dep_attr)
-
-    @weights_2.setter
-    def weights_2(self, value):
-        # if weight is updated, clear fourier field
-        self._weights_2 = value
-        if "field_2_dep_attr" in dir(self):
-            self.clean_cache(self.field_2_dep_attr)
-        if "tracer_2_dep_attr" in dir(self):
-            self.clean_cache(self.tracer_2_dep_attr)
 
     def deltaz_to_deltar(self, delta_z):
         """

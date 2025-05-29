@@ -15,6 +15,7 @@ from meer21cm.util import (
     radec_to_indx,
     redshift_to_freq,
     freq_to_redshift,
+    get_nd_slicer,
 )
 from meer21cm.dataanalysis import Specification
 import healpy as hp
@@ -32,8 +33,16 @@ class ModelPowerSpectrum(CosmologyCalculator):
         include_beam=[True, False],
         fog_profile="lorentz",
         cross_coeff=1.0,
-        weights_1=None,
-        weights_2=None,
+        weights_field_1=None,
+        weights_field_2=None,
+        weights_grid_1=None,
+        weights_grid_2=None,
+        renorm_weights_field_1=True,
+        renorm_weights_field_2=True,
+        renorm_weights_field_cross=True,
+        renorm_weights_grid_1=True,
+        renorm_weights_grid_2=True,
+        renorm_weights_grid_cross=True,
         mean_amp_1=1.0,
         mean_amp_2=1.0,
         sampling_resol=None,
@@ -45,6 +54,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
         **params,
     ):
         super().__init__(**params)
+        # for compatibility with FieldPowerSpectrum
+        if not hasattr(self, "field_1_dep_attr"):
+            self.field_1_dep_attr = []
+        if not hasattr(self, "field_2_dep_attr"):
+            self.field_2_dep_attr = []
         self.tracer_bias_1 = tracer_bias_1
         self.sigma_v_1 = sigma_v_1
         self.tracer_bias_2 = tracer_bias_2
@@ -62,8 +76,16 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._auto_power_tracer_1_model = None
         self._auto_power_tracer_2_model = None
         self._cross_power_tracer_model = None
-        self.weights_1 = weights_1
-        self.weights_2 = weights_2
+        self.weights_field_1 = weights_field_1
+        self.weights_field_2 = weights_field_2
+        self.weights_grid_1 = weights_grid_1
+        self.weights_grid_2 = weights_grid_2
+        self.renorm_weights_field_1 = renorm_weights_field_1
+        self.renorm_weights_field_2 = renorm_weights_field_2
+        self.renorm_weights_grid_1 = renorm_weights_grid_1
+        self.renorm_weights_grid_2 = renorm_weights_grid_2
+        self.renorm_weights_field_cross = renorm_weights_field_cross
+        self.renorm_weights_grid_cross = renorm_weights_grid_cross
         self.mean_amp_1 = mean_amp_1
         self.mean_amp_2 = mean_amp_2
         self.include_sky_sampling = include_sky_sampling
@@ -83,6 +105,146 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.compensate = compensate
         self.sigma_z_1 = sigma_z_1
         self.sigma_z_2 = sigma_z_2
+
+    @property
+    def weights_field_1(self):
+        """
+        The weights of the first tracer in the density field.
+        """
+        return self._weights_field_1
+
+    @weights_field_1.setter
+    def weights_field_1(self, value):
+        self._weights_field_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+
+    @property
+    def weights_grid_1(self):
+        """
+        The weights of the first tracer in the rectangular grid.
+        """
+        return self._weights_grid_1
+
+    @weights_grid_1.setter
+    def weights_grid_1(self, value):
+        self._weights_grid_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+            self.clean_cache(self.field_1_dep_attr)
+
+    @property
+    def weights_field_2(self):
+        """
+        The weights of the second tracer in the density field.
+        """
+        return self._weights_field_2
+
+    @weights_field_2.setter
+    def weights_field_2(self, value):
+        self._weights_field_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+
+    @property
+    def weights_grid_2(self):
+        """
+        The weights of the second tracer in the rectangular grid.
+        """
+        return self._weights_grid_2
+
+    @weights_grid_2.setter
+    def weights_grid_2(self, value):
+        self._weights_grid_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+            self.clean_cache(self.field_2_dep_attr)
+
+    # for compatibility with FieldPowerSpectrum
+    weights_1 = weights_grid_1
+    weights_2 = weights_grid_2
+
+    @property
+    def renorm_weights_field_1(self):
+        """
+        Whether the field weights for the first tracer are renormalized.
+        """
+        return self._renorm_weights_field_1
+
+    @renorm_weights_field_1.setter
+    def renorm_weights_field_1(self, value):
+        self._renorm_weights_field_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+            self.clean_cache(self.field_1_dep_attr)
+
+    @property
+    def renorm_weights_field_2(self):
+        """
+        Whether the field weights for the second tracer are renormalized.
+        """
+        return self._renorm_weights_field_2
+
+    @renorm_weights_field_2.setter
+    def renorm_weights_field_2(self, value):
+        self._renorm_weights_field_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    def renorm_weights_grid_1(self):
+        """
+        Whether the grid weights for the first tracer are renormalized.
+        """
+        return self._renorm_weights_grid_1
+
+    @renorm_weights_grid_1.setter
+    def renorm_weights_grid_1(self, value):
+        self._renorm_weights_grid_1 = value
+        if "tracer_1_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_1_dep_attr)
+            self.clean_cache(self.field_1_dep_attr)
+
+    @property
+    def renorm_weights_grid_2(self):
+        """
+        Whether the grid weights for the second tracer are renormalized.
+        """
+        return self._renorm_weights_grid_2
+
+    @renorm_weights_grid_2.setter
+    def renorm_weights_grid_2(self, value):
+        self._renorm_weights_grid_2 = value
+        if "tracer_2_dep_attr" in dir(self):
+            self.clean_cache(self.tracer_2_dep_attr)
+            self.clean_cache(self.field_2_dep_attr)
+
+    @property
+    def renorm_weights_field_cross(self):
+        """
+        Whether the field weights for the cross-correlation are renormalized.
+        """
+        return self._renorm_weights_field_cross
+
+    @renorm_weights_field_cross.setter
+    def renorm_weights_field_cross(self, value):
+        self._renorm_weights_field_cross = value
+        if "cross_coeff_dep_attr" in dir(self):
+            self.clean_cache(self.cross_coeff_dep_attr)
+
+    @property
+    def renorm_weights_grid_cross(self):
+        """
+        Whether the grid weights for the cross-correlation are renormalized.
+        """
+        return self._renorm_weights_grid_cross
+
+    @renorm_weights_grid_cross.setter
+    def renorm_weights_grid_cross(self, value):
+        self._renorm_weights_grid_cross = value
+        if "cross_coeff_dep_attr" in dir(self):
+            self.clean_cache(self.cross_coeff_dep_attr)
 
     @property
     def kaiser_rsd(self):
@@ -567,8 +729,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
         tracer_comp_indx = np.array(self.compensate).astype("int")[i - 1]
         tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
+        # get the matter power spectrum in real space
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
+        # tracer in real space is just the matter ps times the bias
         pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
+        # apply the RSD
         if self.kaiser_rsd:
             beta_i = self.f_growth / tracer_bias_i
         else:
@@ -578,12 +743,22 @@ class ModelPowerSpectrum(CosmologyCalculator):
             beta_i,
             getattr(self, "sigma_v_" + str(i)),
         )
+        # first apply the beam
         auto_power_model *= B_beam ** (tracer_beam_indx * 2)
-        auto_power_model *= B_sampling ** (tracer_samp_indx * 2)
-        auto_power_model *= B_comp ** (tracer_comp_indx * 2)
+        # the ps is then convolved with the field weights first
         auto_power_model = get_modelpk_conv(
             auto_power_model,
-            weights1_in_real=getattr(self, "weights_" + str(i)),
+            weights1_in_real=getattr(self, "weights_field_" + str(i)),
+            renorm=getattr(self, "renorm_weights_field_" + str(i)),
+        )
+        # then apply the sky-map sampling and gridding compensation
+        auto_power_model *= B_sampling ** (tracer_samp_indx * 2)
+        auto_power_model *= B_comp ** (tracer_comp_indx * 2)
+        # then the weights in the grid space before FFT
+        auto_power_model = get_modelpk_conv(
+            auto_power_model,
+            weights1_in_real=getattr(self, "weights_grid_" + str(i)),
+            renorm=getattr(self, "renorm_weights_grid_" + str(i)),
         )
         setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
         return auto_power_model
@@ -619,6 +794,14 @@ class ModelPowerSpectrum(CosmologyCalculator):
             r=self.cross_coeff,
         )
         self._cross_power_tracer_model[self.kmode == 0] = 0.0
+        # convolve the field weights first
+        self._cross_power_tracer_model = get_modelpk_conv(
+            self._cross_power_tracer_model,
+            weights1_in_real=self.weights_field_1,
+            weights2=self.weights_field_2,
+            renorm=self.renorm_weights_field_cross,
+        )
+        # then apply the beam, sky-map sampling, and gridding compensation
         self._cross_power_tracer_model *= B_beam ** (
             tracer_beam_indx[0] + tracer_beam_indx[1]
         )
@@ -628,11 +811,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._cross_power_tracer_model *= B_comp ** (
             tracer_comp_indx[0] + tracer_comp_indx[1]
         )
-        self._cross_power_tracer_model[self.kmode == 0] = 0.0
+        # then the weights in the grid space before FFT, which is normalised
         self._cross_power_tracer_model = get_modelpk_conv(
             self._cross_power_tracer_model,
-            weights1_in_real=self.weights_1,
-            weights2=self.weights_2,
+            weights1_in_real=self.weights_grid_1,
+            weights2=self.weights_grid_2,
+            renorm=self.renorm_weights_grid_cross,
         )
 
 
@@ -644,13 +828,10 @@ class FieldPowerSpectrum(Specification):
         weights_1=None,
         mean_center_1=False,
         unitless_1=False,
-        remove_sn_1=False,
         field_2=None,
         weights_2=None,
         mean_center_2=False,
         unitless_2=False,
-        remove_sn_2=False,
-        corrtype=None,
         **params,
     ):
         super().__init__(**params)
@@ -664,8 +845,6 @@ class FieldPowerSpectrum(Specification):
         self.unitless_1 = unitless_1
         self.mean_center_2 = mean_center_2
         self.unitless_2 = unitless_2
-        self.remove_sn_1 = remove_sn_1
-        self.remove_sn_2 = remove_sn_2
         if field_2 is not None:
             error_message = "field_1 and field_2 must have same dimensions"
             assert np.allclose(field_2.shape, field_1.shape), error_message
@@ -724,18 +903,18 @@ class FieldPowerSpectrum(Specification):
         if corr_type[:3].lower() == "gal":
             mean_center = True
             unitless = True
-            remove_sn = True
+            mean_amp = 1.0
         elif corr_type[:2].lower() == "hi":
             mean_center = False
             unitless = False
-            remove_sn = False
+            mean_amp = "average_hi_temp"
         else:
             raise ValueError("unknown corr_type")
         if not tracer_indx in [1, 2]:
             raise ValueError("tracer_indx should be either 1 or 2")
         setattr(self, "mean_center_" + str(tracer_indx), mean_center)
         setattr(self, "unitless_" + str(tracer_indx), unitless)
-        setattr(self, "remove_sn_" + str(tracer_indx), remove_sn)
+        setattr(self, "mean_amp_" + str(tracer_indx), mean_amp)
 
     @property
     def x_vec(self):
@@ -934,19 +1113,10 @@ class FieldPowerSpectrum(Specification):
             self.box_len,
             weights=self.weights_1,
         )
-        if self.remove_sn_1:
-            field = get_renormed_field(
-                self.field_1,
-                weights=self.weights_1,
-                mean_center=self.mean_center_1,
-                unitless=self.unitless_1,
-            )
-            power_spectrum -= get_shot_noise(
-                self.field_1,
-                self.box_len,
-                weights=self.weights_1,
-            )
-        return power_spectrum
+        if hasattr(self, "rescale_ps_1"):
+            return power_spectrum * self.rescale_ps_1
+        else:
+            return power_spectrum
 
     @property
     def auto_power_3d_2(self):
@@ -960,13 +1130,10 @@ class FieldPowerSpectrum(Specification):
             self.box_len,
             weights=self.weights_2,
         )
-        if self.remove_sn_2:
-            power_spectrum -= get_shot_noise(
-                self.field_2,
-                self.box_len,
-                weights=self.weights_2,
-            )
-        return power_spectrum
+        if hasattr(self, "rescale_ps_2"):
+            return power_spectrum * self.rescale_ps_2
+        else:
+            return power_spectrum
 
     @property
     def cross_power_3d(self):
@@ -987,7 +1154,10 @@ class FieldPowerSpectrum(Specification):
             field_2=self.fourier_field_2,
             weights_2=weights_2,
         )
-        return power_spectrum
+        if hasattr(self, "rescale_ps_cross"):
+            return power_spectrum * self.rescale_ps_cross
+        else:
+            return power_spectrum
 
 
 def get_renormed_field(
@@ -1244,6 +1414,8 @@ def power_weights_renorm(weights1_in_real, weights2=None):
         weights_norm: float.
            The renormalization coefficient.
     """
+    if weights1_in_real is None:
+        return 1.0
     if weights2 is None:
         weights2 = weights1_in_real
     weights_norm = weights1_in_real.size / np.sum(weights1_in_real * weights2)
@@ -1285,6 +1457,7 @@ def get_power_spectrum(
     field_2 = np.array(field_2)
     if weights is None:
         weights = np.ones(fourier_field.shape)
+    # if weights_2 is None, the renormalisation sets it to weights
     weights_norm = power_weights_renorm(weights, weights_2)
     power = np.real(fourier_field * np.conj(field_2)) * weights_norm
     box_volume = np.prod(box_len)
@@ -1555,15 +1728,21 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self,
         field_1=None,
         box_len=None,
-        weights_1=None,
+        weights_field_1=None,
+        weights_grid_1=None,
         mean_center_1=False,
         unitless_1=False,
-        remove_sn_1=False,
         field_2=None,
-        weights_2=None,
+        weights_field_2=None,
+        weights_grid_2=None,
         mean_center_2=False,
         unitless_2=False,
-        remove_sn_2=False,
+        renorm_weights_field_1=True,
+        renorm_weights_field_2=True,
+        renorm_weights_grid_1=True,
+        renorm_weights_grid_2=True,
+        renorm_weights_field_cross=True,
+        renorm_weights_grid_cross=True,
         corrtype=None,
         k1dbins=None,
         kmode=None,
@@ -1612,15 +1791,13 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self,
             field_1,
             box_len,
-            weights_1=weights_1,
+            weights_1=weights_grid_1,
             mean_center_1=mean_center_1,
             unitless_1=unitless_1,
-            remove_sn_1=remove_sn_1,
             field_2=field_2,
-            weights_2=weights_2,
+            weights_2=weights_grid_2,
             mean_center_2=mean_center_2,
             unitless_2=unitless_2,
-            remove_sn_2=remove_sn_2,
             corrtype=corrtype,
         )
         self.kmode = kmode
@@ -1639,8 +1816,16 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             include_beam=include_beam,
             fog_profile=fog_profile,
             cross_coeff=cross_coeff,
-            weights_1=weights_1,
-            weights_2=weights_2,
+            weights_field_1=weights_field_1,
+            weights_field_2=weights_field_2,
+            weights_grid_1=weights_grid_1,
+            weights_grid_2=weights_grid_2,
+            renorm_weights_field_1=renorm_weights_field_1,
+            renorm_weights_field_2=renorm_weights_field_2,
+            renorm_weights_grid_1=renorm_weights_grid_1,
+            renorm_weights_grid_2=renorm_weights_grid_2,
+            renorm_weights_field_cross=renorm_weights_field_cross,
+            renorm_weights_grid_cross=renorm_weights_grid_cross,
             mean_amp_1=mean_amp_1,
             mean_amp_2=mean_amp_2,
             sampling_resol=sampling_resol,
@@ -1677,6 +1862,41 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.interlace_shift = interlace_shift
         self.flat_sky = flat_sky
         self.flat_sky_padding = flat_sky_padding
+
+    @property
+    def rescale_ps_1(self):
+        """
+        The factor to rescale the power spectrum of the first field based on the field weights.
+        """
+        if self.renorm_weights_field_1:
+            self._rescale_ps_1 = power_weights_renorm(self.weights_field_1)
+        else:
+            self._rescale_ps_1 = 1.0
+        return self._rescale_ps_1
+
+    @property
+    def rescale_ps_2(self):
+        """
+        The factor to rescale the power spectrum of the second field based on the field weights.
+        """
+        if self.renorm_weights_field_2:
+            self._rescale_ps_2 = power_weights_renorm(self.weights_field_2)
+        else:
+            self._rescale_ps_2 = 1.0
+        return self._rescale_ps_2
+
+    @property
+    def rescale_ps_cross(self):
+        """
+        The factor to rescale the power spectrum of the cross-correlation based on the field weights.
+        """
+        if self.renorm_weights_field_cross:
+            self._rescale_ps_cross = power_weights_renorm(
+                self.weights_field_1, weights2=self.weights_field_2
+            )
+        else:
+            self._rescale_ps_cross = 1.0
+        return self._rescale_ps_cross
 
     @property
     def num_particle_per_pixel(self):
@@ -2002,6 +2222,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             ]
         )
         self.propagate_field_k_to_model()
+        self._counts_in_box = None
+        nu_ext = np.linspace(
+            self.nu.min() - self.freq_resol * flat_sky_padding[2],
+            self.nu.max() + self.freq_resol * flat_sky_padding[2],
+            len(self.nu) + 2 * flat_sky_padding[2],
+        )
+        self._box_voxel_redshift = (
+            np.ones(self.box_ndim) * freq_to_redshift(nu_ext)[None, None, :]
+        )
 
     def get_enclosing_box(self, rot_mat=None):
         """
@@ -2103,6 +2332,11 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
         self.box_ndim = ndim_rg
+        self._counts_in_box = None
+        slicer = get_nd_slicer()
+        vec = [(self.x_vec[i] + self.box_origin[i])[slicer[i]] for i in range(3)]
+        vec_len = np.sqrt(vec[0] ** 2 + vec[1] ** 2 + vec[2] ** 2)
+        self._box_voxel_redshift = self.z_as_func_of_comov_dist(vec_len)
         if self.model_k_from_field:
             self.propagate_field_k_to_model()
 
@@ -2218,6 +2452,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         else:
             ra_gal, dec_gal, freq_gal = radecfreq
         if flat_sky:
+            self.compensate = False
             z_gal = freq_to_redshift(freq_gal)
             self.use_flat_sky_box(flat_sky_padding=[0, 0, 0])
             pos_indx_1, pos_indx_2 = radec_to_indx(
@@ -2267,19 +2502,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             gal_map_rg2,
             self.interlace_shift,
         )
-        # pix_coor_orig = self.pix_coor_in_box.reshape((self.num_particle_per_pixel, -1))[
-        #    0
-        # ].reshape((-1, 3))
-        # get which pixels in the rg box are not covered by the lightcone
-        # _, _, pixel_counts_hi_rg = project_particle_to_regular_grid(
-        #    pix_coor_orig,
-        #    self.box_len,
-        #    self.box_ndim,
-        #    grid_scheme=self.grid_scheme,
-        #    particle_mass=self.data[self.W_HI].ravel(),
-        #    particle_weights=self.w_HI[self.W_HI].ravel(),
-        #    compensate=False,
-        # )
         gal_map_rg = np.array(gal_map_rg)
         gal_weights_rg = np.array(gal_weights_rg)
         pixel_counts_gal_rg = np.array(pixel_counts_gal_rg)
@@ -2287,7 +2509,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         # only pixels sampled by the lightcone is used
         weights_g = (self.counts_in_box > 0).astype(float)
         self.weights_2 = weights_g
-        # self.apply_taper_to_field(2)
         self.mean_center_2 = True
         self.unitless_2 = True
         include_beam = np.array(self.include_beam)

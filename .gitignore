@@ -23,3 +23,4 @@ core
 .idea/*
 .DS_Store
 misc/*
+issues/*

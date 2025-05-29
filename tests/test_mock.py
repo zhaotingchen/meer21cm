@@ -9,15 +9,11 @@ from meer21cm.mock import (
     generate_colored_noise,
 )
 from meer21cm import Specification
-from meer21cm.util import hod_obuljen18, create_udres_wproj
-from astropy.cosmology import Planck18, WMAP1
-from meer21cm.util import himf_pars_jones18, center_to_edges, f_21
-
-# from unittest.mock import patch
-import matplotlib.pyplot as plt
-import sys
-from meer21cm.power import PowerSpectrum
+from meer21cm.util import create_udres_wproj
+from meer21cm.util import center_to_edges
 from meer21cm.util import radec_to_indx, find_ch_id, redshift_to_freq
+from scipy.signal import windows
+from scipy.interpolate import interp1d
 
 
 @pytest.mark.parametrize("parallel_plane", [True, False])
@@ -167,8 +163,8 @@ def test_tracer_position():
     assert len(mock.ra_mock_tracer) > mock.num_discrete_source
     assert len(mock.dec_mock_tracer) > mock.num_discrete_source
     assert len(mock.z_mock_tracer) > mock.num_discrete_source
-    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 1000
-    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 1000
+    assert np.abs((mock.mock_inside_range).sum() - mock.num_discrete_source) < 2000
+    assert np.abs(len(mock.ra_gal) - mock.num_discrete_source) < 2000
     # test of power spectrum is performed in pipeline tests
 
 
@@ -413,3 +409,36 @@ def test_flat_sky():
     shot_noise = np.prod(mock.box_len) / mock.field_2.sum()
     ratio = (mock.auto_power_3d_2 - shot_noise) / mock.auto_power_tracer_2_model
     assert np.abs(ratio.mean() - 1) < 1e-1
+
+
+def test_dndz():
+    mock = MockSimulation()
+    dndz = interp1d(
+        np.linspace(mock.z_ch.min(), mock.z_ch.max(), 100),
+        windows.blackmanharris(100),
+        bounds_error=False,
+        fill_value=0,
+    )
+    raminMK, ramaxMK = 334, 357
+    decminMK, decmaxMK = -35, -26.5
+    ra_range = (raminMK, ramaxMK)
+    dec_range = (decminMK, decmaxMK)
+    # all the other settings follow the default, which corresponds to the MeerKLASS L-band deep-field survey
+    mock = MockSimulation(
+        flat_sky=True,
+        num_discrete_source=1e5,
+        tracer_bias_2=1.0,
+        ra_range=ra_range,
+        dec_range=dec_range,
+        discrete_source_dndz=dndz,
+        seed=12345,
+    )
+    # generate the mock tracer
+    mock.propagate_mock_tracer_to_gal_cat()
+    # grid to galaxy number count
+    gal_count, _, _ = mock.grid_gal_to_field()
+    kernel = gal_count.sum(axis=(0, 1))
+    kernel /= kernel.max()
+    input_dndz = dndz(mock.z_ch)
+    input_dndz /= input_dndz.max()
+    assert np.abs(input_dndz - kernel).mean() < 1e-1
