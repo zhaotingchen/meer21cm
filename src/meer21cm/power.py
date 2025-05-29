@@ -2244,9 +2244,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             return 1
         ra = self.ra_map.copy()
         dec = self.dec_map.copy()
-        map_mask = (self.W_HI).mean(axis=self.los_axis) == 1
-        ra = ra[map_mask]
-        dec = dec[map_mask]
         (
             self._x_start,
             self._y_start,

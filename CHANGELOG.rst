@@ -1,6 +1,18 @@
 Releases
 ========
 
+v0.6.1
+------
+Features
+++++++++
+* allow dndz input for mock galaxy simulation
+* allow flat-sky approximation in mock and ps calculation
+* allow read in UHF pickle file
+
+Bugfixes
+++++++++
+* fix a bug in get_enclosing_box
+
 v0.6.0
 ------
 Features
