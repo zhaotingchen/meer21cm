@@ -248,6 +248,9 @@ def test_pcaclean():
     )
     assert res_arr.shape == test_arr.shape
     assert np.abs((res_arr).mean()) < 1e-3
+    test_arr[:, :, :20] = np.nan
+    test_res, test_A = pcaclean(test_arr, 1, return_A=True, ignore_nan=True)
+    assert np.abs((test_res[:, :, 20:]).mean()) < 3e-3
 
 
 def test_radec_to_indx(test_wproj):
