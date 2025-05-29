@@ -704,7 +704,6 @@ def pcaclean(
         eval = np.zeros(nz) * np.nan
         eval[sel] = eigenval
         eigenval = eval
-        N_fg = np.where(sel)[0][N_fg]
     V = V[:, ::-1]  # Eigenvectors from covariance matrix with most dominant first
     if return_analysis:
         eignumb = np.linspace(1, len(eigenval), len(eigenval))
