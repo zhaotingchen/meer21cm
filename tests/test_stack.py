@@ -13,6 +13,8 @@ def test_stack(sym):
     sp = Specification(
         ra_range=ra_range_MK,
         dec_range=dec_range_MK,
+        survey="meerklass_2021",
+        band="L",
     )
     data = sp.data.copy()
     source_1 = np.array([1, 2, 3, 4, 5, 4, 3, 2, 1])
@@ -51,6 +53,8 @@ def test_stack(sym):
     sp = Specification(
         ra_range=ra_range_MK,
         dec_range=dec_range_MK,
+        survey="meerklass_2021",
+        band="L",
     )
     data = sp.data.copy()
     source_1 = np.array([1, 2, 3, 4, 5, 4, 3, 2, 1])
@@ -78,6 +82,8 @@ def test_raise_error():
     sp = Specification(
         ra_range=ra_range_MK,
         dec_range=dec_range_MK,
+        survey="meerklass_2021",
+        band="L",
     )
     ra_g = np.array([180, 181])
     dec_g = np.array([sp.dec_map[80, 30], sp.dec_map[50, 40]])

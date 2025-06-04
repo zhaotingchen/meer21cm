@@ -668,7 +668,11 @@ def test_temp_amp():
 
 
 def test_noise_power_from_map(test_W):
-    sp = PowerSpectrum(sampling_resol="auto")
+    sp = PowerSpectrum(
+        sampling_resol="auto",
+        survey="meerklass_2021",
+        band="L",
+    )
     sp.data = np.random.normal(size=sp.map_has_sampling.shape) * sp.map_has_sampling
     ps = sp
     ps.downres_factor_transverse = 1.5
@@ -721,7 +725,11 @@ def test_cache():
 
 
 def test_grid_gal(test_gal_fits, test_W):
-    ps = PowerSpectrum(gal_file=test_gal_fits)
+    ps = PowerSpectrum(
+        gal_file=test_gal_fits,
+        survey="meerklass_2021",
+        band="L",
+    )
     ps.W_HI = (test_W * ps.nu[None, None, :]) > 0
     ps.data = ps.W_HI
     ps.w_HI = ps.W_HI
@@ -732,6 +740,8 @@ def test_grid_gal(test_gal_fits, test_W):
         weights_map_pixel=ps.w_HI,
         field_from_mapdata=True,
         include_sky_sampling=[True, True],
+        survey="meerklass_2021",
+        band="L",
         tracer_bias_2=1.0,  # just for invoking some tests
     )
     ps.read_gal_cat()
@@ -745,6 +755,8 @@ def test_shot_noise_tapering():
         include_sky_sampling=[False, False],
         box_len=[200, 400, 600],
         box_ndim=[40, 80, 120],
+        survey="meerklass_2021",
+        band="L",
     )
     num_g = 100000
     pos = [
@@ -783,6 +795,8 @@ def test_shot_noise_tapering():
 def test_rot_back():
     ps = PowerSpectrum(
         include_sky_sampling=[False, False],
+        survey="meerklass_2021",
+        band="L",
     )
     ps.W_HI = np.ones_like(ps.W_HI)
     ps.get_enclosing_box()
@@ -808,6 +822,8 @@ def test_poisson_gal_gen():
         mean_amp_1="average_hi_temp",
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
+        survey="meerklass_2021",
+        band="L",
         # seed=42,
         kmax=10.0,
     )

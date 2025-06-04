@@ -19,6 +19,8 @@ from scipy.interpolate import interp1d
 @pytest.mark.parametrize("parallel_plane", [True, False])
 def test_rsd_from_field(parallel_plane):
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         kaiser_rsd=True,
         parallel_plane=parallel_plane,
         density="lognormal",
@@ -44,6 +46,8 @@ def test_rsd_from_field(parallel_plane):
     if not parallel_plane:
         with pytest.warns(UserWarning):
             mock = MockSimulation(
+                survey="meerklass_2021",
+                band="L",
                 kaiser_rsd=True,
                 parallel_plane=parallel_plane,
                 rsd_from_field=False,
@@ -57,6 +61,8 @@ def test_matter_mock(test_W, density):
     k1dedges = np.geomspace(0.05, 1.5, 20)
 
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         density=density,
         cosmo="WMAP1",
         k1dbins=k1dedges,
@@ -115,6 +121,8 @@ def test_matter_mock(test_W, density):
 )
 def test_tracer_mock(tracer_i, kaiser_rsd, parallel_plane):
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         kaiser_rsd=kaiser_rsd,
         parallel_plane=parallel_plane,
         tracer_bias_1=1.5,
@@ -136,6 +144,8 @@ def test_tracer_position():
     dec_range = (decminGAMA, decmaxGAMA)
     with pytest.raises(ValueError):
         mock = MockSimulation(
+            survey="meerklass_2021",
+            band="L",
             ra_range=ra_range,
             dec_range=dec_range,
             kaiser_rsd=True,
@@ -144,6 +154,8 @@ def test_tracer_position():
         )
     # now do a proper mock based on tracer 2
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         ra_range=ra_range,
         dec_range=dec_range,
         kaiser_rsd=True,
@@ -175,6 +187,8 @@ def test_hi_mass_to_flux():
     dec_range_MK = (decminMK, decmaxMK)
     num_g = 10000
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         ra_range=ra_range_MK,
         dec_range=dec_range_MK,
         tracer_bias_1=1.5,
@@ -241,6 +255,8 @@ def test_mock_hi_profile():
     dec_range_MK = (decminMK, decmaxMK)
     num_g = 10000
     hisim = HIGalaxySimulation(
+        survey="meerklass_2021",
+        band="L",
         ra_range=ra_range_MK,
         dec_range=dec_range_MK,
         tracer_bias_1=1.5,
@@ -302,6 +318,8 @@ def test_project_hi_profile(highres):
     dec_range_MK = (decminMK, decmaxMK)
     # tests
     hisim = HIGalaxySimulation(
+        survey="meerklass_2021",
+        band="L",
         # ra_range=ra_range_MK,
         # dec_range=dec_range_MK,
         tracer_bias_1=1.5,
@@ -391,6 +409,8 @@ def test_generate_colored_noise():
 
 def test_flat_sky():
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         highres_sim=None,
         num_discrete_source=1000000,
         tracer_bias_2=1.0,
@@ -415,7 +435,10 @@ def test_flat_sky():
 
 
 def test_dndz():
-    mock = MockSimulation()
+    mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
+    )
     dndz = interp1d(
         np.linspace(mock.z_ch.min(), mock.z_ch.max(), 100),
         windows.blackmanharris(100),
@@ -428,6 +451,8 @@ def test_dndz():
     dec_range = (decminMK, decmaxMK)
     # all the other settings follow the default, which corresponds to the MeerKLASS L-band deep-field survey
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         flat_sky=True,
         num_discrete_source=1e5,
         tracer_bias_2=1.0,

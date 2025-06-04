@@ -80,7 +80,10 @@ def test_update_pars():
 
 
 def test_cache():
-    coscal = CosmologyCalculator()
+    coscal = CosmologyCalculator(
+        survey="meerklass_2021",
+        band="L",
+    )
     test1 = coscal.matter_power_spectrum_fnc(1)
     coscal.nu = [f_21, f_21]
     coscal.nu
