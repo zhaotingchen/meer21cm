@@ -499,7 +499,12 @@ class Specification:
         """
         return find_ch_id(self.freq_gal, self.nu)
 
-    def read_gal_cat(self):
+    def read_gal_cat(
+        self,
+        ra_col="RA",
+        dec_col="DEC",
+        z_col="Z",
+    ):
         """
         Read in a galaxy catalogue for cross-correlation
         """
@@ -507,9 +512,9 @@ class Specification:
             print("no gal_file specified")
             return None
         hdu = fits.open(self.gal_file)
-        ra_g = hdu[1].data["RA"]  # Right ascension (J2000) [deg]
-        dec_g = hdu[1].data["DEC"]  # Declination (J2000) [deg]
-        z_g = hdu[1].data["Z"]  # Spectroscopic redshift, -1 for none attempted
+        ra_g = hdu[1].data[ra_col]  # Right ascension (J2000) [deg]
+        dec_g = hdu[1].data[dec_col]  # Declination (J2000) [deg]
+        z_g = hdu[1].data[z_col]  # Spectroscopic redshift, -1 for none attempted
 
         # select only galaxies that fall into range
         # z_edges = center_to_edges(self.z_ch)
