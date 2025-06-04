@@ -121,14 +121,6 @@ class Specification:
         self.los_axis = los_axis
         if nu is None:
             nu = np.array([f_21 - 1, f_21])
-            # nu = cal_freq(
-            #    np.arange(4096) + 1,
-            #    band=self.band,
-            # )
-            # if nu_min is None and pickle_file is None:
-            #    nu_min = getattr(telescope, f"{self.survey}_nu_min")
-            # if nu_max is None and pickle_file is None:
-            #    nu_max = getattr(telescope, f"{self.survey}_nu_max")
         if nu_min is None:
             nu_min = -np.inf
         if nu_max is None:
@@ -515,24 +507,23 @@ class Specification:
             print("no gal_file specified")
             return None
         hdu = fits.open(self.gal_file)
-        hdr = hdu[1].header
         ra_g = hdu[1].data["RA"]  # Right ascension (J2000) [deg]
         dec_g = hdu[1].data["DEC"]  # Declination (J2000) [deg]
         z_g = hdu[1].data["Z"]  # Spectroscopic redshift, -1 for none attempted
 
         # select only galaxies that fall into range
-        z_edges = center_to_edges(self.z_ch)
-        zmin, zmax = self.z_ch.min(), self.z_ch.max()
-        z_Lband = (z_g > zmin) & (z_g < zmax)
-        ra_g = ra_g[z_Lband]
-        dec_g = dec_g[z_Lband]
-        z_g = z_g[z_Lband]
+        # z_edges = center_to_edges(self.z_ch)
+        # zmin, zmax = self.z_ch.min(), self.z_ch.max()
+        # z_Lband = (z_g > zmin) & (z_g < zmax)
+        # ra_g = ra_g[z_Lband]
+        # dec_g = dec_g[z_Lband]
+        # z_g = z_g[z_Lband]
 
         self._ra_gal = ra_g
         self._dec_gal = dec_g
         self._z_gal = z_g
         # select only ra_range and dec_range
-        # self.trim_gal_to_range()
+        self.trim_gal_to_range()
 
     def read_from_pickle(self):
         if self.pickle_file is None:
