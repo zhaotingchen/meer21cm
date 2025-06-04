@@ -50,6 +50,7 @@ default_nu = {
     "meerkat_L": cal_freq(np.arange(4096) + 1, band="L"),
     "meerkat_UHF": cal_freq(np.arange(4096) + 1, band="UHF"),
     "meerklass_2021_L": cal_freq(np.arange(4096) + 1, band="L"),
+    "meerklass_2019_L": cal_freq(np.arange(4096) + 1, band="L"),
     "meerklass_UHF": cal_freq(np.arange(4096) + 1, band="UHF"),
 }
 
