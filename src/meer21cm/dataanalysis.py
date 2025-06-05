@@ -504,6 +504,7 @@ class Specification:
         ra_col="RA",
         dec_col="DEC",
         z_col="Z",
+        trim=True,
     ):
         """
         Read in a galaxy catalogue for cross-correlation
@@ -515,20 +516,11 @@ class Specification:
         ra_g = hdu[1].data[ra_col]  # Right ascension (J2000) [deg]
         dec_g = hdu[1].data[dec_col]  # Declination (J2000) [deg]
         z_g = hdu[1].data[z_col]  # Spectroscopic redshift, -1 for none attempted
-
-        # select only galaxies that fall into range
-        # z_edges = center_to_edges(self.z_ch)
-        # zmin, zmax = self.z_ch.min(), self.z_ch.max()
-        # z_Lband = (z_g > zmin) & (z_g < zmax)
-        # ra_g = ra_g[z_Lband]
-        # dec_g = dec_g[z_Lband]
-        # z_g = z_g[z_Lband]
-
         self._ra_gal = ra_g
         self._dec_gal = dec_g
         self._z_gal = z_g
-        # select only ra_range and dec_range
-        self.trim_gal_to_range()
+        if trim:
+            self.trim_gal_to_range()
 
     def read_from_pickle(self):
         if self.pickle_file is None:
