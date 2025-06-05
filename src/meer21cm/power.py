@@ -2353,7 +2353,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 self.box_len,
                 self.box_ndim,
                 grid_scheme=self.grid_scheme,
-                particle_mass=self.w_HI[self.W_HI].ravel(),
+                particle_mass=self.w_HI[self.W_HI.sum(-1) > 0].ravel(),
                 compensate=False,  # compensate should be at model level
             )
         return counts_in_grids
