@@ -324,7 +324,7 @@ def test_project_hi_profile(highres):
         # dec_range=dec_range_MK,
         tracer_bias_1=1.5,
         tracer_bias_2=1.9,
-        num_discrete_source=2,
+        num_discrete_source=5,
         downres_factor_radial=1 / 3,
         downres_factor_transverse=1 / 3,
         kmax=20,
