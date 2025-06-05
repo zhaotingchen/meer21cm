@@ -8,6 +8,19 @@ from meer21cm.util import freq_to_redshift, center_to_edges, f_21, create_wcs_wi
 from meer21cm.telescope import dish_beam_sigma
 
 
+def test_nu_range():
+    spec = Specification()
+    assert spec.nu_min == -np.inf
+    assert spec.nu_max == np.inf
+    assert np.allclose(spec.nu, [f_21 - 1, f_21])
+    with pytest.raises(ValueError):
+        spec = Specification(
+            nu=np.array([1e7, 1e7]),
+            nu_min=809 * 1e6,
+            nu_max=910 * 1e6,
+        )
+
+
 def test_volume():
     spec = Specification(
         survey="meerklass_2021",

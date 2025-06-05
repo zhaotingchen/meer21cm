@@ -119,14 +119,21 @@ class Specification:
         self.counts_file = counts_file
         self.pickle_file = pickle_file
         self.los_axis = los_axis
+        sel_nu = True
         if nu is None:
             nu = np.array([f_21 - 1, f_21])
+            sel_nu = False
         if nu_min is None:
             nu_min = -np.inf
         if nu_max is None:
             nu_max = np.inf
         nu_sel = (nu > nu_min) * (nu < nu_max)
-        self.nu = nu[nu_sel]
+        if sel_nu:
+            if nu_sel.sum() == 0:
+                raise ValueError("input nu is not in the range of nu_min and nu_max")
+            self.nu = nu[nu_sel]
+        else:
+            self.nu = nu
         self.nu_min = nu_min
         self.nu_max = nu_max
         if num_pix_x is None:
