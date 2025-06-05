@@ -40,7 +40,7 @@ def cal_freq(
         freq: float.
            The frequency of the channel.
     """
-    if band is "":
+    if band == "":
         band = "L"
     if nu_min is None:
         nu_min = getattr(telescope, f"meerkat_{band}_band_nu_min")
