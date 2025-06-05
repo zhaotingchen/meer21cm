@@ -2353,7 +2353,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 self.box_len,
                 self.box_ndim,
                 grid_scheme=self.grid_scheme,
-                particle_mass=self.w_HI[self.W_HI].ravel(),
+                particle_mass=self.w_HI[self.W_HI.sum(-1) > 0].ravel(),
                 compensate=False,  # compensate should be at model level
             )
         return counts_in_grids
@@ -2386,8 +2386,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             return self.field_1, self.weights_1, (self.weights_1 > 0).astype(float)
         if self.box_origin[0] is None:
             self.get_enclosing_box()
-        data_particle = self.data[self.W_HI].ravel()
-        weights_particle = self.w_HI[self.W_HI].ravel()
+        data_particle = self.data[self.W_HI.sum(-1) > 0].ravel()
+        weights_particle = self.w_HI[self.W_HI.sum(-1) > 0].ravel()
         num_p = self.num_particle_per_pixel
         data_particle = [
             data_particle,

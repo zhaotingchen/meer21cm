@@ -8,8 +8,24 @@ from meer21cm.util import freq_to_redshift, center_to_edges, f_21, create_wcs_wi
 from meer21cm.telescope import dish_beam_sigma
 
 
-def test_volume():
+def test_nu_range():
     spec = Specification()
+    assert spec.nu_min == -np.inf
+    assert spec.nu_max == np.inf
+    assert np.allclose(spec.nu, [f_21 - 1, f_21])
+    with pytest.raises(ValueError):
+        spec = Specification(
+            nu=np.array([1e7, 1e7]),
+            nu_min=809 * 1e6,
+            nu_max=910 * 1e6,
+        )
+
+
+def test_volume():
+    spec = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     diff = np.abs(
         spec.pix_resol_in_mpc**2
         * spec.los_resol_in_mpc
@@ -43,7 +59,10 @@ def test_update_pars():
 
 
 def test_defaults(test_nu, test_W):
-    spec = Specification()
+    spec = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     assert np.allclose(spec.nu, test_nu)
     assert np.allclose(
         spec.map_has_sampling[1:-1, 1:-1], np.ones(test_W[1:-1, 1:-1].shape)
@@ -67,7 +86,10 @@ def test_unit_conversion():
 
 
 def test_velocity(test_nu, test_wproj):
-    spec = Specification()
+    spec = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     assert np.allclose(spec.dvdf_ch, (constants.c / test_nu).to("km/s").value)
     assert np.allclose(
         spec.vel_resol_ch,
@@ -126,7 +148,10 @@ def test_read_fits(test_fits):
 
 
 def test_gal_readin(test_gal_fits):
-    sp = Specification()
+    sp = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     sp.gal_file = test_gal_fits
     sp.read_gal_cat()
     nu_edges = center_to_edges(sp.nu)
@@ -138,7 +163,10 @@ def test_gal_readin(test_gal_fits):
 
 
 def test_beam_update():
-    ps = Specification()
+    ps = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     assert ps.sigma_beam_ch_in_mpc is None
     assert ps.sigma_beam_in_mpc is None
     ps.sigma_beam_ch = np.ones(ps.nu.size)
@@ -159,7 +187,10 @@ def test_beam_update():
 
 
 def test_beam_image():
-    sp = Specification()
+    sp = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     # test None
     assert sp.beam_image is None
     D_dish = 13.5
@@ -192,7 +223,10 @@ def test_beam_image():
 
 
 def test_convolve_data():
-    sp = Specification()
+    sp = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     D_dish = 13.5
     sp.sigma_beam_ch = dish_beam_sigma(
         D_dish,
@@ -208,7 +242,7 @@ def test_convolve_data():
 
 
 def test_update_beam_type():
-    sp = Specification(beam_model="kat")
+    sp = Specification(survey="meerklass_2021", band="L", beam_model="kat")
     assert sp.beam_type == "anisotropic"
     sp = Specification()
     assert sp.beam_type == "isotropic"
@@ -217,7 +251,10 @@ def test_update_beam_type():
 
 
 def test_z_interp():
-    ps = Specification()
+    ps = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     func = ps.z_as_func_of_comov_dist
     z_rand = np.random.uniform(ps.z_ch.min(), ps.z_ch.max(), size=100)
     assert np.allclose(func(ps.comoving_distance(z_rand).value), z_rand)
@@ -225,6 +262,8 @@ def test_z_interp():
 
 def test_trim_gal():
     sp = Specification(
+        survey="meerklass_2021",
+        band="L",
         ra_range=[-1, 1],
         dec_range=[-1, 1],
     )

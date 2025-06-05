@@ -14,6 +14,8 @@ def test_gaussian_field_map_grid():
     raminGAMA, ramaxGAMA = 339, 351
     decminGAMA, decmaxGAMA = -35, -30
     ps = PowerSpectrum(
+        survey="meerklass_2021",
+        band="L",
         ra_range=(raminGAMA, ramaxGAMA),
         dec_range=(decminGAMA, decmaxGAMA),
         kaiser_rsd=False,
@@ -77,6 +79,8 @@ def test_poisson_field_map_grid():
     raminGAMA, ramaxGAMA = 339, 351
     decminGAMA, decmaxGAMA = -35, -30
     ps = PowerSpectrum(
+        survey="meerklass_2021",
+        band="L",
         ra_range=(raminGAMA, ramaxGAMA),
         dec_range=(decminGAMA, decmaxGAMA),
         kaiser_rsd=False,
@@ -154,6 +158,8 @@ def test_mock_field_map_grid(highres, beam):
     k1dnumbin = 10
     k1dedges = np.geomspace(k1dmin, k1dmax, k1dnumbin + 1)
     mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
         ra_range=ra_range,
         dec_range=dec_range,
         mean_amp_1="average_hi_temp",
@@ -200,6 +206,8 @@ def test_mock_tracer_grid():
     # run 10 realizations
     for i in range(10):
         mock = MockSimulation(
+            survey="meerklass_2021",
+            band="L",
             ra_range=ra_range,
             dec_range=dec_range,
             kaiser_rsd=True,

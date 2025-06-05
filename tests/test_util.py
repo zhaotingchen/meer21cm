@@ -374,3 +374,17 @@ def test_Obuljen18():
         hod_obuljen18(10, output_has_h=True), hm.hod.total_occupation(1e10)
     )
     assert hm.hod.sigma_satellite(1e10) == 0
+
+
+def test_find_id():
+    """test `find_id` function"""
+    file_arr = np.random.randint(0, 9999999999, 10)
+    file_arr = file_arr.astype("str")
+    file_arr = np.char.zfill(file_arr, 10)
+    assert (vfind_id(file_arr) != file_arr).sum() == 0
+    file_arr = np.random.randint(0, 9999999999, 2)
+    file_arr = file_arr.astype("str")
+    file_arr = np.char.zfill(file_arr, 10)
+    file_test = file_arr[0] + "/" + file_arr[1]
+    with pytest.raises(ValueError):
+        vfind_id(file_test)

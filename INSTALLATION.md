@@ -106,3 +106,5 @@ Optionally, to use the environment as a jupyter kernel run
 pip install ipykernel
 python -m ipykernel install --name "meer21cm" --user
 ```
+
+If you have accidentally linked an existing "meer21cm" kernel created externally and want to use the latest version, simply change the "meer21cm" above to a different kernel name and use it instead.

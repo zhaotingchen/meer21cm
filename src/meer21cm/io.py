@@ -18,7 +18,8 @@ def cal_freq(
     delta_nu=None,
 ):
     """
-    returns the centre of the frequency channel for channel id `ch_id`.
+    returns the centre of the frequency channel for channel id `ch_id`
+    of the meerkat telescope.
 
     Parameters
     ----------
@@ -39,6 +40,8 @@ def cal_freq(
         freq: float.
            The frequency of the channel.
     """
+    if band == "":
+        band = "L"
     if nu_min is None:
         nu_min = getattr(telescope, f"meerkat_{band}_band_nu_min")
     if delta_nu is None:

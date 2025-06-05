@@ -13,6 +13,7 @@ from scipy.interpolate import interp1d
 from numpy.random import default_rng
 from halomod.hod import HODBulk
 from astropy.wcs import WCS
+import re
 
 f_21 = 1420405751.7667  # in Hz
 A_10 = 2.85 * 1e-15 / units.s
@@ -1172,3 +1173,30 @@ def dft_matrix(N, norm="backward"):
             The DFT matrix.
     """
     return np.fft.fft(np.eye(N), norm=norm)
+
+
+def find_block_id(filename):
+    """
+    Find the MeerKAT data block id from the filename.
+    MeerKAT data blocks are identified by a 10-digit number.
+    Use `vfind_id` to find the block id for an array of filenames.
+
+    Parameters
+    ----------
+        filename: str
+            The filename to find the block id from.
+
+    Returns
+    -------
+        block_id: str
+            The block id.
+    """
+    reex = "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+    result = re.findall(reex, filename)
+    if result.count(result[0]) != len(result):
+        raise ValueError("ambiguous block id from filename " + filename)
+    result = result[0]
+    return result
+
+
+vfind_id = np.vectorize(find_block_id)

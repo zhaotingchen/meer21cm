@@ -15,7 +15,10 @@ def test_cos_beam():
 
 
 def test_beam(test_wproj):
-    sp = Specification()
+    sp = Specification(
+        survey="meerklass_2021",
+        band="L",
+    )
     beam_image = kat_beam(
         sp.nu,
         sp.wproj,

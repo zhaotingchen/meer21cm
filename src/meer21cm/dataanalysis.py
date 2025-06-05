@@ -11,6 +11,7 @@ from meer21cm.util import (
     tagging,
     find_property_with_tags,
     angle_in_range,
+    create_wcs,
 )
 from astropy import constants, units
 import astropy
@@ -24,11 +25,13 @@ from astropy.wcs.utils import proj_plane_pixel_area
 from itertools import chain
 import meer21cm
 from scipy.interpolate import interp1d
+from meer21cm.telescope import *
 import meer21cm.telescope as telescope
 from astropy.cosmology import w0waCDM, Planck18
 
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
+
 
 default_cosmo = w0waCDM(
     H0=Planck18.h * 100,
@@ -42,6 +45,14 @@ default_cosmo = w0waCDM(
     Ob0=Planck18.Ob0,
     name="Planck18",
 )
+
+default_nu = {
+    "meerkat_L": cal_freq(np.arange(4096) + 1, band="L"),
+    "meerkat_UHF": cal_freq(np.arange(4096) + 1, band="UHF"),
+    "meerklass_2021_L": cal_freq(np.arange(4096) + 1, band="L"),
+    "meerklass_2019_L": cal_freq(np.arange(4096) + 1, band="L"),
+    "meerklass_UHF": cal_freq(np.arange(4096) + 1, band="UHF"),
+}
 
 
 class Specification:
@@ -71,14 +82,22 @@ class Specification:
         data=None,
         weights_map_pixel=None,
         counts=None,
-        survey="meerklass_L_deep",
-        band="L",
+        survey="",
+        band="",
         z_interp_max=6.0,
         soft_filter_los=True,
         **kwparams,
     ):
         self.survey = survey
         self.band = band
+        spec_key = survey + "_" + band
+        if spec_key in default_nu.keys():
+            nu = default_nu[spec_key]
+            nu_min = default_nu_min[spec_key]
+            nu_max = default_nu_max[spec_key]
+            num_pix_x = default_num_pix_x[spec_key]
+            num_pix_y = default_num_pix_y[spec_key]
+            wproj = default_wproj[spec_key]
         self.dependency_dict = find_property_with_tags(self)
         funcs = list(chain.from_iterable(list(self.dependency_dict.values())))
         for func_i in np.unique(np.array(funcs)):
@@ -94,43 +113,35 @@ class Specification:
                         "_" + dep_attr,
                     ],
                 )
-
-        # if "_cosmo" in kwparams.keys() and cosmo == "Planck18":
-        #    self._cosmo = kwparams["_cosmo"]
-        # else:
-        #    self._cosmo = cosmo
         self._cosmo = cosmo
         self.cosmo = cosmo
         self.map_file = map_file
         self.counts_file = counts_file
         self.pickle_file = pickle_file
         self.los_axis = los_axis
+        sel_nu = True
         if nu is None:
-            nu = cal_freq(
-                np.arange(4096) + 1,
-                band=self.band,
-            )
-            if nu_min is None and pickle_file is None:
-                nu_min = getattr(telescope, f"{self.survey}_nu_min")
-            if nu_max is None and pickle_file is None:
-                nu_max = getattr(telescope, f"{self.survey}_nu_max")
+            nu = np.array([f_21 - 1, f_21])
+            sel_nu = False
         if nu_min is None:
             nu_min = -np.inf
         if nu_max is None:
             nu_max = np.inf
-        nu = np.array(nu)
         nu_sel = (nu > nu_min) * (nu < nu_max)
-        nu = nu[nu_sel]
+        if sel_nu:
+            if nu_sel.sum() == 0:
+                raise ValueError("input nu is not in the range of nu_min and nu_max")
+            self.nu = nu[nu_sel]
+        else:
+            self.nu = nu
         self.nu_min = nu_min
         self.nu_max = nu_max
-        self._nu = np.array(nu)
-        # default MeerKLASS L-band deep-field
-        if wproj is None and self.band == "L":
-            map_file = default_data_dir + "test_fits.fits"
-            wcs = WCS(map_file)
-            wproj = wcs.dropaxis(-1)
-            num_pix_x = 133
-            num_pix_y = 73
+        if num_pix_x is None:
+            num_pix_x = 3
+        if num_pix_y is None:
+            num_pix_y = 3
+        if wproj is None:
+            wproj = create_wcs(0.0, 0.0, [num_pix_x, num_pix_y], 1.0)
 
         self.wproj = wproj
         self.num_pix_x = num_pix_x
@@ -138,7 +149,9 @@ class Specification:
         self.sigma_beam_ch = sigma_beam_ch
         self.beam_unit = beam_unit
         if map_has_sampling is None:
-            map_has_sampling = np.ones((num_pix_x, num_pix_y, len(nu)), dtype="bool")
+            map_has_sampling = np.ones(
+                (num_pix_x, num_pix_y, len(self.nu)), dtype="bool"
+            )
             map_has_sampling[0] = False
             map_has_sampling[-1] = False
             map_has_sampling[:, 0] = False
@@ -318,12 +331,6 @@ class Specification:
         if isinstance(value, str):
             cosmo = getattr(astropy.cosmology, value)
         self._cosmo = cosmo
-        # self.ns = cosmo.meta["n"]
-        # self.sigma8 = cosmo.meta["sigma8"]
-        # self.tau = cosmo.meta["tau"]
-        # self.Oc0 = cosmo.meta["Oc0"]
-        # there is probably a more elegant way of doing this, but I dont know how
-        # maybe just inheriting astropy cosmology class?
         for key in cosmo.__dir__():
             if key[0] != "_":
                 self.__dict__.update({key: getattr(cosmo, key)})
@@ -499,7 +506,13 @@ class Specification:
         """
         return find_ch_id(self.freq_gal, self.nu)
 
-    def read_gal_cat(self):
+    def read_gal_cat(
+        self,
+        ra_col="RA",
+        dec_col="DEC",
+        z_col="Z",
+        trim=True,
+    ):
         """
         Read in a galaxy catalogue for cross-correlation
         """
@@ -507,24 +520,14 @@ class Specification:
             print("no gal_file specified")
             return None
         hdu = fits.open(self.gal_file)
-        hdr = hdu[1].header
-        ra_g = hdu[1].data["RA"]  # Right ascension (J2000) [deg]
-        dec_g = hdu[1].data["DEC"]  # Declination (J2000) [deg]
-        z_g = hdu[1].data["Z"]  # Spectroscopic redshift, -1 for none attempted
-
-        # select only galaxies that fall into range
-        z_edges = center_to_edges(self.z_ch)
-        zmin, zmax = self.z_ch.min(), self.z_ch.max()
-        z_Lband = (z_g > zmin) & (z_g < zmax)
-        ra_g = ra_g[z_Lband]
-        dec_g = dec_g[z_Lband]
-        z_g = z_g[z_Lband]
-
+        ra_g = hdu[1].data[ra_col]  # Right ascension (J2000) [deg]
+        dec_g = hdu[1].data[dec_col]  # Declination (J2000) [deg]
+        z_g = hdu[1].data[z_col]  # Spectroscopic redshift, -1 for none attempted
         self._ra_gal = ra_g
         self._dec_gal = dec_g
         self._z_gal = z_g
-        # select only ra_range and dec_range
-        # self.trim_gal_to_range()
+        if trim:
+            self.trim_gal_to_range()
 
     def read_from_pickle(self):
         if self.pickle_file is None:

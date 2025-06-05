@@ -6,6 +6,10 @@ from scipy.signal import convolve
 from astropy.cosmology import Planck18
 import healpy as hp
 from katbeam import JimBeam
+from astropy.wcs import WCS
+import meer21cm
+
+default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
 meerkat_L_band_nu_min = 856.0 * 1e6  # in Hz
 meerkat_L_band_nu_max = 1712.0 * 1e6  # in Hz
@@ -14,12 +18,55 @@ meerkat_L_4k_delta_nu = 0.208984375 * 1e6  # in Hz
 meerklass_L_deep_nu_min = 971 * 1e6
 meerklass_L_deep_nu_max = 1023.8 * 1e6
 
+meerklass_L_pilot_nu_min = 971 * 1e6
+meerklass_L_pilot_nu_max = 1023.2 * 1e6
+
 meerkat_UHF_band_nu_min = 544.0 * 1e6  # in Hz
 meerkat_UHF_band_nu_max = 1088.0 * 1e6  # in Hz
 meerkat_UHF_4k_delta_nu = 0.1328125 * 1e6  # in Hz
 
 meerklass_UHF_deep_nu_min = 610.0 * 1e6
 meerklass_UHF_deep_nu_max = 929.2 * 1e6
+
+default_nu_min = {
+    "meerkat_L": meerkat_L_band_nu_min,
+    "meerkat_UHF": meerkat_UHF_band_nu_min,
+    "meerklass_2021_L": meerklass_L_deep_nu_min,
+    "meerklass_2019_L": meerklass_L_pilot_nu_min,
+    "meerklass_UHF": meerklass_UHF_deep_nu_min,
+}
+
+default_nu_max = {
+    "meerkat_L": meerkat_L_band_nu_max,
+    "meerkat_UHF": meerkat_UHF_band_nu_max,
+    "meerklass_2021_L": meerklass_L_deep_nu_max,
+    "meerklass_2019_L": meerklass_L_pilot_nu_max,
+    "meerklass_UHF": meerklass_UHF_deep_nu_max,
+}
+
+default_num_pix_x = {
+    "meerkat_L": None,
+    "meerkat_UHF": None,
+    "meerklass_2021_L": 133,
+    "meerklass_2019_L": None,
+    "meerklass_UHF": None,
+}
+
+default_num_pix_y = {
+    "meerkat_L": None,
+    "meerkat_UHF": None,
+    "meerklass_2021_L": 73,
+    "meerklass_2019_L": None,
+    "meerklass_UHF": None,
+}
+
+default_wproj = {
+    "meerkat_L": None,
+    "meerkat_UHF": None,
+    "meerklass_2021_L": WCS(default_data_dir + "test_fits.fits").dropaxis(-1),
+    "meerklass_2019_L": None,
+    "meerklass_UHF": None,
+}
 
 
 def weighted_convolution(

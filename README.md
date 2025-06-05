@@ -2,6 +2,7 @@
 [![codecov](https://codecov.io/gh/zhaotingchen/meer21cm/graph/badge.svg?token=BEE45774LQ)](https://codecov.io/gh/zhaotingchen/meer21cm)
 
 `meer21cm` deals with single dish 21cm intensity mapping using MeerKAT.
+It rewrites and extends [`meerpower`](https://github.com/meerklass/meerpower) , the previous power spectrum analysis pipeline used by the MeerKLASS collaboration
 
 ## Installation
 Clone this repo:
