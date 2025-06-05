@@ -250,32 +250,33 @@ def test_project_particle_to_regular_grid(window):
         )
         assert not np.allclose(test_c, np.ones_like(test_c))
     if window == "nnb" or window == "pcs":
-        return 1
-    # test interpolation, put particles on the grid edges
-    xx, yy, zz = np.meshgrid(
-        np.arange(box_ndim[0] + 1),
-        np.arange(box_ndim[1] + 1),
-        np.arange(box_ndim[2] + 1),
-        indexing="ij",
-    )
-    _xx = xx.ravel() * 10
-    _yy = yy.ravel() * 10
-    _zz = zz.ravel() * 10
-    par_pos = np.zeros((np.prod(box_ndim + 1), 3))
-    par_pos[:, 0] = _xx
-    par_pos[:, 1] = _yy
-    par_pos[:, 2] = _zz
-    par_mass = (xx + yy + zz).ravel()
-    pars_mass = xx + yy + zz
-    pars_mass = (pars_mass[1:, 1:, 1:] + pars_mass[:-1, :-1, :-1]) / 2
-    test_map, test_w, test_c = project_particle_to_regular_grid(
-        par_pos, box_len, box_ndim, grid_scheme=window, particle_mass=par_mass
-    )
-    # output is the mean at between the grid edges
-    assert np.allclose(test_map, pars_mass)
-    # effective count is still 1
-    assert np.allclose(test_w, np.ones_like(test_w))
-    assert np.allclose(test_c, np.ones_like(test_c))
+        x = 0
+    else:
+        # test interpolation, put particles on the grid edges
+        xx, yy, zz = np.meshgrid(
+            np.arange(box_ndim[0] + 1),
+            np.arange(box_ndim[1] + 1),
+            np.arange(box_ndim[2] + 1),
+            indexing="ij",
+        )
+        _xx = xx.ravel() * 10
+        _yy = yy.ravel() * 10
+        _zz = zz.ravel() * 10
+        par_pos = np.zeros((np.prod(box_ndim + 1), 3))
+        par_pos[:, 0] = _xx
+        par_pos[:, 1] = _yy
+        par_pos[:, 2] = _zz
+        par_mass = (xx + yy + zz).ravel()
+        pars_mass = xx + yy + zz
+        pars_mass = (pars_mass[1:, 1:, 1:] + pars_mass[:-1, :-1, :-1]) / 2
+        test_map, test_w, test_c = project_particle_to_regular_grid(
+            par_pos, box_len, box_ndim, grid_scheme=window, particle_mass=par_mass
+        )
+        # output is the mean at between the grid edges
+        assert np.allclose(test_map, pars_mass)
+        # effective count is still 1
+        assert np.allclose(test_w, np.ones_like(test_w))
+        assert np.allclose(test_c, np.ones_like(test_c))
 
 
 def test_rotation_matrix_to_radec0():
