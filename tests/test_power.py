@@ -826,6 +826,8 @@ def test_poisson_gal_gen():
         band="L",
         # seed=42,
         kmax=10.0,
+        num_particle_per_pixel=2,
+        box_buffkick=[5, 5, 5],
     )
     ps._ra_gal = np.ones(40000)
     ps._dec_gal = np.ones(40000)

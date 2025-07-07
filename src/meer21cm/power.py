@@ -19,6 +19,7 @@ from meer21cm.util import (
 )
 from meer21cm.dataanalysis import Specification
 import healpy as hp
+from collections.abc import Iterable
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -1864,6 +1865,20 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.flat_sky_padding = flat_sky_padding
 
     @property
+    def box_buffkick(self):
+        """
+        The buffer kick for the box on each side when gridding. In the unit of Mpc.
+        """
+        return self._box_buffkick
+
+    @box_buffkick.setter
+    def box_buffkick(self, value):
+        if not isinstance(value, Iterable):
+            self._box_buffkick = np.array([value, value, value])
+        else:
+            self._box_buffkick = np.array(value)
+
+    @property
     def rescale_ps_1(self):
         """
         The factor to rescale the power spectrum of the first field based on the field weights.
@@ -2294,8 +2309,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         ra_sample[1:] += rand_angle[0]
         dec_sample[1:] += rand_angle[1]
         nu_sample[1:] += rand_nu[0]
-        pos_arr = []
-        for i in range(num_p):
+        pos_arr = [
+            pos_arr,
+        ]
+        for i in range(1, num_p):
             (_, _, _, _, _, _, _, pos_arr_i) = minimum_enclosing_box_of_lightcone(
                 ra_sample[i],
                 dec_sample[i],
