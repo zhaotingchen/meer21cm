@@ -527,3 +527,39 @@ def sky_partition_for_radecrange(
                 np.linalg.inv(rot_mat_0) @ np.linalg.inv(rot_mat)
             )
     return pix_id_for_patch_i, rot_mat_for_patch_i
+
+
+def shot_noise_correction_from_gridding(
+    box_ndim,
+    grid_scheme,
+):
+    """
+    Calculate the multiplicative correction from gridding to the shot noise.
+    Support 'nnb', 'cic' and 'tsc'.
+    The correction is taken from Jing (2005), astro-ph/0409240.
+
+    Parameters
+    ----------
+        box_ndim: array.
+            The number of grids on each side.
+        grid_scheme: str.
+            The mass assignment scheme.
+
+    Returns
+    -------
+        shot_noise_correction: array.
+            The multiplicative correction from gridding to the shot noise.
+    """
+    p = allowed_window_scheme.index(grid_scheme)
+    if p == 0:
+        return np.ones(box_ndim)
+    sinpikiHover2 = [np.sin(np.fft.fftfreq(box_ndim[i]) * np.pi) for i in range(3)]
+    if p == 1:
+        ci = [1 - 2 / 3 * sinpikiHover2[i] ** 2 for i in range(3)]
+        ci = ci[0][:, None, None] * ci[1][None, :, None] * ci[2][None, None, :]
+    if p == 2:
+        ci = [
+            1 - sinpikiHover2[i] ** 2 + 2 / 15 * sinpikiHover2[i] ** 4 for i in range(3)
+        ]
+        ci = ci[0][:, None, None] * ci[1][None, :, None] * ci[2][None, None, :]
+    return ci

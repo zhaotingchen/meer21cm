@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from meer21cm.grid import *
 import pytest
+from meer21cm import PowerSpectrum
 
 
 def W_mas(dims, window="nnb", FullPk=False):
@@ -315,3 +316,28 @@ def test_sky_partition_for_radecrange():
     map_rot = np.zeros(hp.nside2npix(nside))
     np.add.at(map_rot, pix_region_rot, 1)
     assert np.isin(np.arange(npix)[map_rot > 0], pix_id).mean() > 0.999
+
+
+@pytest.mark.parametrize("window", list(allowed_window_scheme)[:-1])
+def test_shot_noise_correction_from_gridding(window):
+    ps = PowerSpectrum()
+    ps._box_len = np.array([1000, 1000, 1000])
+    ps._box_ndim = np.array([50, 50, 50])
+    ps.propagate_field_k_to_model()
+    rand_pos = np.random.uniform(0, 1000, size=(1000000, 3))
+    gal_count, _, _ = project_particle_to_regular_grid(
+        rand_pos,
+        ps.box_len,
+        ps.box_ndim,
+        grid_scheme=window,
+        average=False,
+    )
+    ps.field_1 = gal_count / gal_count.mean() - 1
+    ps3d_rand = ps.auto_power_3d_1
+    sn_rand = (
+        shot_noise_correction_from_gridding(ps.box_ndim, window)
+        * np.prod(ps.box_len)
+        / rand_pos.shape[0]
+    )
+    ratio = ps3d_rand / sn_rand
+    assert np.allclose(ratio.mean(), 1, atol=1e-1)
