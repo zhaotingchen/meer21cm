@@ -200,20 +200,23 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if "cross_coeff_dep_attr" in dir(self):
             self.clean_cache(self.cross_coeff_dep_attr)
 
+    def get_weights_none_to_one(self, attr_name):
+        """
+        Get the weights, and if it is None, convert it to 1.0 of size of kmode.
+        """
+        weights = getattr(self, attr_name)
+        if weights is None:
+            weights = np.ones_like(self.kmode)
+        return weights
+
     @property
     def rescale_ps_1(self):
         """
         The factor to rescale the power spectrum of the first field based on the weights.
         """
         if self.renorm_weights_1:
-            weights_field = getattr(self, "weights_field_1")
-            weights_grid = getattr(self, "weights_grid_1")
-            weights_field = (
-                weights_field if weights_field is not None else np.ones_like(self.kmode)
-            )
-            weights_grid = (
-                weights_grid if weights_grid is not None else np.ones_like(self.kmode)
-            )
+            weights_field = self.get_weights_none_to_one("weights_field_1")
+            weights_grid = self.get_weights_none_to_one("weights_grid_1")
             renorm_tot = power_weights_renorm(
                 weights_field * weights_grid, weights_field * weights_grid
             )
@@ -227,14 +230,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         The factor to rescale the power spectrum of the second field based on the weights.
         """
         if self.renorm_weights_2:
-            weights_field = getattr(self, "weights_field_2")
-            weights_grid = getattr(self, "weights_grid_2")
-            weights_field = (
-                weights_field if weights_field is not None else np.ones_like(self.kmode)
-            )
-            weights_grid = (
-                weights_grid if weights_grid is not None else np.ones_like(self.kmode)
-            )
+            weights_field = self.get_weights_none_to_one("weights_field_2")
+            weights_grid = self.get_weights_none_to_one("weights_grid_2")
             renorm_tot = power_weights_renorm(
                 weights_field * weights_grid, weights_field * weights_grid
             )
@@ -248,26 +245,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         The factor to rescale the power spectrum of the cross-correlation based on the weights.
         """
         if self.renorm_weights_cross:
-            weights_grid_1 = (
-                self.weights_grid_1
-                if self.weights_grid_1 is not None
-                else np.ones_like(self.kmode)
-            )
-            weights_grid_2 = (
-                self.weights_grid_2
-                if self.weights_grid_2 is not None
-                else np.ones_like(self.kmode)
-            )
-            weights_field_1 = (
-                self.weights_field_1
-                if self.weights_field_1 is not None
-                else np.ones_like(self.kmode)
-            )
-            weights_field_2 = (
-                self.weights_field_2
-                if self.weights_field_2 is not None
-                else np.ones_like(self.kmode)
-            )
+            weights_grid_1 = self.get_weights_none_to_one("weights_grid_1")
+            weights_field_1 = self.get_weights_none_to_one("weights_field_1")
+            weights_grid_2 = self.get_weights_none_to_one("weights_grid_2")
+            weights_field_2 = self.get_weights_none_to_one("weights_field_2")
             renorm_tot = power_weights_renorm(
                 weights_grid_1 * weights_field_1, weights_grid_2 * weights_field_2
             )
@@ -774,25 +755,20 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
         # first apply the beam
         auto_power_model *= B_beam ** (tracer_beam_indx * 2)
-        # the ps is then convolved with the field weights first
-        auto_power_model = get_modelpk_conv(
-            auto_power_model,
-            weights1_in_real=getattr(self, "weights_field_" + str(i)),
-            weights2=getattr(self, "weights_field_" + str(i)),
-            renorm=False,
-        )
         # then apply the sky-map sampling and gridding compensation
         auto_power_model *= B_sampling ** (tracer_samp_indx * 2)
         auto_power_model *= B_comp ** (tracer_comp_indx * 2)
         # then the weights in the grid space before FFT
+        # assume map-making, gridding and field-level weights are commutable
+        weights_grid = self.get_weights_none_to_one("weights_grid_" + str(i))
+        weights_field = self.get_weights_none_to_one("weights_field_" + str(i))
+        weights_tot = weights_field * weights_grid
         auto_power_model = get_modelpk_conv(
             auto_power_model,
-            weights1_in_real=getattr(self, "weights_grid_" + str(i)),
-            weights2=getattr(self, "weights_grid_" + str(i)),
-            renorm=False,
+            weights1_in_real=weights_tot,
+            weights2=weights_tot,
+            renorm=getattr(self, "renorm_weights_" + str(i)),
         )
-        # rescale the power spectrum based on the weights
-        auto_power_model = auto_power_model * getattr(self, "rescale_ps_" + str(i))
         setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
         return auto_power_model
 
@@ -827,13 +803,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
             r=self.cross_coeff,
         )
         self._cross_power_tracer_model[self.kmode == 0] = 0.0
-        # convolve the field weights first
-        self._cross_power_tracer_model = get_modelpk_conv(
-            self._cross_power_tracer_model,
-            weights1_in_real=self.weights_field_1,
-            weights2=self.weights_field_2,
-            renorm=False,
-        )
         # then apply the beam, sky-map sampling, and gridding compensation
         self._cross_power_tracer_model *= B_beam ** (
             tracer_beam_indx[0] + tracer_beam_indx[1]
@@ -844,14 +813,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._cross_power_tracer_model *= B_comp ** (
             tracer_comp_indx[0] + tracer_comp_indx[1]
         )
-        # then the weights in the grid space before FFT, which is normalised
+        # then the weights in the grid space before FFT
+        weights_grid_1 = self.get_weights_none_to_one("weights_grid_1")
+        weights_field_1 = self.get_weights_none_to_one("weights_field_1")
+        weights_grid_2 = self.get_weights_none_to_one("weights_grid_2")
+        weights_field_2 = self.get_weights_none_to_one("weights_field_2")
+        weights_tot_1 = weights_field_1 * weights_grid_1
+        weights_tot_2 = weights_field_2 * weights_grid_2
         self._cross_power_tracer_model = get_modelpk_conv(
             self._cross_power_tracer_model,
-            weights1_in_real=self.weights_grid_1,
-            weights2=self.weights_grid_2,
-            renorm=False,
+            weights1_in_real=weights_tot_1,
+            weights2=weights_tot_2,
+            renorm=self.renorm_weights_cross,
         )
-        self._cross_power_tracer_model *= self.rescale_ps_cross
         return self._cross_power_tracer_model
 
 
