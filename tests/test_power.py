@@ -275,18 +275,17 @@ def test_cy_power_in_ps():
 def test_power_weights_renorm():
     # uniform weights should give 1
     weights = np.ones([10, 10, 10])
-    assert np.allclose(power_weights_renorm(weights), 1)
+    assert np.allclose(power_weights_renorm(weights, weights), 1)
+    assert np.allclose(power_weights_renorm(None, weights), 1)
+    assert np.allclose(power_weights_renorm(weights, None), 1)
+    assert np.allclose(power_weights_renorm(None, None), 1)
+
     # try a typical taper with uniform power
     power1 = np.ones([100, 100, 100])
     taper = windows.blackmanharris(100)[None, None, :] * np.ones_like(power1)
-    assert np.allclose(
-        get_modelpk_conv(
-            np.ones_like(power1),
-            taper,
-        ).mean(),
-        1,
-    )
-    assert np.allclose(get_modelpk_conv(np.ones_like(power1), taper, taper).mean(), 1)
+    assert np.allclose(get_modelpk_conv(np.ones_like(power1), taper, None).mean(), 1)
+    assert np.allclose(get_modelpk_conv(np.ones_like(power1), None, taper).mean(), 1)
+    assert np.allclose(get_modelpk_conv(np.ones_like(power1), None, None).mean(), 1)
     # try a random thermal noise
     box_len = np.array([80, 50, 100])
     box_dim = np.array([100, 200, 41])
@@ -375,7 +374,7 @@ def test_get_modelpk_conv():
     test_ps[kmode != 0] = kmode[kmode != 0] ** (-2)
     # any direction would do
     taper = windows.blackmanharris(box_dim[0])[:, None, None] + np.zeros_like(kmode)
-    test_ps_conv = get_modelpk_conv(test_ps, weights1_in_real=taper)
+    test_ps_conv = get_modelpk_conv(test_ps, weights1_in_real=taper, weights2=taper)
     # p * k^2 should be one
     assert np.abs((test_ps_conv * kmode**2).mean() - 1) < 1e-3
     # mode-mixing is small, so every k-mode should also be p * k^2 about 1, litte var
@@ -680,7 +679,7 @@ def test_noise_power_from_map(test_W):
     ps.box_buffkick = 10
     ps.compensate = False
     noise_map, noise_weights, pix_counts = ps.grid_data_to_field()
-    renorm = power_weights_renorm(ps.weights_grid_1)
+    renorm = power_weights_renorm(ps.weights_grid_1, ps.weights_grid_1)
     sigma_n = np.zeros_like(ps.weights_grid_1)
     sigma_n[pix_counts > 0] = np.sqrt(1 / pix_counts[pix_counts > 0])
     ptn = (sigma_n**2).mean() * np.prod(ps.box_resol) * renorm
@@ -826,6 +825,8 @@ def test_poisson_gal_gen():
         band="L",
         # seed=42,
         kmax=10.0,
+        num_particle_per_pixel=2,
+        box_buffkick=[5, 5, 5],
     )
     ps._ra_gal = np.ones(40000)
     ps._dec_gal = np.ones(40000)
@@ -850,3 +851,16 @@ def test_poisson_gal_gen():
     )
     plateau = psn1d[-5:].mean()
     assert np.abs(plateau - psn) / psn < 2.5e-1
+
+
+def test_no_renorm_weights():
+    ps = PowerSpectrum(
+        survey="meerklass_2021",
+        band="L",
+        renorm_weights_1=False,
+        renorm_weights_2=False,
+        renorm_weights_cross=False,
+    )
+    assert ps.rescale_ps_1 == 1.0
+    assert ps.rescale_ps_2 == 1.0
+    assert ps.rescale_ps_cross == 1.0
