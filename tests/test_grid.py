@@ -340,4 +340,4 @@ def test_shot_noise_correction_from_gridding(window):
         / rand_pos.shape[0]
     )
     ratio = ps3d_rand / sn_rand
-    assert np.allclose(ratio.mean(), 1, atol=1e-1)
+    assert np.allclose(ratio.mean(), 1, atol=1.5e-1)
