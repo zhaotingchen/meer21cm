@@ -1,6 +1,13 @@
 Releases
 ========
 
+dev
+---
+Enhancements
+++++++++++++
+* allow k-mode cut in 1D power spectrum
+* add validation tests 00 and 01 in paper
+
 v0.6.1
 ------
 Features

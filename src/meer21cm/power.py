@@ -2040,6 +2040,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         k1dbins=None,
         k1dweights=None,
         filter_dependent_k=False,
+        k_xyz_min=None,
+        k_xyz_max=None,
+        k_perppara_min=None,
+        k_perppara_max=None,
     ):
         """
         Bin the 3D power spectrum into 1D power spectrum.
@@ -2056,6 +2060,14 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             The weights for the 3D power spectrum. Default is equal weights for every k-mode.
         filter_dependent_k: bool, default False
             Whether to filter out dependent k-modes (+k and -k will only be counted once).
+        k_xyz_min: list of size 3, default None
+            The minimum k-mode for the 1D power spectrum in x, y, z directions.
+        k_xyz_max: list of size 3, default None
+            The maximum k-mode for the 1D power spectrum in x, y, z directions.
+        k_perppara_min: list of size 2, default None
+            The minimum k_perp and k_para for the 1D power spectrum.
+        k_perppara_max: list of size 2, default None
+            The maximum k_perp and k_para for the 1D power spectrum.
 
         Returns
         -------
@@ -2075,6 +2087,35 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         indep_modes = 1.0
         if filter_dependent_k:
             indep_modes = get_independent_fourier_modes(self.box_ndim)
+        # filter k-modes
+        slicer = get_nd_slicer()
+        k_3d_sel_min = 1.0
+        if k_xyz_min is not None:
+            k_3d_sel_min = [
+                ((np.abs(self.k_vec[i]) >= k_xyz_min[i]))[slicer[i]]
+                for i in range(len(self.k_vec))
+            ]
+            k_3d_sel_min = k_3d_sel_min[0] * k_3d_sel_min[1] * k_3d_sel_min[2]
+        k_3d_sel_max = 1.0
+        if k_xyz_max is not None:
+            k_3d_sel_max = [
+                ((np.abs(self.k_vec[i]) <= k_xyz_max[i]))[slicer[i]]
+                for i in range(len(self.k_vec))
+            ]
+            k_3d_sel_max = k_3d_sel_max[0] * k_3d_sel_max[1] * k_3d_sel_max[2]
+        k_cy_sel_min = 1.0
+        if k_perppara_min is not None:
+            k_cy_sel_min = ((np.abs(self.k_perp) >= k_perppara_min[0]))[:, :, None] * (
+                (np.abs(self.k_para) >= k_perppara_min[1])
+            )[None, None, :]
+        k_cy_sel_max = 1.0
+        if k_perppara_max is not None:
+            k_cy_sel_max = ((np.abs(self.k_perp) <= k_perppara_max[0]))[:, :, None] * (
+                (np.abs(self.k_para) <= k_perppara_max[1])
+            )[None, None, :]
+        k1dweights = (
+            k1dweights * k_3d_sel_min * k_3d_sel_max * k_cy_sel_min * k_cy_sel_max
+        )
         power1d, k1deff, nmodes = bin_3d_to_1d(
             power3d,
             self.k_mode,
