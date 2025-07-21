@@ -864,3 +864,18 @@ def test_no_renorm_weights():
     assert ps.rescale_ps_1 == 1.0
     assert ps.rescale_ps_2 == 1.0
     assert ps.rescale_ps_cross == 1.0
+
+
+def test_1d_k_cut():
+    ps = PowerSpectrum()
+    ps._box_len = np.array([10, 10, 10]) * np.pi
+    ps._box_ndim = np.array([10, 10, 10])
+    ps.k1dbins = np.linspace(0, 10, 2)
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_xyz_min=[0.1, 0.1, 0.1])
+    assert nmodes[0] == 9**3
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_xyz_max=[0.1, 100, 100])
+    assert nmodes[0] == 1 * 10 * 10
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_min=[0.1, 0.1])
+    assert nmodes[0] == 99 * 9
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_max=[0.1, 100])
+    assert nmodes[0] == 1 * 10
