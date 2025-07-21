@@ -28,7 +28,10 @@ from scipy.interpolate import interp1d
 from meer21cm.telescope import *
 import meer21cm.telescope as telescope
 from astropy.cosmology import w0waCDM, Planck18
+import inspect
+import logging
 
+logger = logging.getLogger(__name__)
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 
@@ -92,6 +95,11 @@ class Specification:
         self.band = band
         spec_key = survey + "_" + band
         if spec_key in default_nu.keys():
+            logger.info(
+                f"found {spec_key} in predefined settings, using default settings"
+                " and override the following parameters:"
+                " nu, nu_min, nu_max, num_pix_x, num_pix_y, wproj",
+            )
             nu = default_nu[spec_key]
             nu_min = default_nu_min[spec_key]
             nu_max = default_nu_max[spec_key]
@@ -608,6 +616,9 @@ class Specification:
         """
         ra_range = np.array(self.ra_range)
         dec_range = np.array(self.dec_range)
+        logger.info(
+            f"flagging map and weights outside ra_range: {ra_range}, dec_range: {dec_range}"
+        )
         ra_sel = angle_in_range(self.ra_map, ra_range[0], ra_range[1])
         dec_sel = (self.dec_map > dec_range[0]) * (self.dec_map < dec_range[1])
         map_sel = (ra_sel * dec_sel)[:, :, None]
@@ -623,13 +634,17 @@ class Specification:
         """
         ra_range = np.array(self.ra_range)
         dec_range = np.array(self.dec_range)
+        freq_edges = center_to_edges(self.nu)
+        z_edges = freq_to_redshift(freq_edges)
+        logger.info(
+            f"flagging galaxy catalogue outside ra_range: {ra_range}, dec_range: {dec_range} and "
+            f"z_range: [{z_edges.min()}, {z_edges.max()}]"
+        )
         gal_sel = (
             angle_in_range(self.ra_gal, ra_range[0], ra_range[1])
             * (self.dec_gal > dec_range[0])
             * (self.dec_gal < dec_range[1])
         )
-        freq_edges = center_to_edges(self.nu)
-        z_edges = freq_to_redshift(freq_edges)
         z_sel = (self.z_gal > z_edges.min()) * (self.z_gal < z_edges.max())
         gal_sel *= z_sel
         self._ra_gal = self.ra_gal[gal_sel]
@@ -652,7 +667,14 @@ class Specification:
         cache=True,
     ):
         if self.sigma_beam_ch is None:
+            logger.info(
+                f"sigma_beam_ch is None, returning None for {inspect.currentframe().f_code.co_name}"
+            )
             return None
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to get the beam image"
+        )
+        logger.info(f"beam_type: {self.beam_type}, sigma_beam_ch: {self.sigma_beam_ch}")
         if wproj is None:
             wproj = self.wproj
         if num_pix_x is None:
@@ -691,6 +713,9 @@ class Specification:
         convolve data with an input kernel, and
         update the corresponding weights.
         """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to convolve map data with kernel: {kernel}"
+        )
         data, w_HI = telescope.weighted_convolution(
             self.data,
             kernel,

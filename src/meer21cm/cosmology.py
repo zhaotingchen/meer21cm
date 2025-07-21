@@ -3,10 +3,14 @@ import camb
 import astropy
 from meer21cm import Specification
 from scipy.interpolate import interp1d
-from meer21cm.util import omega_hi_to_average_temp, tagging
+from meer21cm.util import omega_hi_to_average_temp, tagging, HiddenPrints
 from astropy.cosmology import Planck18, w0waCDM
 import baccoemu
 from copy import deepcopy
+import inspect
+import logging
+
+logger = logging.getLogger(__name__)
 
 As_set = {
     "Planck18": np.exp(3.047) / 1e10,
@@ -176,10 +180,11 @@ class CosmologyParameters:
         pars.set_dark_energy(
             w=self._w0, wa=self._wa, dark_energy_model=self.camb_dark_energy_model
         )
-        pars.set_matter_power(
-            redshifts=np.unique([0.0, 1 / self.expfactor - 1]),
-            kmax=self.kmax / self._h,
-        )
+        with HiddenPrints():
+            pars.set_matter_power(
+                redshifts=np.unique([0.0, 1 / self.expfactor - 1]),
+                kmax=self.kmax / self._h,
+            )
         return pars
 
     def get_derived_Ode(self):
@@ -219,6 +224,10 @@ class CosmologyParameters:
         """
         Compute the CDM power spectrum using camb.
         """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name}"
+            " to calculate the matter power spectrum",
+        )
         camb_pars = self.get_camb_pars()
         results = camb.get_results(camb_pars)
         # get sigma8
@@ -239,6 +248,10 @@ class CosmologyParameters:
         """
         Emulate the CDM power spectrum using bacco.
         """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name}"
+            " to calculate the matter power spectrum",
+        )
         emulator = baccoemu.Matter_powerspectrum()
         bacco_pars = self.get_bacco_pars()
         _, baccopk = getattr(emulator, f"get_{self.ps_type}_pk")(
@@ -306,6 +319,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @ps_type.setter
     def ps_type(self, value):
         self._ps_type = value
+        logger.debug(
+            f"cleaning cache of {self.cosmo_dep_attr} due to resetting ps_type"
+        )
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -318,6 +334,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @kmin.setter
     def kmin(self, value):
         self._kmin = value
+        logger.debug(f"cleaning cache of {self.cosmo_dep_attr} due to resetting kmin")
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -330,6 +347,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @kmax.setter
     def kmax(self, value):
         self._kmax = value
+        logger.debug(f"cleaning cache of {self.cosmo_dep_attr} due to resetting kmax")
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -343,6 +361,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     def omega_cold(self, value):
         self._omega_cold = value
         # update background cosmology, clear cache triggered automatically
+        logger.debug(
+            f"recalculating Ode and update background cosmology due to resetting omega_cold"
+        )
         self.get_derived_Ode()
         cosmo = self.set_astropy_cosmo()
         self.cosmo = cosmo.clone(Om0=value)
@@ -357,6 +378,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @As.setter
     def As(self, value):
         self._As = value
+        logger.debug(f"cleaning cache of {self.cosmo_dep_attr} due to resetting As")
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -369,6 +391,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @omega_baryon.setter
     def omega_baryon(self, value):
         self._omega_baryon = value
+        logger.debug(
+            f"recalculating Ode and update background cosmology due to resetting omega_baryon"
+        )
         self.get_derived_Ode()
         cosmo = self.set_astropy_cosmo()
         self.cosmo = cosmo.clone(Ob0=value)
@@ -383,6 +408,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @ns.setter
     def ns(self, value):
         self._ns = value
+        logger.debug(f"cleaning cache of {self.cosmo_dep_attr} due to resetting ns")
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -395,6 +421,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @h.setter
     def h(self, value):
         self._h = value
+        logger.debug(
+            f"recalculating Ode and update background cosmology due to resetting h"
+        )
         self.get_derived_Ode()
         cosmo = self.set_astropy_cosmo()
         self.cosmo = cosmo.clone(H0=value * 100)
@@ -409,6 +438,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @neutrino_mass.setter
     def neutrino_mass(self, value):
         self._neutrino_mass = value
+        logger.debug(
+            f"recalculating Ode and update background cosmology due to resetting neutrino_mass"
+        )
         self.get_derived_Ode()
         cosmo = self.set_astropy_cosmo()
         self.cosmo = cosmo.clone(m_nu=[0, 0, value])
@@ -423,6 +455,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @w0.setter
     def w0(self, value):
         self._w0 = value
+        logger.debug(
+            f"recalculating Ode and update background cosmology due to resetting w0"
+        )
         self.get_derived_Ode()
         cosmo = self.set_astropy_cosmo()
         self.cosmo = cosmo.clone(w0=value)
@@ -437,6 +472,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @wa.setter
     def wa(self, value):
         self._wa = value
+        logger.debug(
+            f"recalculating Ode and update background cosmology due to resetting wa"
+        )
         self.get_derived_Ode()
         cosmo = self.set_astropy_cosmo()
         self.cosmo = cosmo.clone(wa=value)
@@ -453,6 +491,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @cold.setter
     def cold(self, value):
         self._cold = value
+        logger.debug(
+            f"cleaning cache of {self.cosmo_dep_attr} due to resetting self.cold"
+        )
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -466,6 +507,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     @backend.setter
     def backend(self, value):
         self._backend = value
+        logger.debug(
+            f"cleaning cache of {self.cosmo_dep_attr} due to resetting self.backend"
+        )
         self.clean_cache(self.cosmo_dep_attr)
 
     @property
@@ -492,6 +536,10 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         """
         The average HI brightness temperature in Kelvin.
         """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to calculate the average HI brightness temperature"
+        )
+        logger.info(f"omega_hi: {self.omega_hi}, z: {self.z}, cosmo: {self.cosmo}")
         tbar = omega_hi_to_average_temp(self.omega_hi, z=self.z, cosmo=self)
         return tbar
 

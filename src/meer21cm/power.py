@@ -20,6 +20,10 @@ from meer21cm.util import (
 from meer21cm.dataanalysis import Specification
 import healpy as hp
 from collections.abc import Iterable
+import inspect
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
@@ -112,6 +116,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def weights_field_1(self, value):
         self._weights_field_1 = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} due to resetting weights_field_1"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
 
     @property
@@ -125,6 +132,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def weights_grid_1(self, value):
         self._weights_grid_1 = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} and {self.field_1_dep_attr} due to resetting weights_grid_1"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
             self.clean_cache(self.field_1_dep_attr)
 
@@ -139,6 +149,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def weights_field_2(self, value):
         self._weights_field_2 = value
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} due to resetting weights_field_2"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -152,6 +165,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def weights_grid_2(self, value):
         self._weights_grid_2 = value
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} and {self.field_2_dep_attr} due to resetting weights_grid_2"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
             self.clean_cache(self.field_2_dep_attr)
 
@@ -170,6 +186,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def renorm_weights_1(self, value):
         self._renorm_weights_1 = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} and {self.field_1_dep_attr} due to resetting renorm_weights_1"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
             self.clean_cache(self.field_1_dep_attr)
 
@@ -184,6 +203,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def renorm_weights_2(self, value):
         self._renorm_weights_2 = value
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} and {self.field_2_dep_attr} due to resetting renorm_weights_2"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
             self.clean_cache(self.field_2_dep_attr)
 
@@ -198,6 +220,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def renorm_weights_cross(self, value):
         self._renorm_weights_cross = value
         if "cross_coeff_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.cross_coeff_dep_attr} due to resetting renorm_weights_cross"
+            )
             self.clean_cache(self.cross_coeff_dep_attr)
 
     def get_weights_none_to_one(self, attr_name):
@@ -266,6 +291,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @kaiser_rsd.setter
     def kaiser_rsd(self, value):
         self._kaiser_rsd = value
+        logger.debug(
+            f"cleaning cache of {self.rsd_dep_attr} due to resetting kaiser_rsd"
+        )
         self.clean_cache(self.rsd_dep_attr)
 
     @property
@@ -279,8 +307,14 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def fog_profile(self, value):
         self._fog_profile = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} due to resetting fog_profile"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} due to resetting fog_profile"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -294,6 +328,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def sigma_v_1(self, value):
         self._sigma_v_1 = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} due to resetting sigma_v_1"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
 
     @property
@@ -307,6 +344,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def sigma_z_1(self, value):
         self._sigma_z_1 = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} due to resetting sigma_z_1"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
 
     @property
@@ -320,6 +360,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def sigma_v_2(self, value):
         self._sigma_v_2 = value
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} due to resetting sigma_v_2"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -333,6 +376,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def sigma_z_2(self, value):
         self._sigma_z_2 = value
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} due to resetting sigma_z_2"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -348,13 +394,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
         value_before = self._include_beam
         self._include_beam = value
         if self.sigma_beam_ch is None and (np.array(self.include_beam).sum() > 0):
-            print("no input beam found, setting include_beam to False")
+            logger.info("no input beam found, setting include_beam to False")
             self._include_beam = [False, False]
         if value_before[0] != value[0]:
             if "tracer_1_dep_attr" in dir(self):
+                logger.debug(
+                    f"cleaning cache of {self.tracer_1_dep_attr} due to resetting include_beam"
+                )
                 self.clean_cache(self.tracer_1_dep_attr)
         if value_before[1] != value[1]:
             if "tracer_2_dep_attr" in dir(self):
+                logger.debug(
+                    f"cleaning cache of {self.tracer_2_dep_attr} due to resetting include_beam"
+                )
                 self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -373,9 +425,15 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._compensate = value
         if value_before[0] != value[0]:
             if "tracer_1_dep_attr" in dir(self):
+                logger.debug(
+                    f"cleaning cache of {self.tracer_1_dep_attr} due to resetting compensate"
+                )
                 self.clean_cache(self.tracer_1_dep_attr)
         if value_before[1] != value[1]:
             if "tracer_2_dep_attr" in dir(self):
+                logger.debug(
+                    f"cleaning cache of {self.tracer_2_dep_attr} due to resetting compensate"
+                )
                 self.clean_cache(self.tracer_2_dep_attr)
 
     def fog_gaussian(self, sigma_r, kmode=None, mumode=None):
@@ -474,6 +532,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def tracer_bias_1(self, value):
         self._tracer_bias_1 = value
         if "tracer_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_1_dep_attr} due to resetting tracer_bias_1"
+            )
             self.clean_cache(self.tracer_1_dep_attr)
 
     @property
@@ -487,6 +548,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def tracer_bias_2(self, value):
         self._tracer_bias_2 = value
         if "tracer_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.tracer_2_dep_attr} due to resetting tracer_bias_2"
+            )
             self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -500,6 +564,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def cross_coeff(self, value):
         self._cross_coeff = value
         if "cross_coeff_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.cross_coeff_dep_attr} due to resetting cross_coeff"
+            )
             self.clean_cache(self.cross_coeff_dep_attr)
 
     @property
@@ -513,6 +580,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def kmode(self, value):
         self._kmode = value
         if "kmode_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.kmode_dep_attr} due to resetting kmode"
+            )
             self.clean_cache(self.kmode_dep_attr)
 
     @property
@@ -526,6 +596,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def mumode(self, value):
         self._mumode = value
         if "mumode_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.mumode_dep_attr} due to resetting mumode"
+            )
             self.clean_cache(self.mumode_dep_attr)
 
     @property
@@ -542,9 +615,15 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.has_resol = True
         if self.include_sky_sampling[0]:
             if "tracer_1_dep_attr" in dir(self):
+                logger.debug(
+                    f"cleaning cache of {self.tracer_1_dep_attr} due to resetting sampling_resol"
+                )
                 self.clean_cache(self.tracer_1_dep_attr)
         if self.include_sky_sampling[1]:
             if "tracer_2_dep_attr" in dir(self):
+                logger.debug(
+                    f"cleaning cache of {self.tracer_2_dep_attr} due to resetting sampling_resol"
+                )
                 self.clean_cache(self.tracer_2_dep_attr)
 
     @property
@@ -569,7 +648,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.get_model_power_i(1)
         mean_amp = self.mean_amp_1
         if isinstance(mean_amp, str):
+            logger.info(f"getting mean_amp_1 from self.{mean_amp}")
             mean_amp = getattr(self, mean_amp)
+        logger.info(
+            f"multiplying _auto_power_tracer_1_model with mean_amp_1**2: {mean_amp}**2"
+            " to get auto_power_tracer_1_model",
+        )
         return self._auto_power_tracer_1_model * mean_amp**2
 
     @property
@@ -583,9 +667,14 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self.get_model_power_i(2)
         mean_amp = self.mean_amp_2
         if isinstance(mean_amp, str):
+            logger.info(f"getting mean_amp_2 from self.{mean_amp}")
             mean_amp = getattr(self, mean_amp)
         if self._auto_power_tracer_2_model is None:
             return None
+        logger.info(
+            f"multiplying _auto_power_tracer_2_model with mean_amp_2**2: {mean_amp}**2"
+            " to get auto_power_tracer_2_model",
+        )
         return self._auto_power_tracer_2_model * mean_amp**2
 
     @property
@@ -615,6 +704,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
             mean_amp = getattr(self, mean_amp)
         if self._cross_power_tracer_model is None:
             return None
+        logger.info(
+            f"multiplying _cross_power_tracer_model with mean_amp: {mean_amp} and mean_amp2: {mean_amp2} "
+            " to get cross_power_tracer_model",
+        )
         return self._cross_power_tracer_model * mean_amp * mean_amp2
 
     def step_sampling(self):
@@ -714,6 +807,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
             beta_m,
             0.0,
         )
+        logger.debug(
+            "calculated model matter power spectrum, kaiser rsd: %s", self.kaiser_rsd
+        )
+        logger.debug("model matter power spectrum: %s", self._auto_power_matter_model)
 
     def get_model_power_i(self, i):
         """
@@ -730,8 +827,15 @@ class ModelPowerSpectrum(CosmologyCalculator):
         auto_power_model: np.ndarray
             The model power spectrum for the i-th tracer.
         """
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name} for tracer {i}")
         if getattr(self, "tracer_bias_" + str(i)) is None:
+            logger.info("tracer_bias_%s is None, returning None", i)
             return None
+        logger.debug(
+            "calculating model power for tracer %s with bias %s",
+            i,
+            getattr(self, "tracer_bias_" + str(i)),
+        )
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
         B_comp = self.compensate_sampling()
@@ -748,21 +852,26 @@ class ModelPowerSpectrum(CosmologyCalculator):
             beta_i = self.f_growth / tracer_bias_i
         else:
             beta_i = 0
+        logger.debug("have kaiser rsd term?: %s", self.kaiser_rsd)
         auto_power_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta_i,
             getattr(self, "sigma_v_" + str(i)),
         )
         # first apply the beam
+        logger.debug("applying beam attenuation?: %s", tracer_beam_indx)
         auto_power_model *= B_beam ** (tracer_beam_indx * 2)
         # then apply the sky-map sampling and gridding compensation
+        logger.debug("applying sky-map sampling?: %s", tracer_samp_indx)
         auto_power_model *= B_sampling ** (tracer_samp_indx * 2)
+        logger.debug("applying gridding compensation?: %s", tracer_comp_indx)
         auto_power_model *= B_comp ** (tracer_comp_indx * 2)
         # then the weights in the grid space before FFT
         # assume map-making, gridding and field-level weights are commutable
         weights_grid = self.get_weights_none_to_one("weights_grid_" + str(i))
         weights_field = self.get_weights_none_to_one("weights_field_" + str(i))
         weights_tot = weights_field * weights_grid
+        logger.debug("applying weights convolution: %s", weights_tot)
         auto_power_model = get_modelpk_conv(
             auto_power_model,
             weights1_in_real=weights_tot,
@@ -777,7 +886,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         Calculate the model cross power spectrum between the two tracers.
         The attribute f"_cross_power_tracer_model" will be set by the output.
         """
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         if getattr(self, "tracer_bias_" + str(2)) is None:
+            logger.info("tracer bias 2 is None, returning None")
             return None
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
@@ -788,12 +899,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
         pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
         # cross power
         pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
+        logger.debug("have kaiser rsd term?: %s", self.kaiser_rsd)
         if self.kaiser_rsd:
             beta_1 = self.f_growth / self.tracer_bias_1
             beta_2 = self.f_growth / self.tracer_bias_2
         else:
             beta_1 = 0
             beta_2 = 0
+        logger.debug(
+            "tracer bias 1: %s, tracer bias 2: %s, r: %s",
+            self.tracer_bias_1,
+            self.tracer_bias_2,
+            self.cross_coeff,
+        )
         self._cross_power_tracer_model = self.cal_rsd_power(
             pk3d_tt_r,
             beta1=beta_1,
@@ -804,11 +922,21 @@ class ModelPowerSpectrum(CosmologyCalculator):
         )
         self._cross_power_tracer_model[self.kmode == 0] = 0.0
         # then apply the beam, sky-map sampling, and gridding compensation
+        logger.debug(
+            "applying beam attenuation for tracer 1 and/or 2?: %s", tracer_beam_indx
+        )
         self._cross_power_tracer_model *= B_beam ** (
             tracer_beam_indx[0] + tracer_beam_indx[1]
         )
+        logger.debug(
+            "applying sky-map sampling for tracer 1 and/or 2?: %s", tracer_samp_indx
+        )
         self._cross_power_tracer_model *= B_sampling ** (
             tracer_samp_indx[0] + tracer_samp_indx[1]
+        )
+        logger.debug(
+            "applying gridding compensation for tracer 1 and/or 2?: %s",
+            tracer_comp_indx,
         )
         self._cross_power_tracer_model *= B_comp ** (
             tracer_comp_indx[0] + tracer_comp_indx[1]
@@ -820,6 +948,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         weights_field_2 = self.get_weights_none_to_one("weights_field_2")
         weights_tot_1 = weights_field_1 * weights_grid_1
         weights_tot_2 = weights_field_2 * weights_grid_2
+        logger.debug(
+            "applying weights convolution: %s and %s", weights_tot_1, weights_tot_2
+        )
         self._cross_power_tracer_model = get_modelpk_conv(
             self._cross_power_tracer_model,
             weights1_in_real=weights_tot_1,
@@ -871,6 +1002,9 @@ class FieldPowerSpectrum(Specification):
     def box_len(self, value):
         self._box_len = value
         if "box_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.box_dep_attr} due to resetting box_len"
+            )
             self.clean_cache(self.box_dep_attr)
 
     @property
@@ -891,6 +1025,9 @@ class FieldPowerSpectrum(Specification):
     def box_ndim(self, value):
         self._box_ndim = value
         if "box_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.box_dep_attr} due to resetting box_ndim"
+            )
             self.clean_cache(self.box_dep_attr)
 
     def set_corr_type(self, corr_type, tracer_indx):
@@ -909,6 +1046,7 @@ class FieldPowerSpectrum(Specification):
         tracer_indx: int
             Either 1 or 2.
         """
+        logger.debug("setting corr_type: %s for tracer %s", corr_type, tracer_indx)
         if corr_type[:3].lower() == "gal":
             mean_center = True
             unitless = True
@@ -921,6 +1059,9 @@ class FieldPowerSpectrum(Specification):
             raise ValueError("unknown corr_type")
         if not tracer_indx in [1, 2]:
             raise ValueError("tracer_indx should be either 1 or 2")
+        logger.debug("setting mean_center_%s: %s", tracer_indx, mean_center)
+        logger.debug("setting unitless_%s: %s", tracer_indx, unitless)
+        logger.debug("setting mean_amp_%s: %s", tracer_indx, mean_amp)
         setattr(self, "mean_center_" + str(tracer_indx), mean_center)
         setattr(self, "unitless_" + str(tracer_indx), unitless)
         setattr(self, "mean_amp_" + str(tracer_indx), mean_amp)
@@ -1000,6 +1141,9 @@ class FieldPowerSpectrum(Specification):
         # if field is updated, clear fourier field
         self._field_1 = value
         if "field_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.field_1_dep_attr} due to resetting field_1"
+            )
             self.clean_cache(self.field_1_dep_attr)
 
     @field_2.setter
@@ -1007,6 +1151,9 @@ class FieldPowerSpectrum(Specification):
         # if field is updated, clear fourier field
         self._field_2 = value
         if "field_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.field_2_dep_attr} due to resetting field_2"
+            )
             self.clean_cache(self.field_2_dep_attr)
 
     @property
@@ -1028,6 +1175,9 @@ class FieldPowerSpectrum(Specification):
         # if weight is updated, clear fourier field
         self._mean_center_1 = value
         if "field_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.field_1_dep_attr} due to resetting mean_center_1"
+            )
             self.clean_cache(self.field_1_dep_attr)
 
     @mean_center_2.setter
@@ -1035,6 +1185,9 @@ class FieldPowerSpectrum(Specification):
         # if weight is updated, clear fourier field
         self._mean_center_2 = value
         if "field_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.field_2_dep_attr} due to resetting mean_center_2"
+            )
             self.clean_cache(self.field_2_dep_attr)
 
     @property
@@ -1056,6 +1209,9 @@ class FieldPowerSpectrum(Specification):
         # if weight is updated, clear fourier field
         self._unitless_1 = value
         if "field_1_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.field_1_dep_attr} due to resetting unitless_1"
+            )
             self.clean_cache(self.field_1_dep_attr)
 
     @unitless_2.setter
@@ -1063,6 +1219,9 @@ class FieldPowerSpectrum(Specification):
         # if weight is updated, clear fourier field
         self._unitless_2 = value
         if "field_2_dep_attr" in dir(self):
+            logger.debug(
+                f"cleaning cache of {self.field_2_dep_attr} due to resetting unitless_2"
+            )
             self.clean_cache(self.field_2_dep_attr)
 
     @property
@@ -1079,6 +1238,7 @@ class FieldPowerSpectrum(Specification):
         """
         Calculate the Fourier transform of the density field of the first tracer.
         """
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         result = get_fourier_density(
             self.field_1,
             weights=self.weights_1,
@@ -1102,7 +1262,9 @@ class FieldPowerSpectrum(Specification):
         Calculate the Fourier transform of the density field of the second tracer.
         """
         if self.field_2 is None:
+            logger.info("field_2 is None, returning None")
             return None
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         result = get_fourier_density(
             self.field_2,
             weights=self.weights_2,
@@ -1904,6 +2066,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self._box_buffkick = np.array([value, value, value])
         else:
             self._box_buffkick = np.array(value)
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_counts_in_box",
+        ]
+        logger.debug(f"cleaning cache of {init_attr} due to resetting box_buffkick")
+        for attr in init_attr:
+            setattr(self, attr, None)
 
     @property
     def num_particle_per_pixel(self):
@@ -1915,6 +2086,17 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     @num_particle_per_pixel.setter
     def num_particle_per_pixel(self, value):
         self._num_particle_per_pixel = int(value)
+        init_attr = [
+            "_x_start",
+            "_y_start",
+            "_z_start",
+            "_counts_in_box",
+        ]
+        logger.debug(
+            f"cleaning cache of {init_attr} due to resetting num_particle_per_pixel"
+        )
+        for attr in init_attr:
+            setattr(self, attr, None)
 
     @property
     def interlace_shift(self):
@@ -1943,6 +2125,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_z_start",
             "_counts_in_box",
         ]
+        logger.debug(
+            f"cleaning cache of {init_attr} due to resetting downres_factor_transverse"
+        )
         for attr in init_attr:
             setattr(self, attr, None)
 
@@ -1960,6 +2145,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_z_start",
             "_counts_in_box",
         ]
+        logger.debug(
+            f"cleaning cache of {init_attr} due to resetting downres_factor_radial"
+        )
         for attr in init_attr:
             setattr(self, attr, None)
 
@@ -1993,6 +2181,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_z_start",
             "_counts_in_box",
         ]
+        logger.debug(f"cleaning cache of {init_attr} due to resetting flat_sky")
         for attr in init_attr:
             setattr(self, attr, None)
 
@@ -2017,6 +2206,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             "_z_start",
             "_counts_in_box",
         ]
+        logger.debug(f"cleaning cache of {init_attr} due to resetting flat_sky_padding")
         for attr in init_attr:
             setattr(self, attr, None)
 
@@ -2033,6 +2223,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mumode = np.nan_to_num(self.k_para[slice_indx] / kmode)
         self.kmode = kmode
         self.mumode = mumode
+        logger.debug(
+            f"set the model self.kmode and self.mumode to correspond to the field k-modes"
+        )
 
     def get_1d_power(
         self,
@@ -2220,6 +2413,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         if flat_sky_padding is None:
             flat_sky_padding = self.flat_sky_padding
+        logger.debug(f"using flat sky box with padding {flat_sky_padding}")
         self.box_ndim = np.array(self.data.shape) + 2 * np.array(flat_sky_padding)
         self.box_len = np.array(self.box_ndim) * np.array(
             [
@@ -2244,6 +2438,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
         """
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         if self.flat_sky:
             self.use_flat_sky_box()
             if self.model_k_from_field:
@@ -2251,6 +2446,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             return 1
         ra = self.ra_map.copy()[self.W_HI.sum(-1) > 0]
         dec = self.dec_map.copy()[self.W_HI.sum(-1) > 0]
+        logger.debug(f"calculating enclosing box for {len(ra)} particles")
         (
             self._x_start,
             self._y_start,
@@ -2268,6 +2464,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             return_coord=True,
             buffkick=self.box_buffkick,
             rot_mat=rot_mat,
+        )
+        logger.debug(
+            f"calculated enclosing box with size {self._x_len} x {self._y_len} x {self._z_len}"
         )
         self.box_len = np.array(
             [
@@ -2291,6 +2490,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         ra_sample = np.array(ra_sample)
         dec_sample = np.array(dec_sample)
         nu_sample = np.array(nu_sample)
+        logger.debug(f"randomly sampled {num_p} particles in each pixel")
         rng = np.random.default_rng(seed=self.seed)
         rand_angle = rng.uniform(
             -self.pix_resol / 2, self.pix_resol / 2, size=(2,) + ra_sample[1:].shape
@@ -2338,6 +2538,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 ndim_rg[i] += 1
         box_resol = self.box_len / ndim_rg
         self.box_ndim = ndim_rg
+        logger.debug(
+            f"calculated box resolution due to downres factor: {box_resol}, {downres}"
+        )
         self._counts_in_box = None
         slicer = get_nd_slicer()
         vec = [(self.x_vec[i] + self.box_origin[i])[slicer[i]] for i in range(3)]
