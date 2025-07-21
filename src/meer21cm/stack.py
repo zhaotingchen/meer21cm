@@ -1,10 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from astropy import constants, units
-from astropy.coordinates import SkyCoord
-from astropy.wcs.utils import proj_plane_pixel_area
-from scipy.ndimage import gaussian_filter
-from meer21cm.util import radec_to_indx, center_to_edges, find_ch_id, redshift_to_freq
+from meer21cm.util import radec_to_indx, find_ch_id, redshift_to_freq
 
 
 def stack(

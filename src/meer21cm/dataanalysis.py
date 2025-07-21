@@ -1,6 +1,5 @@
 import numpy as np
 from astropy.io import fits
-from astropy.wcs import WCS
 from meer21cm.util import (
     check_unit_equiv,
     get_wcs_coor,

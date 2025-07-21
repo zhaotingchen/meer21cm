@@ -1,7 +1,6 @@
 import numpy as np
 from .util import get_wcs_coor, get_ang_between_coord, freq_to_redshift, tagging
 from astropy import units, constants
-from astropy.wcs.utils import proj_plane_pixel_area
 from scipy.signal import convolve
 from astropy.cosmology import Planck18
 import healpy as hp

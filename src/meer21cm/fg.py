@@ -1,19 +1,12 @@
 import healpy as hp
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-import sys
-import os
 import meer21cm
 from meer21cm.util import read_healpix_fits
 from meer21cm.util import convert_hpmap_in_jy_to_temp
 from meer21cm.util import healpix_to_wcs
-from functools import cached_property
-from astropy import constants, units
-from astropy.io import fits
-
+from astropy import units
 from collections.abc import Iterable
-from meer21cm.util import check_unit_equiv, jy_to_kelvin
+from meer21cm.util import check_unit_equiv
 
 default_data_dir = meer21cm.__file__.rsplit("/", 1)[0] + "/data/"
 

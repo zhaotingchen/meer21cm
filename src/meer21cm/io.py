@@ -5,7 +5,6 @@ Module for reading and pre-processing MeerKLASS maps.
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-import os
 from .util import get_wcs_coor
 import meer21cm.telescope as telescope
 import pickle

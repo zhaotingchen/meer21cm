@@ -1,36 +1,19 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-import sys
-import os
 from scipy.interpolate import interp1d
-
-matplotlib.rcParams["figure.figsize"] = (18, 9)
 from astropy.cosmology import Planck18
 from numpy.random import default_rng
-from astropy import constants, units
-from astropy.wcs.utils import proj_plane_pixel_area
-from scipy.ndimage import gaussian_filter
+from astropy import constants
 from .util import (
-    check_unit_equiv,
     get_wcs_coor,
     radec_to_indx,
-    get_default_args,
-    hod_obuljen18,
     freq_to_redshift,
-    lamb_21,
-    f_21,
     tagging,
     busy_function_simple,
-    find_indx_for_subarr,
-    himf,
     himf_pars_jones18,
-    cal_himf,
     sample_from_dist,
     center_to_edges,
     tully_fisher,
     redshift_to_freq,
-    random_sample_indx,
     find_ch_id,
     mass_intflux_coeff,
     Obuljen18,
@@ -39,17 +22,13 @@ from .util import (
     angle_in_range,
     get_nd_slicer,
 )
-from .plot import plot_map
-from .grid import (
-    find_rotation_matrix,
-    minimum_enclosing_box_of_lightcone,
-)
-import healpy as hp
 from meer21cm.power import PowerSpectrum, Specification
 from meer21cm.telescope import weighted_convolution
 from halomod import TracerHaloModel as THM
 import warnings
+import logging
 
+logger = logging.getLogger(__name__)
 
 # 20 lines missing before adding in
 class MockSimulation(PowerSpectrum):
@@ -174,6 +153,9 @@ class MockSimulation(PowerSpectrum):
     @parallel_plane.setter
     def parallel_plane(self, value):
         self._parallel_plane = value
+        logger.debug(
+            f"cleaning cache of {self.rsd_dep_attr} due to resetting parallel_plane"
+        )
         self.clean_cache(self.rsd_dep_attr)
 
     @property
@@ -190,6 +172,9 @@ class MockSimulation(PowerSpectrum):
     @rsd_from_field.setter
     def rsd_from_field(self, value):
         self._rsd_from_field = value
+        logger.debug(
+            f"cleaning cache of {self.rsd_dep_attr} due to resetting rsd_from_field"
+        )
         self.clean_cache(self.rsd_dep_attr)
 
     @property
@@ -202,6 +187,9 @@ class MockSimulation(PowerSpectrum):
     @num_discrete_source.setter
     def num_discrete_source(self, value):
         self._num_discrete_source = value
+        logger.debug(
+            f"cleaning cache of {self.discrete_dep_attr} due to resetting num_discrete_source"
+        )
         self.clean_cache(self.discrete_dep_attr)
 
     @property
@@ -219,6 +207,9 @@ class MockSimulation(PowerSpectrum):
     @discrete_source_dndz.setter
     def discrete_source_dndz(self, value):
         self._discrete_source_dndz = value
+        logger.debug(
+            f"cleaning cache of {self.discrete_dep_attr} due to resetting discrete_source_dndz"
+        )
         self.clean_cache(self.discrete_dep_attr)
 
     @property
@@ -236,6 +227,9 @@ class MockSimulation(PowerSpectrum):
         if not value in [1, 2]:
             raise ValueError("discrete_base_field must be 1 or 2")
         self._discrete_base_field = value
+        logger.debug(
+            f"cleaning cache of {self.discrete_dep_attr} due to resetting discrete_base_field"
+        )
         self.clean_cache(self.discrete_dep_attr)
 
     @property
