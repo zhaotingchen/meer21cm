@@ -394,7 +394,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         value_before = self._include_beam
         self._include_beam = value
         if self.sigma_beam_ch is None and (np.array(self.include_beam).sum() > 0):
-            logger.info("no input beam found, setting include_beam to False")
+            logger.debug("no input beam found, setting include_beam to False")
             self._include_beam = [False, False]
         if value_before[0] != value[0]:
             if "tracer_1_dep_attr" in dir(self):
@@ -827,7 +827,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
         auto_power_model: np.ndarray
             The model power spectrum for the i-th tracer.
         """
-        logger.info(f"invoking {inspect.currentframe().f_code.co_name} for tracer {i}")
         if getattr(self, "tracer_bias_" + str(i)) is None:
             logger.info("tracer_bias_%s is None, returning None", i)
             return None
@@ -877,6 +876,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
             weights1_in_real=weights_tot,
             weights2=weights_tot,
             renorm=getattr(self, "renorm_weights_" + str(i)),
+        )
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting self._auto_power_tracer_{i}_model"
         )
         setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
         return auto_power_model
@@ -1979,7 +1982,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             else:
                 field_1 = np.ones([1, 1, 1])
         if box_len is None:
-            box_len = np.array([0, 0, 0])
+            box_len = np.array([1, 1, 1])
         FieldPowerSpectrum.__init__(
             self,
             field_1,
@@ -2030,16 +2033,11 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.downres_factor_transverse = downres_factor_transverse
         self.downres_factor_radial = downres_factor_radial
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
-            "_x_len",
-            "_y_len",
-            "_z_len",
             "_rot_mat_sky_to_box",
             "_pix_coor_in_cartesian",
             "_counts_in_box",
             "_flat_sky",
+            "_box_origin",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -2067,9 +2065,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         else:
             self._box_buffkick = np.array(value)
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
+            "_box_origin",
             "_counts_in_box",
         ]
         logger.debug(f"cleaning cache of {init_attr} due to resetting box_buffkick")
@@ -2087,9 +2083,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     def num_particle_per_pixel(self, value):
         self._num_particle_per_pixel = int(value)
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
+            "_box_origin",
             "_counts_in_box",
         ]
         logger.debug(
@@ -2120,9 +2114,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self._downres_factor_transverse = value
         # clean cache
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
+            "_box_origin",
             "_counts_in_box",
         ]
         logger.debug(
@@ -2140,9 +2132,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self._downres_factor_radial = value
         # clean cache
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
+            "_box_origin",
             "_counts_in_box",
         ]
         logger.debug(
@@ -2176,9 +2166,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self._flat_sky = bool(value)
         # clean cache
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
+            "_box_origin",
             "_counts_in_box",
         ]
         logger.debug(f"cleaning cache of {init_attr} due to resetting flat_sky")
@@ -2201,9 +2189,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self._flat_sky_padding = value
         # clean cache
         init_attr = [
-            "_x_start",
-            "_y_start",
-            "_z_start",
+            "_box_origin",
             "_counts_in_box",
         ]
         logger.debug(f"cleaning cache of {init_attr} due to resetting flat_sky_padding")
@@ -2223,9 +2209,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             mumode = np.nan_to_num(self.k_para[slice_indx] / kmode)
         self.kmode = kmode
         self.mumode = mumode
-        logger.debug(
-            f"set the model self.kmode and self.mumode to correspond to the field k-modes"
-        )
 
     def get_1d_power(
         self,
@@ -2380,7 +2363,11 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         See :func:`meer21cm.grid.minimum_enclosing_box_of_lightcone`
         for definition.
         """
-        return np.array([self._x_start, self._y_start, self._z_start])
+        return self._box_origin
+
+    @box_origin.setter
+    def box_origin(self, value):
+        self._box_origin = np.array(value)
 
     @property
     def rot_mat_sky_to_box(self):
@@ -2414,6 +2401,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if flat_sky_padding is None:
             flat_sky_padding = self.flat_sky_padding
         logger.debug(f"using flat sky box with padding {flat_sky_padding}")
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: setting self.box_ndim, self.box_len, self.box_origin"
+        )
         self.box_ndim = np.array(self.data.shape) + 2 * np.array(flat_sky_padding)
         self.box_len = np.array(self.box_ndim) * np.array(
             [
@@ -2422,7 +2412,14 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 self.los_resol_in_mpc,
             ]
         )
-        self.propagate_field_k_to_model()
+        # flat sky does not have rotation so there is no box_origin
+        self.box_origin = np.array([0, 0, 0])
+        if self.model_k_from_field:
+            logger.info(
+                f"{inspect.currentframe().f_code.co_name}: "
+                "setting the model self.kmode and self.mumode to correspond to the field k-modes"
+            )
+            self.propagate_field_k_to_model()
         self._counts_in_box = None
         nu_ext = np.linspace(
             self.nu.min() - self.freq_resol * flat_sky_padding[2],
@@ -2438,22 +2435,25 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
         """
-        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         if self.flat_sky:
             self.use_flat_sky_box()
             if self.model_k_from_field:
+                logger.info(
+                    f"{inspect.currentframe().f_code.co_name}: "
+                    "setting the model self.kmode and self.mumode to correspond to the field k-modes"
+                )
                 self.propagate_field_k_to_model()
             return 1
         ra = self.ra_map.copy()[self.W_HI.sum(-1) > 0]
         dec = self.dec_map.copy()[self.W_HI.sum(-1) > 0]
         logger.debug(f"calculating enclosing box for {len(ra)} particles")
         (
-            self._x_start,
-            self._y_start,
-            self._z_start,
-            self._x_len,
-            self._y_len,
-            self._z_len,
+            _x_start,
+            _y_start,
+            _z_start,
+            _x_len,
+            _y_len,
+            _z_len,
             rot_back,
             pos_arr,
         ) = minimum_enclosing_box_of_lightcone(
@@ -2466,13 +2466,17 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             rot_mat=rot_mat,
         )
         logger.debug(
-            f"calculated enclosing box with size {self._x_len} x {self._y_len} x {self._z_len}"
+            f"{inspect.currentframe().f_code.co_name}: calculated enclosing box with size {_x_len} x {_y_len} x {_z_len}"
         )
-        self.box_len = np.array(
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: setting self.box_len, self.box_origin, self.box_ndim"
+        )
+        self._box_origin = np.array([_x_start, _y_start, _z_start])
+        self._box_len = np.array(
             [
-                self._x_len,
-                self._y_len,
-                self._z_len,
+                _x_len,
+                _y_len,
+                _z_len,
             ]
         )
         self._rot_mat_sky_to_box = np.linalg.inv(rot_back)
@@ -2547,6 +2551,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         vec_len = np.sqrt(vec[0] ** 2 + vec[1] ** 2 + vec[2] ** 2)
         self._box_voxel_redshift = self.z_as_func_of_comov_dist(vec_len)
         if self.model_k_from_field:
+            logger.info(
+                f"{inspect.currentframe().f_code.co_name}: "
+                "setting the model self.kmode and self.mumode to correspond to the field k-modes"
+            )
             self.propagate_field_k_to_model()
 
     def get_counts_in_box(self):
@@ -2596,7 +2604,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             self.compensate = False
             self.include_beam = [True, False]
             return self.field_1, self.weights_1, (self.weights_1 > 0).astype(float)
-        if self.box_origin[0] is None:
+        if self.box_origin is None:
             self.get_enclosing_box()
         data_particle = self.data[self.W_HI.sum(-1) > 0].ravel()
         weights_particle = self.w_HI[self.W_HI.sum(-1) > 0].ravel()
@@ -2650,7 +2658,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
     def grid_gal_to_field(self, radecfreq=None, flat_sky=None):
-        if self.box_origin[0] is None:
+        if self.box_origin is None:
             self.get_enclosing_box()
         if flat_sky is None:
             flat_sky = self.flat_sky
