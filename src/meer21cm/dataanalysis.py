@@ -615,7 +615,7 @@ class Specification:
         """
         ra_range = np.array(self.ra_range)
         dec_range = np.array(self.dec_range)
-        logger.info(
+        logger.debug(
             f"flagging map and weights outside ra_range: {ra_range}, dec_range: {dec_range}"
         )
         ra_sel = angle_in_range(self.ra_map, ra_range[0], ra_range[1])
@@ -635,7 +635,7 @@ class Specification:
         dec_range = np.array(self.dec_range)
         freq_edges = center_to_edges(self.nu)
         z_edges = freq_to_redshift(freq_edges)
-        logger.info(
+        logger.debug(
             f"flagging galaxy catalogue outside ra_range: {ra_range}, dec_range: {dec_range} and "
             f"z_range: [{z_edges.min()}, {z_edges.max()}]"
         )

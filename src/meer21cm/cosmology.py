@@ -224,10 +224,6 @@ class CosmologyParameters:
         """
         Compute the CDM power spectrum using camb.
         """
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name}"
-            " to calculate the matter power spectrum",
-        )
         camb_pars = self.get_camb_pars()
         results = camb.get_results(camb_pars)
         # get sigma8
@@ -248,10 +244,6 @@ class CosmologyParameters:
         """
         Emulate the CDM power spectrum using bacco.
         """
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name}"
-            " to calculate the matter power spectrum",
-        )
         emulator = baccoemu.Matter_powerspectrum()
         bacco_pars = self.get_bacco_pars()
         _, baccopk = getattr(emulator, f"get_{self.ps_type}_pk")(
@@ -536,10 +528,10 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         """
         The average HI brightness temperature in Kelvin.
         """
-        logger.info(
+        logger.debug(
             f"invoking {inspect.currentframe().f_code.co_name} to calculate the average HI brightness temperature"
         )
-        logger.info(f"omega_hi: {self.omega_hi}, z: {self.z}, cosmo: {self.cosmo}")
+        logger.debug(f"omega_hi: {self.omega_hi}, z: {self.z}, cosmo: {self.cosmo}")
         tbar = omega_hi_to_average_temp(self.omega_hi, z=self.z, cosmo=self)
         return tbar
 
@@ -602,6 +594,10 @@ class CosmologyCalculator(Specification, CosmologyParameters):
             pkarr,
             bounds_error=False,
             fill_value="extrapolate",
+        )
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}_{self.backend}: "
+            "setting self._matter_power_spectrum_fnc"
         )
         self._matter_power_spectrum_fnc = matter_power_func
 
