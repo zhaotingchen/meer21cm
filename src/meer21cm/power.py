@@ -678,10 +678,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
             mean_amp = getattr(self, mean_amp)
         return self._cross_power_tracer_model * mean_amp * mean_amp2
 
-    def step_sampling(self):
+    def map_sampling(self):
         """
-        The sampling window function to be convolved with data. Note that
-        the window can only be calculated in Cartesian grids, so it is not used
+        The sampling window function from the map cube to be convolved with data.
+        Note that the window can only be calculated in Cartesian grids, so it is not used
         in ``ModelPowerSpectrum`` and only in ``PowerSpectrum``.
         """
         return 1.0
@@ -817,7 +817,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if getattr(self, "tracer_bias_" + str(i)) is None:
             return None
         B_beam = self.beam_attenuation()
-        B_sampling = self.step_sampling()
+        B_sampling = self.map_sampling()
         B_comp = self.compensate_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
@@ -874,7 +874,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         if self.tracer_bias_1 is None or self.tracer_bias_2 is None:
             return None
         B_beam = self.beam_attenuation()
-        B_sampling = self.step_sampling()
+        B_sampling = self.map_sampling()
         B_comp = self.compensate_sampling()
         tracer_beam_indx = np.array(self.include_beam).astype("int")
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")
@@ -1831,7 +1831,7 @@ def step_window_attenuation(k_dir, step_size_in_mpc, p=1):
         The index of assignment scheme.
     """
     # note np.sinc is sin(pi x)/(pi x)
-    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** (p / 2)
+    return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** p
 
 
 class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
@@ -2274,7 +2274,10 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return powercy, weightscy
 
     # calculate on-the-fly, no cache
-    def step_sampling(self, sampling_resol=None, p=1):
+    def map_sampling(self, sampling_resol=None, p=1):
+        """
+        The sampling window function from the map cube to be convolved with data.
+        """
         if not self.has_resol:
             return 1.0
         k_x = self.k_vec[0][:, None, None]
@@ -2292,9 +2295,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     def compensate_sampling(self):
         """
         The sampling window function to be compensated for the gridding mass assignment scheme.
-        Note that
-        the window can only be calculated in Cartesian grids, so it is not used
-        in ``ModelPowerSpectrum`` and only in ``PowerSpectrum``.
         """
         return fourier_window_for_assignment(self.box_ndim, self.grid_scheme)
 

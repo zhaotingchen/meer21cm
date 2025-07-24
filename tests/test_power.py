@@ -634,7 +634,7 @@ def test_set_corrtype():
 
 
 def test_step_window_attenuation():
-    assert step_window_attenuation(1, 1) == np.sqrt(np.sinc(1 / np.pi / 2))
+    assert step_window_attenuation(1, 1) == np.sinc(1 / np.pi / 2)
     assert step_window_attenuation(0, 0) == 1.0
 
 
@@ -644,7 +644,7 @@ def test_temp_amp():
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
     ps = ModelPowerSpectrum()
-    assert ps.step_sampling() == 1
+    assert ps.map_sampling() == 1
     ps = PowerSpectrum(
         rand_noise,
         box_len,
@@ -885,3 +885,20 @@ def test_1d_k_cut():
     assert nmodes[0] == 99 * 9
     _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_max=[0.1, 100])
     assert nmodes[0] == 1 * 10
+
+
+def test_no_init_power():
+    ps = PowerSpectrum()
+    assert ps.auto_power_tracer_2_model_noobs is None
+    assert ps.cross_power_tracer_model_noobs is None
+
+
+def test_map_sampling():
+    ps = PowerSpectrum(
+        np.ones((10, 10, 10)),
+        np.array([10, 10, 10]),
+        model_k_from_field=True,
+    )
+    ps.sampling_resol = ps.box_resol
+    # if sampling resol is the same as box resol, then compensate and step sampling is the same
+    assert np.allclose(ps.compensate_sampling(), ps.map_sampling())
