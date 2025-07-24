@@ -640,7 +640,7 @@ def test_step_window_attenuation():
 
 def test_temp_amp():
     box_len = np.array([80, 50, 100])
-    box_dim = np.array([100, 200, 41])
+    box_dim = np.array([10, 20, 40])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
     ps = ModelPowerSpectrum()
@@ -656,14 +656,20 @@ def test_temp_amp():
         mean_amp_1="average_hi_temp",
         mean_amp_2="one",
         tracer_bias_2=1.0,
-        sampling_resol=[0.1, 0.1, 0.1],
+        # sampling_resol=[0.1, 0.1, 0.1],
         model_k_from_field=True,
+        tracer_bias_1=1.0,
     )
     # test a custom avg
     ps.one = 1.0
-    ps.auto_power_tracer_2_model
-    ps.auto_power_tracer_1_model
-    ps.cross_power_tracer_model
+    assert np.allclose(ps.auto_power_tracer_2_model, ps.auto_power_matter_model)
+    assert np.allclose(
+        ps.auto_power_tracer_1_model,
+        ps.auto_power_matter_model * ps.average_hi_temp**2,
+    )
+    assert np.allclose(
+        ps.cross_power_tracer_model, ps.auto_power_matter_model * ps.average_hi_temp
+    )
 
 
 def test_noise_power_from_map(test_W):

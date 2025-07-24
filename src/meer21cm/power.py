@@ -70,7 +70,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self._include_beam = [None, None]  # for initialization
         self.include_beam = include_beam
         self.cross_coeff = cross_coeff
+        self._auto_power_matter_model_r = None
         self._auto_power_matter_model = None
+        self._auto_power_tracer_1_model_noobs = None
+        self._auto_power_tracer_2_model_noobs = None
+        self._cross_power_tracer_model_noobs = None
         self._auto_power_tracer_1_model = None
         self._auto_power_tracer_2_model = None
         self._cross_power_tracer_model = None
@@ -548,6 +552,23 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 self.clean_cache(self.tracer_2_dep_attr)
 
     @property
+    @tagging("cosmo", "nu", "kmode")
+    def auto_power_matter_model_r(self):
+        """
+        The model matter power spectrum in real space (without RSD).
+        """
+        if self._auto_power_matter_model_r is None:
+            self.get_model_matter_power_r()
+        return self._auto_power_matter_model_r
+
+    def get_model_matter_power_r(self):
+        """
+        Calculate the model matter power spectrum in real space (without RSD).
+        The attribute f"_auto_power_matter_model_r" will be set by the output.
+        """
+        self._auto_power_matter_model_r = self.matter_power_spectrum_fnc(self.kmode)
+
+    @property
     @tagging("cosmo", "nu", "kmode", "mumode", "rsd")
     def auto_power_matter_model(self):
         """
@@ -559,6 +580,53 @@ class ModelPowerSpectrum(CosmologyCalculator):
         return self._auto_power_matter_model
 
     @property
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "rsd")
+    def auto_power_tracer_1_model_noobs(self):
+        """
+        The model power spectrum for the first tracer without observational effects.
+        """
+        if self._auto_power_tracer_1_model_noobs is None:
+            self.get_model_power_noobs_i(1)
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._auto_power_tracer_1_model_noobs * mean_amp**2
+
+    @property
+    @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "rsd")
+    def auto_power_tracer_2_model_noobs(self):
+        """
+        The model power spectrum for the second tracer without observational effects.
+        """
+        if self._auto_power_tracer_2_model_noobs is None:
+            self.get_model_power_noobs_i(2)
+        mean_amp = self.mean_amp_2
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._auto_power_tracer_2_model_noobs * mean_amp**2
+
+    @property
+    @tagging(
+        "cosmo", "nu", "kmode", "mumode", "tracer_1", "tracer_2", "rsd", "cross_coeff"
+    )
+    def cross_power_tracer_model_noobs(self):
+        """
+        The model power spectrum for the cross correlation between the two tracers without observational effects.
+        """
+        if self._cross_power_tracer_model_noobs is None:
+            self.get_model_power_noobs_cross()
+        # if still None, means tracer 2 is not set
+        if self._cross_power_tracer_model_noobs is None:
+            return None
+        mean_amp2 = self.mean_amp_2
+        if isinstance(mean_amp2, str):
+            mean_amp2 = getattr(self, mean_amp2)
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._cross_power_tracer_model_noobs * mean_amp * mean_amp2
+
+    @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam", "rsd")
     def auto_power_tracer_1_model(self):
         """
@@ -567,10 +635,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if self._auto_power_tracer_1_model is None:
             self.get_model_power_i(1)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._auto_power_tracer_1_model * mean_amp**2
+        return self._auto_power_tracer_1_model
 
     @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam", "rsd")
@@ -581,12 +646,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if self._auto_power_tracer_2_model is None:
             self.get_model_power_i(2)
-        mean_amp = self.mean_amp_2
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
+        # if still None, means tracer 2 is not set
         if self._auto_power_tracer_2_model is None:
             return None
-        return self._auto_power_tracer_2_model * mean_amp**2
+        return self._auto_power_tracer_2_model
 
     @property
     @tagging(
@@ -607,15 +670,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if self._cross_power_tracer_model is None:
             self.get_model_power_cross()
-        mean_amp2 = self.mean_amp_2
-        if isinstance(mean_amp2, str):
-            mean_amp2 = getattr(self, mean_amp2)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
+        # if still None, means tracer 2 is not set
         if self._cross_power_tracer_model is None:
             return None
-        return self._cross_power_tracer_model * mean_amp * mean_amp2
+        return self._cross_power_tracer_model
 
     def step_sampling(self):
         """
@@ -704,16 +762,39 @@ class ModelPowerSpectrum(CosmologyCalculator):
         Calculate the model matter power spectrum.
         The attribute f"_auto_power_matter_model" will be set by the output.
         """
-        pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
+        pk3d_mm_r = self.auto_power_matter_model_r
         if self.kaiser_rsd:
             beta_m = self.f_growth
+            self._auto_power_matter_model = self.cal_rsd_power(
+                pk3d_mm_r,
+                beta_m,
+                0.0,
+            )
         else:
-            beta_m = 0.0
-        self._auto_power_matter_model = self.cal_rsd_power(
-            pk3d_mm_r,
-            beta_m,
-            0.0,
-        )
+            self._auto_power_matter_model = pk3d_mm_r
+
+    def get_model_power_noobs_i(self, i):
+        """
+        Calculate the model power spectrum for the i-th tracer without observational effects.
+        The attribute f"_auto_power_tracer_{i}_model_noobs" will be set by the output.
+        """
+        tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
+        if tracer_bias_i is None:
+            return None
+        pk3d_mm_r = self.auto_power_matter_model_r
+        # tracer in real space is just the matter ps times the bias
+        pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
+        # apply the RSD
+        if self.kaiser_rsd:
+            beta_i = self.f_growth / tracer_bias_i
+            power_noobs_i = self.cal_rsd_power(
+                pk3d_tt_r,
+                beta_i,
+                getattr(self, "sigma_v_" + str(i)),
+            )
+        else:
+            power_noobs_i = pk3d_tt_r
+        setattr(self, f"_auto_power_tracer_{i}_model_noobs", power_noobs_i)
 
     def get_model_power_i(self, i):
         """
@@ -738,21 +819,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
         tracer_comp_indx = np.array(self.compensate).astype("int")[i - 1]
-        tracer_bias_i = getattr(self, "tracer_bias_" + str(i))
-        # get the matter power spectrum in real space
-        pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
-        # tracer in real space is just the matter ps times the bias
-        pk3d_tt_r = tracer_bias_i**2 * pk3d_mm_r
-        # apply the RSD
-        if self.kaiser_rsd:
-            beta_i = self.f_growth / tracer_bias_i
-        else:
-            beta_i = 0
-        auto_power_model = self.cal_rsd_power(
-            pk3d_tt_r,
-            beta_i,
-            getattr(self, "sigma_v_" + str(i)),
-        )
+        auto_power_model = getattr(self, f"auto_power_tracer_{i}_model_noobs").copy()
         # first apply the beam
         auto_power_model *= B_beam ** (tracer_beam_indx * 2)
         # then apply the sky-map sampling and gridding compensation
@@ -772,12 +839,36 @@ class ModelPowerSpectrum(CosmologyCalculator):
         setattr(self, "_auto_power_tracer_" + str(i) + "_model", auto_power_model)
         return auto_power_model
 
+    def get_model_power_noobs_cross(self):
+        """
+        Calculate the model cross power spectrum between the two tracers without observational effects.
+        The attribute f"_cross_power_tracer_model_noobs" will be set by the output.
+        """
+        if self.tracer_bias_1 is None or self.tracer_bias_2 is None:
+            return None
+        pk3d_mm_r = self.auto_power_matter_model_r
+        pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
+        if self.kaiser_rsd:
+            beta_1 = self.f_growth / self.tracer_bias_1
+            beta_2 = self.f_growth / self.tracer_bias_2
+            result = self.cal_rsd_power(
+                pk3d_tt_r,
+                beta1=beta_1,
+                sigmav_1=self.sigma_v_1,
+                beta2=beta_2,
+                sigmav_2=self.sigma_v_2,
+                r=self.cross_coeff,
+            )
+        else:
+            result = pk3d_tt_r * self.cross_coeff
+        self._cross_power_tracer_model_noobs = result
+
     def get_model_power_cross(self):
         """
         Calculate the model cross power spectrum between the two tracers.
         The attribute f"_cross_power_tracer_model" will be set by the output.
         """
-        if getattr(self, "tracer_bias_" + str(2)) is None:
+        if self.tracer_bias_1 is None or self.tracer_bias_2 is None:
             return None
         B_beam = self.beam_attenuation()
         B_sampling = self.step_sampling()
@@ -785,24 +876,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_beam_indx = np.array(self.include_beam).astype("int")
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")
         tracer_comp_indx = np.array(self.compensate).astype("int")
-        pk3d_mm_r = self.matter_power_spectrum_fnc(self.kmode)
-        # cross power
-        pk3d_tt_r = self.tracer_bias_1 * self.tracer_bias_2 * pk3d_mm_r
-        if self.kaiser_rsd:
-            beta_1 = self.f_growth / self.tracer_bias_1
-            beta_2 = self.f_growth / self.tracer_bias_2
-        else:
-            beta_1 = 0
-            beta_2 = 0
-        self._cross_power_tracer_model = self.cal_rsd_power(
-            pk3d_tt_r,
-            beta1=beta_1,
-            sigmav_1=self.sigma_v_1,
-            beta2=beta_2,
-            sigmav_2=self.sigma_v_2,
-            r=self.cross_coeff,
-        )
-        self._cross_power_tracer_model[self.kmode == 0] = 0.0
+        self._cross_power_tracer_model = self.cross_power_tracer_model_noobs.copy()
         # then apply the beam, sky-map sampling, and gridding compensation
         self._cross_power_tracer_model *= B_beam ** (
             tracer_beam_indx[0] + tracer_beam_indx[1]
