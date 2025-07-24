@@ -524,7 +524,7 @@ def test_ModelPowerSpectrum(fog_profile):
     assert model._auto_power_tracer_2_model is None
     model = ModelPowerSpectrum()
     model.compensate = False
-    assert model.compensate_sampling() == 1.0
+    assert model.gridding_compensation() == 1.0
 
 
 def test_gaussian_beam_attenuation():
@@ -901,4 +901,4 @@ def test_map_sampling():
     )
     ps.sampling_resol = ps.box_resol
     # if sampling resol is the same as box resol, then compensate and step sampling is the same
-    assert np.allclose(ps.compensate_sampling(), ps.map_sampling())
+    assert np.allclose(ps.gridding_compensation(), ps.map_sampling())

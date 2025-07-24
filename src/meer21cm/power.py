@@ -686,7 +686,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         return 1.0
 
-    def compensate_sampling(self):
+    def gridding_compensation(self):
         """
         The sampling window function to be compensated for the gridding mass assignment scheme.
         Note that the window can only be calculated in Cartesian grids, so it is not used
@@ -818,7 +818,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             return None
         B_beam = self.beam_attenuation()
         B_sampling = self.map_sampling()
-        B_comp = self.compensate_sampling()
+        B_comp = self.gridding_compensation()
         tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
         tracer_comp_indx = np.array(self.compensate).astype("int")[i - 1]
@@ -875,7 +875,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             return None
         B_beam = self.beam_attenuation()
         B_sampling = self.map_sampling()
-        B_comp = self.compensate_sampling()
+        B_comp = self.gridding_compensation()
         tracer_beam_indx = np.array(self.include_beam).astype("int")
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")
         tracer_comp_indx = np.array(self.compensate).astype("int")
@@ -2292,7 +2292,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         )
         return B_sampling
 
-    def compensate_sampling(self):
+    def gridding_compensation(self):
         """
         The sampling window function to be compensated for the gridding mass assignment scheme.
         """
