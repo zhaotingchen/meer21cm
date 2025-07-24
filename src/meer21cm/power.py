@@ -584,26 +584,22 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def auto_power_tracer_1_model_noobs(self):
         """
         The model power spectrum for the first tracer without observational effects.
+        *Note that the power is in units of volume, so the mean amplitude is not applied.*
         """
         if self._auto_power_tracer_1_model_noobs is None:
             self.get_model_power_noobs_i(1)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._auto_power_tracer_1_model_noobs * mean_amp**2
+        return self._auto_power_tracer_1_model_noobs
 
     @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "rsd")
     def auto_power_tracer_2_model_noobs(self):
         """
         The model power spectrum for the second tracer without observational effects.
+        *Note that the power is in units of volume, so the mean amplitude is not applied.*
         """
         if self._auto_power_tracer_2_model_noobs is None:
             self.get_model_power_noobs_i(2)
-        mean_amp = self.mean_amp_2
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._auto_power_tracer_2_model_noobs * mean_amp**2
+        return self._auto_power_tracer_2_model_noobs
 
     @property
     @tagging(
@@ -612,19 +608,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
     def cross_power_tracer_model_noobs(self):
         """
         The model power spectrum for the cross correlation between the two tracers without observational effects.
+        *Note that the power is in units of volume, so the mean amplitude is not applied.*
         """
         if self._cross_power_tracer_model_noobs is None:
             self.get_model_power_noobs_cross()
-        # if still None, means tracer 2 is not set
-        if self._cross_power_tracer_model_noobs is None:
-            return None
-        mean_amp2 = self.mean_amp_2
-        if isinstance(mean_amp2, str):
-            mean_amp2 = getattr(self, mean_amp2)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
-        return self._cross_power_tracer_model_noobs * mean_amp * mean_amp2
+        return self._cross_power_tracer_model_noobs
 
     @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_1", "beam", "rsd")
@@ -632,10 +620,14 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         The 3D model power spectrum for the first tracer.
         The 3D k-modes corrospond to the input ``kmode`` and ``mumode``.
+        Unlike ``noobs`` power, the mean amplitude is applied.
         """
         if self._auto_power_tracer_1_model is None:
             self.get_model_power_i(1)
-        return self._auto_power_tracer_1_model
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._auto_power_tracer_1_model * mean_amp**2
 
     @property
     @tagging("cosmo", "nu", "kmode", "mumode", "tracer_2", "beam", "rsd")
@@ -643,13 +635,17 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         The 3D model power spectrum for the second tracer.
         The 3D k-modes corrospond to the input ``kmode`` and ``mumode``.
+        Unlike ``noobs`` power, the mean amplitude is applied.
         """
         if self._auto_power_tracer_2_model is None:
             self.get_model_power_i(2)
         # if still None, means tracer 2 is not set
         if self._auto_power_tracer_2_model is None:
             return None
-        return self._auto_power_tracer_2_model
+        mean_amp = self.mean_amp_2
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._auto_power_tracer_2_model * mean_amp**2
 
     @property
     @tagging(
@@ -667,13 +663,20 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         The 3D model cross power spectrum between the two tracers.
         The 3D k-modes corrospond to the input ``kmode`` and ``mumode``.
+        Unlike ``noobs`` power, the mean amplitude is applied.
         """
         if self._cross_power_tracer_model is None:
             self.get_model_power_cross()
         # if still None, means tracer 2 is not set
         if self._cross_power_tracer_model is None:
             return None
-        return self._cross_power_tracer_model
+        mean_amp2 = self.mean_amp_2
+        if isinstance(mean_amp2, str):
+            mean_amp2 = getattr(self, mean_amp2)
+        mean_amp = self.mean_amp_1
+        if isinstance(mean_amp, str):
+            mean_amp = getattr(self, mean_amp)
+        return self._cross_power_tracer_model * mean_amp * mean_amp2
 
     def step_sampling(self):
         """
