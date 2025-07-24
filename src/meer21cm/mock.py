@@ -273,7 +273,7 @@ class MockSimulation(PowerSpectrum):
         if self.box_ndim is None:
             self.get_enclosing_box()
         self.propagate_field_k_to_model()
-        power_array = self.matter_power_spectrum_fnc(self.k_mode) * bias**2
+        power_array = self.auto_power_matter_model_r * bias**2
         delta_x = self.get_mock_field_from_power(power_array)
         return delta_x
 
@@ -507,16 +507,8 @@ class MockSimulation(PowerSpectrum):
         elif self.kaiser_rsd:
             if self.box_ndim is None:
                 self.get_enclosing_box()
-            sigma_v = getattr(self, f"sigma_v_{tracer_i}")
-            tracer_bias = getattr(self, f"tracer_bias_{tracer_i}")
-            power_array = (
-                self.matter_power_spectrum_fnc(self.kmode)
-                * (tracer_bias + self.f_growth * self.mumode**2) ** 2
-            )
-            fog = self.fog_term(
-                self.deltav_to_deltar(sigma_v), kmode=self.kmode, mumode=self.mumode
-            )
-            delta_x = self.get_mock_field_from_power(power_array * fog**2)
+            power_array = getattr(self, f"auto_power_tracer_{tracer_i}_model_noobs")
+            delta_x = self.get_mock_field_from_power(power_array)
         else:
             delta_x = getattr(self, f"mock_tracer_field_{tracer_i}_r")
         setattr(self, f"_mock_tracer_field_{tracer_i}", delta_x)

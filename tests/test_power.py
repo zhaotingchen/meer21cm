@@ -524,7 +524,7 @@ def test_ModelPowerSpectrum(fog_profile):
     assert model._auto_power_tracer_2_model is None
     model = ModelPowerSpectrum()
     model.compensate = False
-    assert model.compensate_sampling() == 1.0
+    assert model.gridding_compensation() == 1.0
 
 
 def test_gaussian_beam_attenuation():
@@ -634,17 +634,17 @@ def test_set_corrtype():
 
 
 def test_step_window_attenuation():
-    assert step_window_attenuation(1, 1) == np.sqrt(np.sinc(1 / np.pi / 2))
+    assert step_window_attenuation(1, 1) == np.sinc(1 / np.pi / 2)
     assert step_window_attenuation(0, 0) == 1.0
 
 
 def test_temp_amp():
     box_len = np.array([80, 50, 100])
-    box_dim = np.array([100, 200, 41])
+    box_dim = np.array([10, 20, 40])
     box_resol = box_len / box_dim
     rand_noise = np.random.normal(size=box_dim)
     ps = ModelPowerSpectrum()
-    assert ps.step_sampling() == 1
+    assert ps.map_sampling() == 1
     ps = PowerSpectrum(
         rand_noise,
         box_len,
@@ -656,14 +656,20 @@ def test_temp_amp():
         mean_amp_1="average_hi_temp",
         mean_amp_2="one",
         tracer_bias_2=1.0,
-        sampling_resol=[0.1, 0.1, 0.1],
+        # sampling_resol=[0.1, 0.1, 0.1],
         model_k_from_field=True,
+        tracer_bias_1=1.0,
     )
     # test a custom avg
     ps.one = 1.0
-    ps.auto_power_tracer_2_model
-    ps.auto_power_tracer_1_model
-    ps.cross_power_tracer_model
+    assert np.allclose(ps.auto_power_tracer_2_model, ps.auto_power_matter_model)
+    assert np.allclose(
+        ps.auto_power_tracer_1_model,
+        ps.auto_power_matter_model * ps.average_hi_temp**2,
+    )
+    assert np.allclose(
+        ps.cross_power_tracer_model, ps.auto_power_matter_model * ps.average_hi_temp
+    )
 
 
 def test_noise_power_from_map(test_W):
@@ -864,3 +870,35 @@ def test_no_renorm_weights():
     assert ps.rescale_ps_1 == 1.0
     assert ps.rescale_ps_2 == 1.0
     assert ps.rescale_ps_cross == 1.0
+
+
+def test_1d_k_cut():
+    ps = PowerSpectrum()
+    ps._box_len = np.array([10, 10, 10]) * np.pi
+    ps._box_ndim = np.array([10, 10, 10])
+    ps.k1dbins = np.linspace(0, 10, 2)
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_xyz_min=[0.1, 0.1, 0.1])
+    assert nmodes[0] == 9**3
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_xyz_max=[0.1, 100, 100])
+    assert nmodes[0] == 1 * 10 * 10
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_min=[0.1, 0.1])
+    assert nmodes[0] == 99 * 9
+    _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_max=[0.1, 100])
+    assert nmodes[0] == 1 * 10
+
+
+def test_no_init_power():
+    ps = PowerSpectrum()
+    assert ps.auto_power_tracer_2_model_noobs is None
+    assert ps.cross_power_tracer_model_noobs is None
+
+
+def test_map_sampling():
+    ps = PowerSpectrum(
+        np.ones((10, 10, 10)),
+        np.array([10, 10, 10]),
+        model_k_from_field=True,
+    )
+    ps.sampling_resol = ps.box_resol
+    # if sampling resol is the same as box resol, then compensate and step sampling is the same
+    assert np.allclose(ps.gridding_compensation(), ps.map_sampling())
