@@ -894,6 +894,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
             )
         else:
             power_noobs_i = pk3d_tt_r
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: setting self._auto_power_tracer_{i}_model_noobs"
+        )
         setattr(self, f"_auto_power_tracer_{i}_model_noobs", power_noobs_i)
 
     def get_model_power_i(self, i):
@@ -984,7 +987,6 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if getattr(self, "tracer_bias_" + str(2)) is None:
             logger.info("tracer bias 2 is None, returning None")
-        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         if self.tracer_bias_1 is None or self.tracer_bias_2 is None:
             return None
         B_beam = self.beam_attenuation()
@@ -1023,6 +1025,10 @@ class ModelPowerSpectrum(CosmologyCalculator):
         weights_tot_2 = weights_field_2 * weights_grid_2
         logger.debug(
             "applying weights convolution: %s and %s", weights_tot_1, weights_tot_2
+        )
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting self._cross_power_tracer_model"
         )
         self._cross_power_tracer_model = get_modelpk_conv(
             self._cross_power_tracer_model,
@@ -1311,12 +1317,15 @@ class FieldPowerSpectrum(Specification):
         """
         Calculate the Fourier transform of the density field of the first tracer.
         """
-        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         result = get_fourier_density(
             self.field_1,
             weights=self.weights_1,
             mean_center=self.mean_center_1,
             unitless=self.unitless_1,
+        )
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting self._fourier_field_1"
         )
         self._fourier_field_1 = result
 
@@ -1337,12 +1346,15 @@ class FieldPowerSpectrum(Specification):
         if self.field_2 is None:
             logger.info("field_2 is None, returning None")
             return None
-        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         result = get_fourier_density(
             self.field_2,
             weights=self.weights_2,
             mean_center=self.mean_center_2,
             unitless=self.unitless_2,
+        )
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting self._fourier_field_2"
         )
         self._fourier_field_2 = result
 

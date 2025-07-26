@@ -256,9 +256,7 @@ class MockSimulation(PowerSpectrum):
 
     def get_mock_matter_field_r(self):
         logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name}, "
-            "which invokes get_mock_field_r(bias=1), "
-            "to get the mock matter field in real space"
+            f"invoking {inspect.currentframe().f_code.co_name} to set __mock_matter_field_r"
         )
         self._mock_matter_field_r = self.get_mock_field_r(bias=1)
 
@@ -334,10 +332,7 @@ class MockSimulation(PowerSpectrum):
         r"""
         Generate the normalised peculiar velocity field in real space
         """
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name}, "
-            "to get the normalised peculiar velocity field in real space"
-        )
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         delta_k = np.fft.fftn(mock_field, norm="forward")
         slicer = get_nd_slicer()
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -396,10 +391,6 @@ class MockSimulation(PowerSpectrum):
         This function returns :math:`\delta_{\rm rsd}` in k-space so that for any mock tracer field,
         the Kaiser effect can be applied by adding :math:`\delta_{\rm rsd}` to the real-space tracer field in k-space.
         """
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name}, "
-            f"to get the Kaiser rsd effect correction with parallel_plane={self.parallel_plane}"
-        )
         u_r = getattr(self, f"mock_velocity_u_{field}")
         slicer = get_nd_slicer()
         if self.parallel_plane:
@@ -418,6 +409,11 @@ class MockSimulation(PowerSpectrum):
             [(y_k[i] * self.k_vec[i][slicer[i]]) for i in range(3)]
         ).sum(axis=0)
         delta_rsd_k = 1j * self.f_growth * y_k_dot_k
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting _mock_kaiser_field_k_{field} "
+            f"with parallel_plane={self.parallel_plane}"
+        )
         setattr(self, f"_mock_kaiser_field_k_{field}", delta_rsd_k)
         return delta_rsd_k
 
@@ -487,17 +483,15 @@ class MockSimulation(PowerSpectrum):
         return self._mock_tracer_field_2_r
 
     def get_mock_tracer_field_r(self, tracer_i):
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name} for tracer {tracer_i}"
-        )
         delta_x = self.get_mock_field_r(bias=getattr(self, f"tracer_bias_{tracer_i}"))
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"seeting _mock_tracer_field_{tracer_i}_r"
+        )
         setattr(self, f"_mock_tracer_field_{tracer_i}_r", delta_x)
         return delta_x
 
     def get_mock_tracer_field(self, tracer_i):
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name} for tracer {tracer_i}"
-        )
         if self.rsd_from_field and self.kaiser_rsd:
             delta_x = self.get_mock_field_in_redshift_space(
                 delta_x=getattr(self, f"mock_tracer_field_{tracer_i}_r"),
@@ -511,6 +505,9 @@ class MockSimulation(PowerSpectrum):
             delta_x = self.get_mock_field_from_power(power_array)
         else:
             delta_x = getattr(self, f"mock_tracer_field_{tracer_i}_r")
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: setting _mock_tracer_field_{tracer_i}"
+        )
         setattr(self, f"_mock_tracer_field_{tracer_i}", delta_x)
         return delta_x
 
@@ -529,9 +526,6 @@ class MockSimulation(PowerSpectrum):
         Function to retrieve the tracer positions in redshift space.
         Modified from ``powerbox``.
         """
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name} for tracer {tracer_i}"
-        )
         rng = default_rng(self.seed)
         # note that `_mock...` does not have mean amplitude so this is what
         # we should be using instead of `mock...`, this is just to invoke
@@ -577,6 +571,10 @@ class MockSimulation(PowerSpectrum):
         #        ).sum(axis=0)[None]
         #    ).reshape((3,-1)).T
         #    tracer_positions += distance_shift[tracer_which_cell]
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            "setting _mock_tracer_position_in_box"
+        )
         self._mock_tracer_position_in_box = tracer_positions
 
     @property
@@ -623,10 +621,6 @@ class MockSimulation(PowerSpectrum):
         return self.mock_tracer_position_in_radecz[3]
 
     def get_mock_tracer_position_in_radecz(self):
-        logger.info(
-            f"invoking {inspect.currentframe().f_code.co_name} with flat_sky={self.flat_sky}"
-            " to project mock tracer positions to ra-dec-z"
-        )
         if self.flat_sky:
             self._mock_tracer_comov_dist = (
                 self.mock_tracer_position_in_box[:, -1]
@@ -665,6 +659,10 @@ class MockSimulation(PowerSpectrum):
         )
         inside_range = z_sel * radec_sel
         mock_inside_range = inside_range
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} with flat_sky={self.flat_sky}: "
+            "setting _mock_tracer_position_in_radecz"
+        )
         self._mock_tracer_position_in_radecz = (
             ra_mock_tracer,
             dec_mock_tracer,
