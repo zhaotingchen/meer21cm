@@ -7,7 +7,7 @@ import healpy as hp
 from astropy.io import fits
 from astropy.cosmology import Planck18
 import inspect
-import sys
+import sys, os
 from scipy.special import erf
 from scipy.interpolate import interp1d
 from numpy.random import default_rng
@@ -33,6 +33,21 @@ mass_intflux_coeff = (
     .to("Msun")
     .value
 )
+
+
+class HiddenPrints:
+    """
+    A context manager that suppresses print statements.
+    This is useful for suppressing print statements in the middle of a calculation.
+    """
+
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, "w")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 
 def get_nd_slicer(ndim=3):

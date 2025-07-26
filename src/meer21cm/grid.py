@@ -405,7 +405,8 @@ def project_particle_to_regular_grid(
             np.prod(grid_func_shift, axis=1)[indx_sel],
         )
     if average:
-        mesh_mass = np.where(mesh_weights > 0, mesh_mass / mesh_weights, 0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mesh_mass = np.where(mesh_weights > 0, mesh_mass / mesh_weights, 0)
     if compensate:
         mesh_mass = compensate_grid_window_effects(
             mesh_mass,

@@ -4,6 +4,7 @@ from astropy import constants, units
 from astropy.cosmology import Planck18
 from meer21cm.util import f_21
 from meer21cm import Specification
+from astropy.wcs.utils import proj_plane_pixel_area
 
 
 def test_cos_beam():

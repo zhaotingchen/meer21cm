@@ -1,36 +1,19 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-import sys
-import os
 from scipy.interpolate import interp1d
-
-matplotlib.rcParams["figure.figsize"] = (18, 9)
 from astropy.cosmology import Planck18
 from numpy.random import default_rng
-from astropy import constants, units
-from astropy.wcs.utils import proj_plane_pixel_area
-from scipy.ndimage import gaussian_filter
+from astropy import constants
 from .util import (
-    check_unit_equiv,
     get_wcs_coor,
     radec_to_indx,
-    get_default_args,
-    hod_obuljen18,
     freq_to_redshift,
-    lamb_21,
-    f_21,
     tagging,
     busy_function_simple,
-    find_indx_for_subarr,
-    himf,
     himf_pars_jones18,
-    cal_himf,
     sample_from_dist,
     center_to_edges,
     tully_fisher,
     redshift_to_freq,
-    random_sample_indx,
     find_ch_id,
     mass_intflux_coeff,
     Obuljen18,
@@ -39,17 +22,14 @@ from .util import (
     angle_in_range,
     get_nd_slicer,
 )
-from .plot import plot_map
-from .grid import (
-    find_rotation_matrix,
-    minimum_enclosing_box_of_lightcone,
-)
-import healpy as hp
 from meer21cm.power import PowerSpectrum, Specification
 from meer21cm.telescope import weighted_convolution
 from halomod import TracerHaloModel as THM
 import warnings
+import inspect
+import logging
 
+logger = logging.getLogger(__name__)
 
 # 20 lines missing before adding in
 class MockSimulation(PowerSpectrum):
@@ -174,6 +154,9 @@ class MockSimulation(PowerSpectrum):
     @parallel_plane.setter
     def parallel_plane(self, value):
         self._parallel_plane = value
+        logger.debug(
+            f"cleaning cache of {self.rsd_dep_attr} due to resetting parallel_plane"
+        )
         self.clean_cache(self.rsd_dep_attr)
 
     @property
@@ -190,6 +173,9 @@ class MockSimulation(PowerSpectrum):
     @rsd_from_field.setter
     def rsd_from_field(self, value):
         self._rsd_from_field = value
+        logger.debug(
+            f"cleaning cache of {self.rsd_dep_attr} due to resetting rsd_from_field"
+        )
         self.clean_cache(self.rsd_dep_attr)
 
     @property
@@ -202,6 +188,9 @@ class MockSimulation(PowerSpectrum):
     @num_discrete_source.setter
     def num_discrete_source(self, value):
         self._num_discrete_source = value
+        logger.debug(
+            f"cleaning cache of {self.discrete_dep_attr} due to resetting num_discrete_source"
+        )
         self.clean_cache(self.discrete_dep_attr)
 
     @property
@@ -219,6 +208,9 @@ class MockSimulation(PowerSpectrum):
     @discrete_source_dndz.setter
     def discrete_source_dndz(self, value):
         self._discrete_source_dndz = value
+        logger.debug(
+            f"cleaning cache of {self.discrete_dep_attr} due to resetting discrete_source_dndz"
+        )
         self.clean_cache(self.discrete_dep_attr)
 
     @property
@@ -236,6 +228,9 @@ class MockSimulation(PowerSpectrum):
         if not value in [1, 2]:
             raise ValueError("discrete_base_field must be 1 or 2")
         self._discrete_base_field = value
+        logger.debug(
+            f"cleaning cache of {self.discrete_dep_attr} due to resetting discrete_base_field"
+        )
         self.clean_cache(self.discrete_dep_attr)
 
     @property
@@ -260,6 +255,9 @@ class MockSimulation(PowerSpectrum):
         return self._mock_matter_field
 
     def get_mock_matter_field_r(self):
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to set __mock_matter_field_r"
+        )
         self._mock_matter_field_r = self.get_mock_field_r(bias=1)
 
     def get_mock_field_r(self, bias=1):
@@ -267,6 +265,9 @@ class MockSimulation(PowerSpectrum):
         Generate a mock field in real space that follows the input matter power
         spectrum ``self.matter_power_spectrum_fnc`` * bias**2.
         """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} with bias={bias}"
+        )
         if self.box_ndim is None:
             self.get_enclosing_box()
         self.propagate_field_k_to_model()
@@ -279,6 +280,9 @@ class MockSimulation(PowerSpectrum):
         Generate a mock field that follows the input matter power
         spectrum ``power_array``.
         """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} assuming {self.density} distribution"
+        )
         if self.density == "lognormal":
             backend = generate_lognormal_field
         elif self.density == "gaussian":
@@ -328,6 +332,7 @@ class MockSimulation(PowerSpectrum):
         r"""
         Generate the normalised peculiar velocity field in real space
         """
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         delta_k = np.fft.fftn(mock_field, norm="forward")
         slicer = get_nd_slicer()
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -404,16 +409,23 @@ class MockSimulation(PowerSpectrum):
             [(y_k[i] * self.k_vec[i][slicer[i]]) for i in range(3)]
         ).sum(axis=0)
         delta_rsd_k = 1j * self.f_growth * y_k_dot_k
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting _mock_kaiser_field_k_{field} "
+            f"with parallel_plane={self.parallel_plane}"
+        )
         setattr(self, f"_mock_kaiser_field_k_{field}", delta_rsd_k)
         return delta_rsd_k
 
     def get_mock_matter_field(self):
+        logger.info(f"invoking {inspect.currentframe().f_code.co_name}, ")
         self._mock_matter_field = self.get_mock_field_in_redshift_space(
             delta_x=self.mock_matter_field_r, field="matter", sigma_v=0
         )
 
     def get_mock_field_in_redshift_space(self, delta_x, field, sigma_v):
         if self.kaiser_rsd:
+            logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
             delta_k = np.fft.fftn(delta_x, norm="forward")
             delta_k += getattr(self, f"mock_kaiser_field_k_{field}")
             mumode = self.mumode
@@ -472,6 +484,10 @@ class MockSimulation(PowerSpectrum):
 
     def get_mock_tracer_field_r(self, tracer_i):
         delta_x = self.get_mock_field_r(bias=getattr(self, f"tracer_bias_{tracer_i}"))
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"seeting _mock_tracer_field_{tracer_i}_r"
+        )
         setattr(self, f"_mock_tracer_field_{tracer_i}_r", delta_x)
         return delta_x
 
@@ -489,6 +505,9 @@ class MockSimulation(PowerSpectrum):
             delta_x = self.get_mock_field_from_power(power_array)
         else:
             delta_x = getattr(self, f"mock_tracer_field_{tracer_i}_r")
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: setting _mock_tracer_field_{tracer_i}"
+        )
         setattr(self, f"_mock_tracer_field_{tracer_i}", delta_x)
         return delta_x
 
@@ -552,6 +571,10 @@ class MockSimulation(PowerSpectrum):
         #        ).sum(axis=0)[None]
         #    ).reshape((3,-1)).T
         #    tracer_positions += distance_shift[tracer_which_cell]
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            "setting _mock_tracer_position_in_box"
+        )
         self._mock_tracer_position_in_box = tracer_positions
 
     @property
@@ -636,6 +659,10 @@ class MockSimulation(PowerSpectrum):
         )
         inside_range = z_sel * radec_sel
         mock_inside_range = inside_range
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} with flat_sky={self.flat_sky}: "
+            "setting _mock_tracer_position_in_radecz"
+        )
         self._mock_tracer_position_in_radecz = (
             ra_mock_tracer,
             dec_mock_tracer,
@@ -657,6 +684,10 @@ class MockSimulation(PowerSpectrum):
         self._ra_gal = ra[inside_range]
         self._dec_gal = dec[inside_range]
         self._z_gal = z[inside_range]
+        logger.info(
+            f"{inspect.currentframe().f_code.co_name}: "
+            f"setting ra_gal, dec_gal, z_gal with trim={trim}"
+        )
 
     def propagate_mock_field_to_data(
         self, field, beam=True, highres_sim=None, average=True

@@ -9,3 +9,4 @@ Examples
     examples/busy_week_1
     examples/quick_start
     examples/busy_week_2
+    examples/log
