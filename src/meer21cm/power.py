@@ -68,7 +68,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.kmode = kmode
         self.mumode = mumode
         if kmode is None:
-            self.kmode = np.geomspace(self.kmin, self.kmax, 100)
+            self.kmode = np.geomspace(self.kmin, self.kmax, 600).reshape((10, 10, 6))
         if mumode is None:
             self.mumode = np.zeros_like(self.kmode)
         self._include_beam = [None, None]  # for initialization
@@ -235,7 +235,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         weights = getattr(self, attr_name)
         if weights is None:
-            weights = np.ones_like(self.kmode)
+            if hasattr(self, "box_ndim"):
+                weights = np.ones(self.box_ndim)
+            else:
+                shape = np.array(self.kmode.shape)
+                shape[-1] = 2 * shape[-1] - 1
+                weights = np.ones(shape)
         return weights
 
     @property
@@ -1097,6 +1102,7 @@ class FieldPowerSpectrum(Specification):
     def box_ndim(self):
         """
         The number of grids along each side of the enclosing box.
+        To ensure even sampling of +k and -k modes, the number of grids along every axis needs to be odd.
         """
         return self._box_ndim
 
@@ -1416,7 +1422,7 @@ class FieldPowerSpectrum(Specification):
         # if none, the default for get_power_spectrum is
         # to use weights_1, here we want separate weights_2
         if weights_2 is None:
-            weights_2 = np.ones(self.fourier_field_2.shape)
+            weights_2 = np.ones(self.field_2.shape)
         power_spectrum = get_power_spectrum(
             self.fourier_field_1,
             self.box_len,
@@ -1513,7 +1519,7 @@ def get_fourier_density(
     if weights is None:
         weights = np.ones_like(field)
     weights = np.array(weights)
-    fourier_field = np.fft.fftn(field * weights, norm=norm)
+    fourier_field = np.fft.rfftn(field * weights, norm=norm)
     return fourier_field
 
 
@@ -1556,7 +1562,7 @@ def get_k_vector(box_ndim, box_resol):
     kvecarr: tuple
         The wavenumber vector along each direction.
     """
-    kvecarr = tuple(
+    kvecarr = [
         2
         * np.pi
         * np.fft.fftfreq(
@@ -1564,7 +1570,8 @@ def get_k_vector(box_ndim, box_resol):
             d=box_resol[i],
         )
         for i in range(len(box_ndim))
-    )
+    ]
+    kvecarr[-1] = np.abs(kvecarr[-1][: box_ndim[-1] // 2 + 1])
     return kvecarr
 
 
@@ -1652,14 +1659,14 @@ def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
     if weights1_in_real is None and weights2 is None:
         return psmod
     if weights1_in_real is None:
-        weights1_in_real = np.ones_like(psmod)
+        weights1_in_real = np.ones_like(weights2)
     if weights2 is None:
-        weights2 = np.ones_like(psmod)
+        weights2 = np.ones_like(weights1_in_real)
     weights_fourier = np.fft.fftn(weights1_in_real)
     weights_fourier *= np.conj(np.fft.fftn(weights2))
     weights_fourier = np.real(weights_fourier)
     power_conv = (
-        np.fft.ifftn(np.fft.fftn(psmod) * np.fft.fftn(weights_fourier))
+        np.fft.ifftn(np.fft.fftn(psmod) * np.fft.fftn(weights_fourier, s=psmod.shape))
         / weights1_in_real.size**2
     )
     if renorm:
@@ -1728,20 +1735,22 @@ def get_power_spectrum(
         The power spectrum.
     """
     box_len = np.array(box_len)
+    box_volume = np.prod(box_len)
     if field_2 is None:
         field_2 = fourier_field
     fourier_field = np.array(fourier_field)
     field_2 = np.array(field_2)
+    power = np.real(fourier_field * np.conj(field_2))
+    if weights is None and weights_2 is None:
+        return power * box_volume
     if weights is None:
-        weights = np.ones(fourier_field.shape)
+        weights = np.ones(weights_2.shape)
     if weights_2 is None:
         weights_2 = weights
     # if weights_2 is None, the renormalisation sets it to weights
     weights_norm = power_weights_renorm(weights, weights_2)
-    power = np.real(fourier_field * np.conj(field_2))
     if renorm:
         power *= weights_norm
-    box_volume = np.prod(box_len)
     return power * box_volume
 
 
@@ -1932,43 +1941,43 @@ def bin_3d_to_cy(
     return pscy
 
 
-def get_independent_fourier_modes(box_dim):
-    r"""
-    Return a boolean array on whether the k-mode is independent.
-    For real-valued signal, a specific k-mode :math:`\vec{k}` and it's opposite
-    :math:`-\vec{k}` are conjugate to each other. This functions finds all the
-    pairs and only assign one of them with ``True``.
-
-    The indexing of the output array is consistent with the ``np.fft.fftfreq``
-    convention.
-
-    Parameters
-    ----------
-    box_dim: array.
-        The shape of the signal.
-
-    Returns
-    -------
-    unique: boolean array.
-        Whether the k-mode is indendent.
-
-    """
-    kvec = get_k_vector(box_dim, np.ones(len(box_dim)))
-    kvecmin = [(np.abs(kvec[i])[kvec[i] != 0]).min() for i in range(len(box_dim))]
-    kvec = [kvec[i] / kvecmin[i] for i in range(len(box_dim))]
-    kvecmax = [(np.abs(kvec[i])).max() for i in range(len(box_dim))]
-    kvecmax = np.max(kvecmax)
-    base = 2 * kvecmax + 1
-    kvec = [kvec[i] * (base**i) for i in range(len(box_dim))]
-    k_indx = np.sum(
-        (np.meshgrid(*([(vec) for vec in kvec]), indexing="ij")),
-        0,
-    )
-    _, indx = np.unique(np.abs(k_indx), return_index=True)
-    unique = np.zeros(np.prod(box_dim))
-    unique[indx] += 1
-    unique = unique.reshape(box_dim) > 0
-    return unique
+# def get_independent_fourier_modes(box_dim):
+#    r"""
+#    Return a boolean array on whether the k-mode is independent.
+#    For real-valued signal, a specific k-mode :math:`\vec{k}` and it's opposite
+#    :math:`-\vec{k}` are conjugate to each other. This functions finds all the
+#    pairs and only assign one of them with ``True``.
+#
+#    The indexing of the output array is consistent with the ``np.fft.fftfreq``
+#    convention.
+#
+#    Parameters
+#    ----------
+#    box_dim: array.
+#        The shape of the signal.
+#
+#    Returns
+#    -------
+#    unique: boolean array.
+#        Whether the k-mode is indendent.
+#
+#    """
+#    kvec = get_k_vector(box_dim, np.ones(len(box_dim)))
+#    kvecmin = [(np.abs(kvec[i])[kvec[i] != 0]).min() for i in range(len(box_dim))]
+#    kvec = [kvec[i] / kvecmin[i] for i in range(len(box_dim))]
+#    kvecmax = [(np.abs(kvec[i])).max() for i in range(len(box_dim))]
+#    kvecmax = np.max(kvecmax)
+#    base = 2 * kvecmax + 1
+#    kvec = [kvec[i] * (base**i) for i in range(len(box_dim))]
+#    k_indx = np.sum(
+#        (np.meshgrid(*([(vec) for vec in kvec]), indexing="ij")),
+#        0,
+#    )
+#    _, indx = np.unique(np.abs(k_indx), return_index=True)
+#    unique = np.zeros(np.prod(box_dim))
+#    unique[indx] += 1
+#    unique = unique.reshape(box_dim) > 0
+#    return unique
 
 
 def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
@@ -2316,8 +2325,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             The bins for the 1D power spectrum. Default is the same as the class attribute.
         k1dweights: np.ndarray, default None
             The weights for the 3D power spectrum. Default is equal weights for every k-mode.
-        filter_dependent_k: bool, default False
-            Whether to filter out dependent k-modes (+k and -k will only be counted once).
         k_xyz_min: list of size 3, default None
             The minimum k-mode for the 1D power spectrum in x, y, z directions.
         k_xyz_max: list of size 3, default None
@@ -2339,12 +2346,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if k1dbins is None:
             k1dbins = self.k1dbins
         if k1dweights is None:
-            k1dweights = np.ones(self.box_ndim)
+            k1dweights = np.ones_like(self.k_mode)
         if isinstance(power3d, str):
             power3d = getattr(self, power3d)
-        indep_modes = 1.0
-        if filter_dependent_k:
-            indep_modes = get_independent_fourier_modes(self.box_ndim)
         # filter k-modes
         slicer = get_nd_slicer()
         k_3d_sel_min = 1.0
@@ -2374,11 +2378,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         k1dweights = (
             k1dweights * k_3d_sel_min * k_3d_sel_max * k_cy_sel_min * k_cy_sel_max
         )
+        k1dweights[0, 0, 0] = 0.0
         power1d, k1deff, nmodes = bin_3d_to_1d(
             power3d,
             self.k_mode,
             k1dbins,
-            weights=indep_modes * k1dweights,
+            weights=k1dweights,
         )
         return power1d, k1deff, nmodes
 
@@ -2420,23 +2425,21 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         if kparabins is None:
             kparabins = self.kparabins
         if kcyweights is None:
-            kcyweights = np.ones(self.box_ndim)
+            kcyweights = np.ones_like(self.k_mode)
         if isinstance(power3d, str):
             power3d = getattr(self, power3d)
-        indep_modes = 1.0
-        if filter_dependent_k:
-            indep_modes = get_independent_fourier_modes(self.box_ndim)
+        kcyweights[0, 0, 0] = 0.0
         powercy = bin_3d_to_cy(
             power3d,
             self.k_perp,
             kperpbins,
-            weights=indep_modes * kcyweights,
+            weights=kcyweights,
         )
         weightscy = bin_3d_to_cy(
-            indep_modes * kcyweights,
+            kcyweights,
             self.k_perp,
             kperpbins,
-            weights=indep_modes * kcyweights,
+            weights=kcyweights,
             average=False,
         )
         powercy = bin_3d_to_cy(

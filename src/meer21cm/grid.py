@@ -176,7 +176,9 @@ def fourier_window_for_assignment(
     """
     p = float(allowed_window_scheme.index(window) + 1)
     wx, wy, wz = [np.sinc(np.fft.fftfreq(num_mesh[i])) for i in range(3)]
-    window_in_fourier = (wx[:, None, None] * wy[None, :, None] * wz[None, None, :]) ** p
+    window_in_fourier = (
+        wx[:, None, None] * wy[None, :, None] * wz[None, None, : num_mesh[-1] // 2 + 1]
+    ) ** p
     return window_in_fourier
 
 
@@ -193,9 +195,11 @@ def compensate_grid_window_effects(
         num_mesh,
         grid_scheme,
     )
-    field_in_fourier_space = np.fft.fftn(field_in_real_space)
+    field_in_fourier_space = np.fft.rfftn(field_in_real_space)
     field_in_fourier_space /= window
-    field_compensated = np.fft.ifftn(field_in_fourier_space).real
+    field_compensated = np.fft.irfftn(
+        field_in_fourier_space, axes=(0, 1, 2), s=field_in_real_space.shape
+    )
     return field_compensated
 
 
@@ -553,8 +557,9 @@ def shot_noise_correction_from_gridding(
     """
     p = allowed_window_scheme.index(grid_scheme)
     if p == 0:
-        return np.ones(box_ndim)
-    sinpikiHover2 = [np.sin(np.fft.fftfreq(box_ndim[i]) * np.pi) for i in range(3)]
+        return np.ones([box_ndim[0], box_ndim[1], box_ndim[2] // 2 + 1])
+    sinpikiHover2 = [np.sin(np.fft.fftfreq(box_ndim[i]) * np.pi) for i in range(2)]
+    sinpikiHover2.append(np.sin(np.fft.rfftfreq(box_ndim[2]) * np.pi))
     if p == 1:
         ci = [1 - 2 / 3 * sinpikiHover2[i] ** 2 for i in range(3)]
         ci = ci[0][:, None, None] * ci[1][None, :, None] * ci[2][None, None, :]

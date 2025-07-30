@@ -401,7 +401,7 @@ def test_project_hi_profile(highres):
 
 
 def test_generate_colored_noise():
-    rand_arr = [generate_colored_noise(100, 100, np.ones(100)) for i in range(1000)]
+    rand_arr = [generate_colored_noise([100], [100], np.ones(51)) for i in range(1000)]
     rand_arr = np.array(rand_arr)
     assert np.allclose(rand_arr.mean(), 0.0)
     assert np.abs(rand_arr.std() - 1.0) < 0.1

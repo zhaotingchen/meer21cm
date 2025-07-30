@@ -182,7 +182,7 @@ def test_mock_field_map_grid(highres, beam):
     if beam:
         k_sel = mock.beam_attenuation() ** 2 > 0.1
     else:
-        k_sel = np.ones(mock.box_ndim)
+        k_sel = np.ones_like(mock.k_mode)
     p1d, k1d, _ = mock.get_1d_power(
         ratio,
         k1dweights=k_sel.astype(float),
