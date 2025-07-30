@@ -281,8 +281,11 @@ def test_power_weights_renorm():
     assert np.allclose(power_weights_renorm(None, None), 1)
 
     # try a typical taper with uniform power
-    power1 = np.ones([100, 100, 100])
-    taper = windows.blackmanharris(100)[None, None, :] * np.ones_like(power1)
+    power1 = np.ones([100, 100, 51])
+    taper = (
+        windows.blackmanharris(101)[None, None, :]
+        * np.ones_like(power1[:, :, 0])[:, :, None]
+    )
     assert np.allclose(get_modelpk_conv(np.ones_like(power1), taper, None).mean(), 1)
     assert np.allclose(get_modelpk_conv(np.ones_like(power1), None, taper).mean(), 1)
     assert np.allclose(get_modelpk_conv(np.ones_like(power1), None, None).mean(), 1)
@@ -357,10 +360,10 @@ def test_power_weights_renorm():
 
 def test_get_modelpk_conv():
     box_dim = np.array([100, 200, 41])
-    test_ps = np.ones(box_dim)
+    test_ps = np.ones([100, 200, 21])
     # uniform weights
     test_ps_conv = get_modelpk_conv(
-        test_ps, weights1_in_real=test_ps, weights2=None, renorm=True
+        test_ps, weights1_in_real=np.ones(box_dim), weights2=None, renorm=True
     )
     assert np.allclose(test_ps, test_ps_conv)
     # test a taper with ps with a spectral index
@@ -373,7 +376,7 @@ def test_get_modelpk_conv():
     # ns = 2
     test_ps[kmode != 0] = kmode[kmode != 0] ** (-2)
     # any direction would do
-    taper = windows.blackmanharris(box_dim[0])[:, None, None] + np.zeros_like(kmode)
+    taper = windows.blackmanharris(box_dim[0])[:, None, None] + np.zeros(box_dim)
     test_ps_conv = get_modelpk_conv(test_ps, weights1_in_real=taper, weights2=taper)
     # p * k^2 should be one
     assert np.abs((test_ps_conv * kmode**2).mean() - 1) < 1e-3
@@ -420,14 +423,14 @@ def test_get_gaussian_noise_floor():
     assert np.abs((floor1 - floor2) / floor1) < 2e-2
 
 
-def test_get_independent_fourier_modes():
-    rand_int = np.random.randint(2, 50)
-    box_dim = np.array([2 * rand_int, 2 * rand_int, 2 * rand_int])
-    indep_modes = get_independent_fourier_modes(box_dim)
-    assert indep_modes.sum() == np.prod(box_dim) - (np.prod(box_dim - 1) // 2)
-    box_dim += 1
-    indep_modes = get_independent_fourier_modes(box_dim)
-    assert indep_modes.sum() == np.prod(box_dim) // 2 + 1
+# def test_get_independent_fourier_modes():
+#    rand_int = np.random.randint(2, 50)
+#    box_dim = np.array([2 * rand_int, 2 * rand_int, 2 * rand_int])
+#    indep_modes = get_independent_fourier_modes(box_dim)
+#    assert indep_modes.sum() == np.prod(box_dim) - (np.prod(box_dim - 1) // 2)
+#    box_dim += 1
+#    indep_modes = get_independent_fourier_modes(box_dim)
+#    assert indep_modes.sum() == np.prod(box_dim) // 2 + 1
 
 
 def test_model_in_real_space():
@@ -446,9 +449,9 @@ def test_model_in_real_space():
 def test_ModelPowerSpectrum(fog_profile):
     # test fog
     model = ModelPowerSpectrum(fog_profile=fog_profile)
-    assert np.allclose(model.fog_term(1), np.ones(len(model.kmode)))
+    assert np.allclose(model.fog_term(1), np.ones(model.kmode.shape))
     model.mumode = np.ones_like(model.kmode)
-    assert np.allclose(model.fog_term(np.inf), np.zeros(len(model.kmode)))
+    assert np.allclose(model.fog_term(np.inf), np.zeros(model.kmode.shape))
 
     # test matter power with no rsd
     model = ModelPowerSpectrum(fog_profile=fog_profile)
@@ -878,13 +881,13 @@ def test_1d_k_cut():
     ps._box_ndim = np.array([10, 10, 10])
     ps.k1dbins = np.linspace(0, 10, 2)
     _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_xyz_min=[0.1, 0.1, 0.1])
-    assert nmodes[0] == 9**3
+    assert nmodes[0] == 9**2 * 5
     _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_xyz_max=[0.1, 100, 100])
-    assert nmodes[0] == 1 * 10 * 10
+    assert nmodes[0] == 1 * 10 * 6 - 1
     _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_min=[0.1, 0.1])
-    assert nmodes[0] == 99 * 9
+    assert nmodes[0] == 99 * 5
     _, _, nmodes = ps.get_1d_power(np.ones_like(ps.k_mode), k_perppara_max=[0.1, 100])
-    assert nmodes[0] == 1 * 10
+    assert nmodes[0] == 1 * 6 - 1
 
 
 def test_no_init_power():

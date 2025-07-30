@@ -272,6 +272,7 @@ class MockSimulation(PowerSpectrum):
             self.get_enclosing_box()
         self.propagate_field_k_to_model()
         power_array = self.auto_power_matter_model_r * bias**2
+        power_array[0, 0, 0] = 0.0
         delta_x = self.get_mock_field_from_power(power_array)
         return delta_x
 
@@ -333,7 +334,7 @@ class MockSimulation(PowerSpectrum):
         Generate the normalised peculiar velocity field in real space
         """
         logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
-        delta_k = np.fft.fftn(mock_field, norm="forward")
+        delta_k = np.fft.rfftn(mock_field, norm="forward")
         slicer = get_nd_slicer()
         with np.errstate(divide="ignore", invalid="ignore"):
             kvecoverk2 = np.array(
@@ -341,7 +342,12 @@ class MockSimulation(PowerSpectrum):
             )
         kvecoverk2[:, self.kmode == 0] = 0
         u_k = -1j * kvecoverk2 * delta_k[None]
-        u_r = np.array([np.fft.ifftn(u_k[i], norm="forward") for i in range(3)]).real
+        u_r = np.array(
+            [
+                np.fft.irfftn(u_k[i], s=mock_field.shape, norm="forward")
+                for i in range(3)
+            ]
+        )
         return u_r
 
     @property
@@ -403,7 +409,7 @@ class MockSimulation(PowerSpectrum):
         self._box_coord_l = box_coord_l
         u_in_xhat = (u_r * box_coord_l).sum(axis=0)
         y_k = np.array(
-            [np.fft.fftn(u_in_xhat * box_coord_l[i], norm="forward") for i in range(3)]
+            [np.fft.rfftn(u_in_xhat * box_coord_l[i], norm="forward") for i in range(3)]
         )
         y_k_dot_k = np.array(
             [(y_k[i] * self.k_vec[i][slicer[i]]) for i in range(3)]
@@ -426,14 +432,14 @@ class MockSimulation(PowerSpectrum):
     def get_mock_field_in_redshift_space(self, delta_x, field, sigma_v):
         if self.kaiser_rsd:
             logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
-            delta_k = np.fft.fftn(delta_x, norm="forward")
+            delta_k = np.fft.rfftn(delta_x, norm="forward")
             delta_k += getattr(self, f"mock_kaiser_field_k_{field}")
             mumode = self.mumode
             fog = self.fog_term(
                 self.deltav_to_deltar(sigma_v), kmode=self.kmode, mumode=mumode
             )
             delta_k *= fog
-            delta_x = np.fft.ifftn(delta_k, norm="forward").real
+            delta_x = np.fft.irfftn(delta_k, s=delta_x.shape, norm="forward")
         return delta_x
 
     @property
@@ -1226,7 +1232,7 @@ def generate_gaussian_field(
     """
     rng = np.random.default_rng(seed)
     noise_real = rng.normal(0, 1, box_ndim)
-    noise_k = np.fft.fftn(noise_real)
+    noise_k = np.fft.rfftn(noise_real)
     ps = power_spectrum.copy()
     if ps_has_volume:
         ps = ps / np.prod(box_len) * np.prod(box_ndim)
@@ -1234,7 +1240,7 @@ def generate_gaussian_field(
     delta_k = noise_k * scaling
 
     # Inverse FFT to get real-valued Gaussian field
-    delta_x = np.fft.ifftn(delta_k).real
+    delta_x = np.fft.irfftn(delta_k, axes=range(len(box_ndim)), s=box_ndim)
     return delta_x
 
 
@@ -1271,16 +1277,16 @@ def generate_lognormal_field(
     if ps_has_volume:
         ps = ps / np.prod(box_len) * np.prod(box_ndim)
     # Compute correlation function ξ_δ(r) via inverse FFT
-    xi_delta = np.fft.ifftn(ps).real
+    xi_delta = np.fft.irfftn(ps, axes=(0, 1, 2), s=box_ndim).real
     # Compute Gaussian correlation function ξ_G(r) = ln(1 + ξ_δ(r))
     xi_G = np.log(1 + xi_delta + 1e-10)  # Avoid log(0)
     # Compute Gaussian power spectrum Delta_G(k)
-    Delta_G = np.abs(np.fft.fftn(xi_G))
+    Delta_G = np.abs(np.fft.rfftn(xi_G))
     delta_x_g = generate_gaussian_field(
         box_ndim, box_len, Delta_G, seed, ps_has_volume=False
     )
     # Apply lognormal transformation
-    sigma_sq = np.sum(Delta_G) / np.prod(box_ndim)
+    sigma_sq = np.mean(Delta_G.ravel()[1:])
     delta_x = np.exp(delta_x_g - sigma_sq / 2.0) - 1.0
     return delta_x
 

@@ -46,7 +46,7 @@ def W_mas(dims, window="nnb", FullPk=False):
 @pytest.mark.parametrize("window", list(allowed_window_scheme))
 def test_fourier_window_for_assignment(window):
     test_1 = fourier_window_for_assignment([10, 10, 10], window=window)
-    test_2 = W_mas([1, 1, 1, 10, 10, 10], window=window, FullPk=True)
+    test_2 = W_mas([1, 1, 1, 10, 10, 10], window=window, FullPk=False)
     assert np.allclose(test_1, test_2)
 
 
