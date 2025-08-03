@@ -1,3 +1,11 @@
+"""
+This module contains the base class for reading and visualizing the map data cube.
+
+Note that, the defined class, :py:class:`Specification`, is the base class for reading and visualizing the map data cube.
+It is typically used as a base class for other classes that inherit from it, and not used directly.
+"""
+
+
 import numpy as np
 from astropy.io import fits
 from meer21cm.util import (
@@ -58,6 +66,79 @@ default_nu = {
 
 
 class Specification:
+    """
+    Base class for reading and visualizing the map data cube.
+
+    Parameters
+    ----------
+    nu: np.ndarray, default None
+        The frequencies of the survey in Hz.
+    wproj: :py:class:`astropy.wcs.WCS`, default None
+        The WCS object for the map.
+    num_pix_x: int, default None
+        The number of pixels in the first axis of the map data.
+    num_pix_y: int, default None
+        The number of pixels in the second axis of the map data.
+    cosmo: :py:class:`astropy.cosmology.Cosmology` or str, default :py:class:`astropy.cosmology.Planck18`.
+        The cosmology object.
+        It is either a :py:class:`astropy.cosmology.Cosmology` object or a string which returns predefined cosmology, for example `Planck18`.
+    map_has_sampling: np.ndarray, default None
+        A binary window for whether a pixel has been sampled.
+    sigma_beam_ch: np.ndarray, default None
+        The beam size parameter for each frequency channel.
+    beam_unit: :py:class:`astropy.units.Unit`, default :py:class:`astropy.units.deg`
+        The unit of the beam size parameter.
+    map_unit: :py:class:`astropy.units.Unit`, default :py:class:`astropy.units.K`
+        The unit of the map data.
+    map_file: str, default None
+        The file path of the map data. Supports automatic reading of the MeerKLASS L-band data.
+        For UHF data use `pickle_file` for the file path of the pickle file.
+    counts_file: str, default None
+        The file path of the hit counts data. Supports automatic reading of the MeerKLASS L-band data.
+        For UHF data use `pickle_file` for the file path of the pickle file.
+    pickle_file: str, default None
+        The file path of the pickle file. Supports automatic reading of the MeerKLASS UHF data.
+    los_axis: int, default -1
+        The axis of the map data that corresponds to the line of sight.
+        **Warning**: Tranposing the data to align the los axis is not properly taken care of in the code.
+        If your map los axis is not the last axis, it is recommended to manually transpose the data so that
+        the los axis is the last axis.
+    nu_min: float, default None,
+        The minimum frequency of the survey in Hz. Data below this frequency will be clipped.
+    nu_max: float, default None,
+        The maximum frequency of the survey in Hz. Data above this frequency will be clipped.
+    filter_map_los: bool, default True
+        Whether to filter the map data along the line of sight. See :meth:`meer21cm.io.filter_incomplete_los`
+    gal_file: str, default None,
+        The file path of the galaxy catalogue.
+    weighting: str, default "counts"
+        The weighting scheme for the map data.
+    ra_range: tuple, default (0, 360)
+        The range of the right ascension of the map data in degrees. Data outside this range will be masked.
+    dec_range: tuple, default (-90, 90)
+        The range of the declination of the map data in degrees. Data outside this range will be masked.
+    beam_model: str, default "gaussian"
+        The shape of the beam.
+    data: np.ndarray, default None
+        The map data.
+    weights_map_pixel: np.ndarray, default None
+        The weights per map pixel.
+    counts: np.ndarray, default None
+        The number of hits per pixel for the map data.
+    survey: str, default ""
+        The survey name.
+    band: str, default ""
+        The band of the survey.
+    z_interp_max: float, default 6.0
+        The maximum redshift to interpolate the redshift as a function of comoving distance.
+        See :meth:`meer21cm.dataanalysis.Specification.get_z_as_func_of_comov_dist`.
+    soft_filter_los: bool, default True
+        If `filter_map_los` is True, whether to use a soft criterion.
+        If False, any line of sight that is not 100% sampled will be removed.
+        If True, the maximum sampling fraction of the map cube is calculated and used as the criterion.
+        See :meth:`meer21cm.io.filter_incomplete_los`.
+    """
+
     def __init__(
         self,
         nu=None,
@@ -199,6 +280,11 @@ class Specification:
 
     @property
     def map_unit_type(self):
+        """
+        The type of the map unit. If the map unit is temperature, return "T".
+        If the map unit is flux density, return "F".
+        If the map unit is not temperature or flux density, raise an error.
+        """
         map_unit = self.map_unit
         if not check_unit_equiv(map_unit, units.K):
             if not check_unit_equiv(map_unit, units.Jy):
@@ -214,7 +300,8 @@ class Specification:
 
     def clean_cache(self, attr):
         """
-        set the input attributes to None
+        Set the input attributes to None.
+        This is used to clear the cache of the attributes.
         """
         for att in attr:
             if att in self.__dict__.keys():
@@ -330,6 +417,9 @@ class Specification:
 
     @property
     def cosmo(self):
+        """
+        The cosmology model.
+        """
         return self._cosmo
 
     @cosmo.setter
@@ -522,6 +612,20 @@ class Specification:
     ):
         """
         Read in a galaxy catalogue for cross-correlation
+        and save the data into the class attributes.
+        The data is read from the `gal_file`, which has to be a FITS file.
+
+        Parameters
+        ----------
+        ra_col: str, default "RA"
+            The column name of the right ascension in the galaxy catalogue.
+        dec_col: str, default "DEC"
+            The column name of the declination in the galaxy catalogue.
+        z_col: str, default "Z"
+            The column name of the redshift in the galaxy catalogue.
+        trim: bool, default True
+            Whether to trim the galaxy catalogue to the ra,dec,z range of the map.
+            See :meth:`meer21cm.dataanalysis.Specification.trim_gal_to_range`.
         """
         if self.gal_file is None:
             print("no gal_file specified")
@@ -537,6 +641,11 @@ class Specification:
             self.trim_gal_to_range()
 
     def read_from_pickle(self):
+        """
+        Read in a pickle file for cross-correlation
+        and save the data into the class attributes.
+        See :meth:`meer21cm.io.read_pickle` for more details.
+        """
         if self.pickle_file is None:
             print("no pickle_file specified")
             return None
@@ -572,6 +681,17 @@ class Specification:
         self.trim_map_to_range()
 
     def read_from_fits(self):
+        """
+        Read in a FITS file for the map data and hit counts.
+        The FITS file need to follow the format of the MeerKLASS L-band data.
+        See :meth:`meer21cm.io.read_map` for more details.
+
+        After reading the data, the map data and hit counts are filtered along the frequency direction
+        (see :meth:`meer21cm.io.filter_incomplete_los`), and trimmed to the specified range
+        (see :meth:`meer21cm.dataanalysis.Specification.trim_map_to_range`).
+        The weights per pixel are set to the hit counts if `self.weighting` is "counts",
+        or set to 1 if `self.weighting` is "uniform".
+        """
         if self.map_file is None:
             print("no map_file specified")
             return None
@@ -630,6 +750,9 @@ class Specification:
         """
         Trim the galaxy catalogue to the specified range.
         The galaxy catalogue outside the ra-dec-z range will be removed.
+
+        Note that, a small buffer corresponding to half of the frequency channel bandwidth
+        is added to the redshift range.
         """
         ra_range = np.array(self.ra_range)
         dec_range = np.array(self.dec_range)
@@ -654,6 +777,9 @@ class Specification:
     @property
     @tagging("beam", "nu")
     def beam_image(self):
+        """
+        Returns the beam image projected onto the sky map for the input beam model.
+        """
         if self._beam_image is None:
             self.get_beam_image()
         return self._beam_image
@@ -665,6 +791,23 @@ class Specification:
         num_pix_y=None,
         cache=True,
     ):
+        """
+        Calculate the beam image projected onto the sky map for the input beam model.
+
+        Parameters
+        ----------
+        wproj: :py:class:`astropy.wcs.WCS`, default None
+            The WCS object for the map. Default uses `self.wproj`.
+        num_pix_x: int, default None
+            The number of pixels in the first axis of the map data. Default uses `self.num_pix_x`.
+        num_pix_y: int, default None
+            The number of pixels in the second axis of the map data. Default uses `self.num_pix_y`.
+        cache: bool, default True
+            Whether to cache the beam image. Default is True.
+            If True, the beam image will be cached and returned directly if it is already computed.
+            If False, the beam image will be computed and returned.
+            The cache is saved into the class attribute `beam_image`.
+        """
         if self.sigma_beam_ch is None:
             logger.info(
                 f"sigma_beam_ch is None, returning None for {inspect.currentframe().f_code.co_name}"
@@ -735,20 +878,37 @@ class Specification:
         return self._z_as_func_of_comov_dist
 
     def get_z_as_func_of_comov_dist(self):
+        """
+        Calculate an array of comoving distances with redshifts,
+        and construct a function that returns the redshift for input comoving distance.
+        The function is saved into the class attribute `z_as_func_of_comov_dist`.
+        """
         zarr = np.linspace(0, self.z_interp_max, 20001)
         xarr = self.comoving_distance(zarr).value
         func = interp1d(xarr, zarr)
         self._z_as_func_of_comov_dist = func
 
     @property
-    def survey_volume(self):
+    def survey_volume(self, i=None):
         """
-        Total survey volume in Mpc^3
+        Total survey volume in Mpc^3.
+
+        Note that, the sampling along the sky map is assumed to be the same for all frequency channels,
+        and the code by default uses the maximum sampling channel to calculate the area.
+        This is desired, as the survey lightcone can contain holes inside, which is considered part of the volume.
+
+        Parameters
+        ----------
+        i: int, default None
+            The index of the frequency channel to calculate the survey volume.
+            Default is None, which uses the maximum sampling channel.
         """
+        if i is None:
+            i = self.maximum_sampling_channel
         nu_ext = center_to_edges(self.nu)
         z_ext = freq_to_redshift(nu_ext)
         volume = (
-            (self.W_HI[:, :, 0].sum() * self.pixel_area * (np.pi / 180) ** 2)
+            (self.W_HI[:, :, i].sum() * self.pixel_area * (np.pi / 180) ** 2)
             / 3
             * (
                 self.comoving_distance(z_ext.max()) ** 3
@@ -756,3 +916,10 @@ class Specification:
             ).value
         )
         return volume
+
+    @property
+    def maximum_sampling_channel(self):
+        """
+        Returns the index of the frequency channel with the maximum sampling on the sky map.
+        """
+        return np.argmax(self.map_has_sampling.sum(axis=(0, 1)))
