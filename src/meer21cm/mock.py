@@ -1,3 +1,8 @@
+"""
+This module contains the classes for generating mock intensity mapping data, galaxy catalogues for cross-correlation,
+and HI galaxy catalogues for HI emission line observations.
+"""
+
 import numpy as np
 from scipy.interpolate import interp1d
 from astropy.cosmology import Planck18
@@ -33,10 +38,39 @@ logger = logging.getLogger(__name__)
 
 # 20 lines missing before adding in
 class MockSimulation(PowerSpectrum):
+    """
+    The class for generating mock intensity mapping data cube and galaxy catalogues for cross-correlation.
+
+    Parameters
+    ----------
+    density: str, default "lognormal"
+        The density distribution of the mock field. Can be "lognormal" or "gaussian".
+    num_discrete_source: int, default 100
+        The number of discrete tracer sources.
+    discrete_base_field: int, default 2
+        The tracer (1 or 2) field to sample the discrete tracer positions.
+    highres_sim: int, default None
+        If None, the mock field will be directly gridded to the sky map following the pixel resolution.
+        If an integer is provided, the mock field will be gridded to a high resolution sky map,
+        with the resolution specified by this integer times the pixel resolution, and then
+        down-sampled to the pixel resolution.
+    parallel_plane: bool, default True
+        Whether to simulate the mock field in the parallel-plane limit (i.e. k_z = k_parallel).
+        Only used if ``rsd_from_field`` is True, otherwise parallel-plane is hard-coded to True.
+    rsd_from_field: bool, default False
+        Whether to generate the RSD effect at field level. If False, the RSD effect is generated at power spectrum level.
+    discrete_source_dndz: function, default np.ones_like
+        The redshift distribution of the discrete tracer sources.
+        Must be a function of redshift.
+        Note that the overall number of discrete sources is given by ``self.num_discrete_source``, so
+        only the shape of the dndz is used, not the normalization.
+    **params: dict
+        Additional parameters to be passed to the base class :class:`meer21cm.power.PowerSpectrum`.
+    """
+
     def __init__(
         self,
         density="lognormal",
-        relative_resol_to_pix=0.5,
         num_discrete_source=100,
         discrete_base_field=2,
         highres_sim=None,
@@ -47,7 +81,6 @@ class MockSimulation(PowerSpectrum):
     ):
         super().__init__(**params)
         self.density = density.lower()
-        self.relative_resol_to_pix = relative_resol_to_pix
         init_attr = [
             "_x_start",
             "_y_start",
@@ -165,7 +198,7 @@ class MockSimulation(PowerSpectrum):
         If True, the kaiser rsd effect is generated at field level by
         calculating the corresponding peculiar velocity field.
         This allows the lognormal mock to go beyond the parallel-plane limit.
-        If False, the kaiser rsd effect is generated at power spectrum level,
+        If False, the kaiser rsd effect is generated at power spectrum level assuming parallel-plane,
         and then the field is generated from the anistropic power spectrum.
         """
         return self._rsd_from_field
@@ -182,6 +215,8 @@ class MockSimulation(PowerSpectrum):
     def num_discrete_source(self):
         """
         The total number of discrete tracer sources.
+        Note that the final mock catalogue is not exactly this number,
+        due to Poisson sampling errors.
         """
         return self._num_discrete_source
 
@@ -255,6 +290,9 @@ class MockSimulation(PowerSpectrum):
         return self._mock_matter_field
 
     def get_mock_matter_field_r(self):
+        """
+        Generate the mock matter field in real space.
+        """
         logger.info(
             f"invoking {inspect.currentframe().f_code.co_name} to set __mock_matter_field_r"
         )
@@ -300,8 +338,10 @@ class MockSimulation(PowerSpectrum):
     def mock_velocity_u_matter(self):
         r"""
         The normalised peculiar velocity field in real space, defined as
+
         .. math::
             u_i = -\frac{v_i}{\mathcal{H} f}
+
         where :math:`v_i` is the peculiar velocity, :math:`\mathcal{H}` is the
         conformal Hubble parameter, and :math:`f` is the growth rate.
         """
@@ -314,6 +354,16 @@ class MockSimulation(PowerSpectrum):
     @property
     @tagging("cosmo", "nu", "mock", "box", "rsd", "tracer_1")
     def mock_velocity_u_tracer_1(self):
+        """
+        The normalised peculiar velocity field used for the first tracer.
+        While the peculiar velocity field is only dependent on the matter field,
+        note that if you simulate lognormal tracer fields, the two fields are not exactly correlated.
+        One simple way to think about it is that field_1/bias_1 is not equal to field_2/bias_2, because both fields range
+        from -1 to +max, and similarly the mock matter field is also not field_1/bias_1 or field_2/bias_2.
+        This is an intrinsic weakness of the lognormal mock that you should be aware of.
+
+        As a result, for each tracer the velocity field should be recalculated based on field_i/tracer_bias_i.
+        """
         if self._mock_velocity_u_tracer_1 is None:
             self._mock_velocity_u_tracer_1 = self.get_mock_velocity_u_field(
                 mock_field=self.mock_tracer_field_1_r / self.tracer_bias_1
@@ -323,6 +373,11 @@ class MockSimulation(PowerSpectrum):
     @property
     @tagging("cosmo", "nu", "mock", "box", "rsd", "tracer_2")
     def mock_velocity_u_tracer_2(self):
+        """
+        The normalised peculiar velocity field used for the second tracer.
+
+        See the docstring of :meth:`mock_velocity_u_tracer_1` for more details.
+        """
         if self._mock_velocity_u_tracer_2 is None:
             self._mock_velocity_u_tracer_2 = self.get_mock_velocity_u_field(
                 mock_field=self.mock_tracer_field_2_r / self.tracer_bias_2
@@ -332,6 +387,16 @@ class MockSimulation(PowerSpectrum):
     def get_mock_velocity_u_field(self, mock_field):
         r"""
         Generate the normalised peculiar velocity field in real space
+
+        Parameters
+        ----------
+        mock_field: np.ndarray
+            The mock field in real space.
+
+        Returns
+        -------
+        u_r: np.ndarray
+            The normalised peculiar velocity field in real space.
         """
         logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
         delta_k = np.fft.rfftn(mock_field, norm="forward")
@@ -365,6 +430,8 @@ class MockSimulation(PowerSpectrum):
     def mock_kaiser_field_k_tracer_1(self):
         """
         The Kaiser rsd effect correction for the mock tracer field 1 in k-space.
+
+        See the docstring of :meth:`get_mock_kaiser_field_k` for more details.
         """
         if self._mock_kaiser_field_k_tracer_1 is None:
             self.get_mock_kaiser_field_k(field="tracer_1")
@@ -375,6 +442,8 @@ class MockSimulation(PowerSpectrum):
     def mock_kaiser_field_k_tracer_2(self):
         """
         The Kaiser rsd effect correction for the mock tracer field 2 in k-space.
+
+        See the docstring of :meth:`get_mock_kaiser_field_k` for more details.
         """
         if self._mock_kaiser_field_k_tracer_2 is None:
             self.get_mock_kaiser_field_k(field="tracer_2")
@@ -424,12 +493,33 @@ class MockSimulation(PowerSpectrum):
         return delta_rsd_k
 
     def get_mock_matter_field(self):
+        """
+        Generate the mock matter field in redshift space.
+        """
         logger.info(f"invoking {inspect.currentframe().f_code.co_name}, ")
         self._mock_matter_field = self.get_mock_field_in_redshift_space(
             delta_x=self.mock_matter_field_r, field="matter", sigma_v=0
         )
 
     def get_mock_field_in_redshift_space(self, delta_x, field, sigma_v):
+        """
+        Generate the mock field in redshift space.
+
+        Parameters
+        ----------
+        delta_x: np.ndarray
+            The mock field in real space.
+        field: str
+            The field to be simulated.
+            Can be "matter" or "tracer_1" or "tracer_2".
+        sigma_v: float
+            The velocity dispersion of the tracer in km/s.
+
+        Returns
+        -------
+        delta_x: np.ndarray
+            The mock field in redshift space.
+        """
         if self.kaiser_rsd:
             logger.info(f"invoking {inspect.currentframe().f_code.co_name}")
             delta_k = np.fft.rfftn(delta_x, norm="forward")
@@ -489,6 +579,19 @@ class MockSimulation(PowerSpectrum):
         return self._mock_tracer_field_2_r
 
     def get_mock_tracer_field_r(self, tracer_i):
+        """
+        Generate the mock tracer field in real space.
+
+        Parameters
+        ----------
+        tracer_i: int
+            The index of the tracer. Can be 1 or 2.
+
+        Returns
+        -------
+        delta_x: np.ndarray
+            The mock tracer field in real space.
+        """
         delta_x = self.get_mock_field_r(bias=getattr(self, f"tracer_bias_{tracer_i}"))
         logger.info(
             f"{inspect.currentframe().f_code.co_name}: "
@@ -498,6 +601,19 @@ class MockSimulation(PowerSpectrum):
         return delta_x
 
     def get_mock_tracer_field(self, tracer_i):
+        """
+        Generate the mock tracer field in redshift space.
+
+        Parameters
+        ----------
+        tracer_i: int
+            The index of the tracer. Can be 1 or 2.
+
+        Returns
+        -------
+        delta_x: np.ndarray
+            The mock tracer field in redshift space.
+        """
         if self.rsd_from_field and self.kaiser_rsd:
             delta_x = self.get_mock_field_in_redshift_space(
                 delta_x=getattr(self, f"mock_tracer_field_{tracer_i}_r"),
@@ -527,10 +643,22 @@ class MockSimulation(PowerSpectrum):
             self.get_mock_tracer_position_in_box(self.discrete_base_field)
         return self._mock_tracer_position_in_box
 
-    def get_mock_tracer_position_in_box(self, tracer_i, pos_value=None):
+    def get_mock_tracer_position_in_box(self, tracer_i, density_field=None):
         """
         Function to retrieve the tracer positions in redshift space.
         Modified from ``powerbox``.
+
+        Parameters
+        ----------
+        tracer_i: int
+            The index of the tracer. Can be 1 or 2.
+        density_field: np.ndarray, default None
+            The density field of the tracer. If None, the simulated mock tracer field will be used.
+
+        Returns
+        -------
+        tracer_positions: np.ndarray
+            The tracer positions in the rectangular box.
         """
         rng = default_rng(self.seed)
         # note that `_mock...` does not have mean amplitude so this is what
@@ -539,24 +667,24 @@ class MockSimulation(PowerSpectrum):
         getattr(self, "mock_tracer_field_" + str(tracer_i))
         # now actually getting the underlying overdensity
         # if self.rsd_from_field:
-        # pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i) + "_r") + 1
+        # density_field = getattr(self, "_mock_tracer_field_" + str(tracer_i) + "_r") + 1
         # else:
-        #    pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
-        if pos_value is None:
-            pos_value = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        #    density_field = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
+        if density_field is None:
+            density_field = getattr(self, "_mock_tracer_field_" + str(tracer_i)) + 1
         num_g = self.tot_num_source_in_box
         # apply a redshift kernel to the source distribution
         dndz_prob = self._dndz_renorm(self._box_voxel_redshift)
-        pos_value[pos_value < 0] = 0
-        pos_value /= pos_value.sum() / num_g
-        pos_value *= dndz_prob
+        density_field[density_field < 0] = 0
+        density_field /= density_field.sum() / num_g
+        density_field *= dndz_prob
         # taken from powerbox
-        n_per_cell = rng.poisson(pos_value)
+        n_per_cell = rng.poisson(density_field)
         args = self.x_vec
         X = np.meshgrid(*args, indexing="ij")
         tracer_positions = np.array([x.flatten() for x in X]).T
         tracer_positions = tracer_positions.repeat(n_per_cell.flatten(), axis=0)
-        tracer_which_cell = np.arange(pos_value.size)
+        tracer_which_cell = np.arange(density_field.size)
         tracer_which_cell = np.repeat(tracer_which_cell, n_per_cell.flatten())
         tracer_positions += (
             rng.uniform(-0.5, 0.5, size=(np.sum(n_per_cell), len(self.box_ndim)))
@@ -627,6 +755,9 @@ class MockSimulation(PowerSpectrum):
         return self.mock_tracer_position_in_radecz[3]
 
     def get_mock_tracer_position_in_radecz(self):
+        """
+        Project the mock tracer positions in the rectangular box to the sky coordinates and redshifts.
+        """
         if self.flat_sky:
             self._mock_tracer_comov_dist = (
                 self.mock_tracer_position_in_box[:, -1]
@@ -680,8 +811,12 @@ class MockSimulation(PowerSpectrum):
         """
         Propagate the mock tracer positions to the galaxy data catalogue.
 
-        If trim, only specified ``num_discrete_source`` number of tracers
-        inside the ra-dec-z range will be propagated
+        If trim, only tracers inside the ra-dec-z range will be propagated.
+
+        Parameters
+        ----------
+        trim: bool, default True
+            If True, only the mock tracer positions inside the ra-dec-z range will be propagated.
         """
         ra, dec, z, inside_range = self.mock_tracer_position_in_radecz
         inside_range = inside_range.copy()
@@ -699,7 +834,25 @@ class MockSimulation(PowerSpectrum):
         self, field, beam=True, highres_sim=None, average=True
     ):
         """
-        Grid the mock tracer field onto the sky map and
+        Grid the mock tracer field onto the sky map cube.
+
+        Parameters
+        ----------
+        field: np.ndarray
+            The mock tracer field to be gridded.
+        beam: bool, default True
+            Whether to convolve the beam model to the sky map.
+        highres_sim: int, default None
+            The high resolution simulation factor.
+            If None, the high resolution simulation factor will be set to ``self.highres_sim``.
+        average: bool, default True
+            If True, then the map pixel value will be the average of the rectangular box values (i.e. the mock field is in temperature units).
+            If False, then the map pixel value will be the sum of the rectangular box values (i.e. the mock field is in flux density units).
+
+        Returns
+        -------
+        map_highres: np.ndarray
+            The output sky map cube.
         """
         if highres_sim is None:
             highres_sim = self.highres_sim
@@ -774,6 +927,32 @@ class MockSimulation(PowerSpectrum):
 
 
 class HIGalaxySimulation(MockSimulation):
+    """
+    The class for generating mock HI galaxy catalogues for HI emission line observations.
+
+    Parameters
+    ----------
+    no_vel: bool, default True
+        If True, HI sources will have no velocity width, and the total flux will be
+        allocated to the central frequency channel.
+    tf_slope: float, default None
+        The slope of the Tully-Fisher relation when ``no_vel`` is False.
+    tf_zero: float, default None
+        The intercept of the Tully-Fisher relation when ``no_vel`` is False.
+    halo_model: :class:`halomod.TracerHaloModel`, default None
+        The halo model to be used. Only used if ``hi_mass_from`` is "hod".
+    hi_mass_from: str, default "hod"
+        The method for calculating the HI mass of the mock tracers.
+        Can be "hod" or "himf".
+    himf_pars: dict, default None
+        The parameters for the HI mass function. Only used if ``hi_mass_from`` is "himf".
+    num_ch_ext_on_each_side: int, default 5
+        The number of frequency channels to be extended on each side of the central frequency channel
+        when generating the HI profile. A good rule of thumb is 200km/s over ``self.vel_resol``.
+    **params: dict
+        Additional parameters to be passed to the base class :class:`meer21cm.mock.MockSimulation`.
+    """
+
     def __init__(
         self,
         no_vel=True,
@@ -892,6 +1071,16 @@ class HIGalaxySimulation(MockSimulation):
         return self._halo_mass_mock_tracer
 
     def get_halo_mass_mock_tracer(self):
+        """
+        Calculate the halo mass of the mock tracers.
+
+        In this case, the discrete tracer is considered to be the halos instead of galaxies,
+        so corroespondingly you should set ``self.num_discrete_source`` to the number of halos,
+        and ``self.tracer_bias_2`` to the effective bias of the halo number density field.
+
+        The sampling is then done by using the halo mass function stored in ``self.halo_model``.
+        See ``hmf`` package for more details about the halo mass function.
+        """
         # propagate mock catalogue to galaxy catalogue
         self.propagate_mock_tracer_to_gal_cat()
         num_g_tot_in_mockrange = self.ra_gal.size
@@ -939,6 +1128,12 @@ class HIGalaxySimulation(MockSimulation):
         return self._hi_mass_mock_tracer
 
     def get_hi_mass_mock_tracer_hod(self):
+        """
+        Calculate the HI mass of the mock tracers using the halo occupation distribution
+        based on the HOD model stored in ``self.halo_model``.
+
+        See ``halomod`` package for more details about the HOD model.
+        """
         himass_g = (
             self.halo_model.hod.total_occupation(10**self.halo_mass_mock_tracer)
             / self.h
@@ -968,6 +1163,12 @@ class HIGalaxySimulation(MockSimulation):
         return self._hi_profile_mock_tracer
 
     def get_hi_profile_mock_tracer(self):
+        """
+        Calculate the emission line profiles of the mock tracers.
+
+        The profiles are calculated using the HI mass of the mock tracers,
+        and the Tully-Fisher relation stored in ``self.tf_slope`` and ``self.tf_zero``.
+        """
         hifluxd_ch = hi_mass_to_flux_profile(
             self.hi_mass_mock_tracer,
             self.z_mock_tracer,
