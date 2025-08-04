@@ -1,5 +1,13 @@
 """
 This module handles computation of power spectrum from gridded fields and its corresponding model power spectrum from theory.
+
+The class :py:class:`ModelPowerSpectrum` is the class for computing the model power spectrum of an LSS tracer field.
+
+The class :py:class:`FieldPowerSpectrum` is the class for computing the power spectrum of a gridded field from LSS data.
+
+The class :py:class:`PowerSpectrum` coherently combines the two classes above,
+and provides an interface for gridding the intensity mapping data as well as the galaxy catalogue to perform
+power spectrum estimation and for auto-correlation and cross-correlation.
 """
 import numpy as np
 from meer21cm.cosmology import CosmologyCalculator
@@ -27,6 +35,70 @@ logger = logging.getLogger(__name__)
 
 
 class ModelPowerSpectrum(CosmologyCalculator):
+    r"""
+    The class for computing the model power spectrum of an LSS tracer field.
+
+    Parameters
+    ----------
+    kmode: np.ndarray, default None
+        The mode of k in Mpc-1.
+    mumode: np.ndarray, default None
+        The mu values of each k-mode so that :math:`k_\parallel = k \times \mu`.
+    tracer_bias_1: float, default 1.0
+        The linear bias of the first tracer.
+    sigma_v_1: float, default 0.0
+        The velocity dispersion of the first tracer in km/s.
+    tracer_bias_2: float, default None
+        The linear bias of the second tracer.
+    sigma_v_2: float, default 0.0
+        The velocity dispersion of the second tracer in km/s.
+    include_beam: list, default [True, False]
+        Whether to include the beam attenuation in the model calculation.
+        Must be a list of two booleans, the first for the first tracer and the second for the second tracer.
+    fog_profile: str, default "lorentz"
+        The shape of the finger-of-god profile to be used in the model calculation.
+        Either "lorentz" or "gaussian".
+    cross_coeff: float, default 1.0
+        The cross-correlation coefficient between the two tracers.
+    weights_field_1: np.ndarray, default None
+        The field-level weights of the first tracer in the density field.
+    weights_field_2: np.ndarray, default None
+        The field-level weights of the second tracer in the density field.
+    weights_grid_1: np.ndarray, default None
+        The grid-level weights of the first tracer in the density field.
+    weights_grid_2: np.ndarray, default None
+        The grid-level weights of the second tracer in the density field.
+    renorm_weights_1: bool, default True
+        Whether to renormalize the power spectrum of the first tracer by the weights.
+    renorm_weights_2: bool, default True
+        Whether to renormalize the power spectrum of the second tracer by the weights.
+    renorm_weights_cross: bool, default True
+        Whether to renormalize the power spectrum of the cross-correlation by the weights.
+    mean_amp_1: float, default 1.0
+        The mean amplitude of the first tracer.
+        Can be used to rescale the power spectrum, for example by the average brightness temperature.
+    mean_amp_2: float, default 1.0
+        The mean amplitude of the second tracer.
+        Can be used to rescale the power spectrum, for example by the average brightness temperature.
+    sampling_resol: list, default None
+        The sampling resolution of the field in Mpc.
+        If ``sampling_resol`` is "auto", the sampling resolution will be set to the pixel size of the map.
+    include_sky_sampling: list, default [True, False]
+        Whether to include the sky sampling in the model calculation.
+        If just a boolean is provided, it will be used for both tracers.
+    compensate: list, default [True, True]
+        Whether the gridded fields are compensated according to the mass assignment scheme.
+        Note that the compensation is applied to the model power spectrum, and **not** to the gridded data fields.
+    kaiser_rsd: bool, default True
+        Whether to include the RSD effect in the model calculation and mock simulation.
+    sigma_z_1: float, default 0.0
+        The redshift error of the first tracer.
+    sigma_z_2: float, default 0.0
+        The redshift error of the second tracer.
+    **params: dict
+        Additional parameters to be passed to the base class :class:`meer21cm.cosmology.CosmologyCalculator`.
+    """
+
     def __init__(
         self,
         kmode=None,
@@ -293,7 +365,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def kaiser_rsd(self):
         """
-        Whether RSD is included in the field simulation and model calculation.
+        Whether RSD is included in the simulation and model calculation.
+        If True, uses the linear Kaiser effect and the FoG profile to compute the model power spectrum.
         """
         return self._kaiser_rsd
 
@@ -308,7 +381,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def fog_profile(self):
         """
-        The finger-of-god profile type to be used in the model calculation.
+        The shape of the finger-of-god profile to be used in the model calculation.
+        Either "lorentz" or "gaussian".
         """
         return self._fog_profile
 
@@ -329,7 +403,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def sigma_v_1(self):
         """
-        The velocity dispersion of the first tracer.
+        The velocity dispersion of the first tracer in km/s.
         """
         return self._sigma_v_1
 
@@ -361,7 +435,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def sigma_v_2(self):
         """
-        The velocity dispersion of the second tracer.
+        The velocity dispersion of the second tracer in km/s.
         """
         return self._sigma_v_2
 
@@ -395,6 +469,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         Whether the beam attenuation is included in the model calculation.
         Must be a list of two booleans, the first for the first tracer and the second for the second tracer.
+        If just a boolean is provided, it will be used for both tracers.
         """
         return self._include_beam
 
@@ -423,6 +498,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         Whether the gridded fields are compensated
         according to the mass assignment scheme.
+        Note that the compensation is applied to the model power spectrum,
+        and **not** to the gridded data fields.
         """
         return self._compensate
 
@@ -450,15 +527,15 @@ class ModelPowerSpectrum(CosmologyCalculator):
         The Gaussian finger-of-god profile.
 
         .. math::
-            {\rm FoG} = {\rm exp}(-(\sigma_v k_\parallel/H)^2/2)
+            {\rm FoG} = {\rm exp}(-(\sigma_r k_\parallel/H)^2/2)
 
         Note the power spectrum has FoG squared with the two FoG terms that can
         be different for two tracers.
 
         Parameters
         ----------
-        sigma_v: float.
-            The velocity dispersion.
+        sigma_r: float.
+            The velocity dispersion in terms of the comoving distance in Mpc.
         kmode: float, None.
             The mode of 3D k in Mpc-1. If None, self.kmode will be used.
         mumode: float, None.
@@ -482,15 +559,15 @@ class ModelPowerSpectrum(CosmologyCalculator):
         The Lorentzian finger-of-god profile.
 
         .. math::
-            {\rm FoG} = \sqrt{1/(1+(\sigma_v k_\parallel/H)^2)}
+            {\rm FoG} = \sqrt{1/(1+(\sigma_r k_\parallel/H)^2)}
 
         Note the power spectrum has FoG squared with the two FoG terms that can
         be different for two tracers.
 
         Parameters
         ----------
-        sigma_v: float.
-            The velocity dispersion.
+        sigma_r: float.
+            The velocity dispersion in terms of the comoving distance in Mpc.
         kmode: float, None.
             The mode of 3D k in Mpc-1. If None, self.kmode will be used.
         mumode: float, None.
@@ -516,8 +593,8 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
         Parameters
         ----------
-        sigma_v: float.
-            The velocity dispersion.
+        sigma_r: float.
+            The velocity dispersion in terms of the comoving distance in Mpc.
         kmode: float, None.
             The mode of 3D k in Mpc-1. If None, self.kmode will be used.
         mumode: float, None.
@@ -1045,6 +1122,34 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
 
 class FieldPowerSpectrum(Specification):
+    """
+    The class for computing the power spectrum of a gridded field from LSS data.
+
+    Parameters
+    ----------
+    field_1: np.ndarray.
+        The density field of the first tracer.
+    field_2: np.ndarray, default None
+        The density field of the second tracer.
+        If None, calculation of the second tracer and the cross-correlation will be skipped.
+    box_len: list of 3 floats.
+        The length of the box along each axis.
+    weights_1: np.ndarray, default None
+        The weights of the first tracer. Default is uniform weights.
+    mean_center_1: bool, default False
+        Whether to mean-center the first tracer field.
+    unitless_1: bool, default False
+        Whether to divide the first tracer field by its mean.
+    weights_2: np.ndarray, default None
+        The weights of the second tracer. Default is uniform weights.
+    mean_center_2: bool, default False
+        Whether to mean-center the second tracer field.
+    unitless_2: bool, default False
+        Whether to divide the second tracer field by its mean.
+    **params: dict
+        Additional parameters to be passed to the base class :class:`meer21cm.dataanalysis.Specification`.
+    """
+
     def __init__(
         self,
         field_1,
@@ -1987,10 +2092,15 @@ def gaussian_beam_attenuation(k_perp, beam_sigma_in_mpc):
 
     Parameter
     ---------
-    k_perp: float.
+    k_perp: np.ndarray.
         The transverse k-scale in Mpc^-1
     beam_sigma_in_mpc: float.
         The sigma of the Gaussian beam in Mpc.
+
+    Returns
+    -------
+    beam_attenuation: np.ndarray.
+        The beam attenuation factor.
     """
     return np.exp(-(k_perp**2) * beam_sigma_in_mpc**2 / 2)
 
@@ -2008,12 +2118,132 @@ def step_window_attenuation(k_dir, step_size_in_mpc, p=1):
         The sigma of the Gaussian beam in Mpc.
     p: int, default 1
         The index of assignment scheme.
+
+    Returns
+    -------
+    window_attenuation: np.ndarray.
+        The window attenuation factor.
     """
     # note np.sinc is sin(pi x)/(pi x)
     return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** p
 
 
 class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
+    """
+    The class for coherently combining the :class:`FieldPowerSpectrum` and :class:`ModelPowerSpectrum` classes, and
+    providing an interface for gridding the intensity mapping data as well as the galaxy catalogue to perform
+    power spectrum estimation and for auto-correlation and cross-correlation.
+
+    Note that, while you can manually set most of the attributes such as the box length, the density field, the weights, etc.,
+    the class is mainly used for first gridding the intensity mapping data and the galaxy catalogue to a rectangular grid field,
+    which then set these attributes automatically. The usual input parameters are those of :class:`meer21cm.dataanalysis.Specification`.
+
+    For usage, check the tutorial notebooks in the examples and cookbook sections.
+
+    Parameters
+    ----------
+    field_1: np.ndarray, default None
+        The density field of the first tracer.
+    box_len: list of 3 floats.
+        The length of the box along each axis.
+    weights_field_1: np.ndarray, default None
+        The field-level weights of the first tracer. Default is uniform weights.
+    weights_grid_1: np.ndarray, default None
+        The grid-level weights of the first tracer. Default is uniform weights.
+    mean_center_1: bool, default False
+        Whether to mean-center the first tracer field.
+    unitless_1: bool, default False
+        Whether to divide the first tracer field by its mean.
+    field_2: np.ndarray, default None
+        The density field of the second tracer.
+        If None, calculation of the second tracer and the cross-correlation will be skipped.
+    weights_field_2: np.ndarray, default None
+        The field-level weights of the second tracer. Default is uniform weights.
+    weights_grid_2: np.ndarray, default None
+        The grid-level weights of the second tracer. Default is uniform weights.
+    mean_center_2: bool, default False
+        Whether to mean-center the second tracer field.
+    unitless_2: bool, default False
+        Whether to divide the second tracer field by its mean.
+    renorm_weights_1: bool, default True
+        Whether to renormalize the power spectrum of the first tracer by the weights.
+    renorm_weights_2: bool, default True
+        Whether to renormalize the power spectrum of the second tracer by the weights.
+    renorm_weights_cross: bool, default True
+        Whether to renormalize the power spectrum of the cross-correlation by the weights.
+    corrtype: str, default None
+        The type of the correlation function to be computed.
+    k1dbins: list of floats, default None
+        The bin edges of k in Mpc-1 for the 1D power spectrum.
+    kmode: float, default None
+        The mode of 3D k in Mpc-1 for the model calculation.
+    mumode: float, default None
+        The mu mode of each 3D k-mode for the model calculation.
+    tracer_bias_1: float, default 1.0
+        The linear bias of the first tracer.
+    sigma_v_1: float, default 0.0
+        The velocity dispersion of the first tracer in km/s.
+    tracer_bias_2: float, default None
+        The linear bias of the second tracer.
+    sigma_v_2: float, default 0.0
+        The velocity dispersion of the second tracer in km/s.
+    include_beam: list, default [True, False]
+        Whether to include the beam attenuation in the model calculation.
+    fog_profile: str, default "lorentz"
+        The shape of the finger-of-god profile to be used in the model calculation.
+    cross_coeff: float, default 1.0
+        The cross-correlation coefficient between the two tracers.
+    model_k_from_field: bool, default True
+        Whether to calculate the model k-mode ``self.kmode`` from the field k-mode ``self.k_mode``.
+    mean_amp_1: float, default 1.0
+        The mean amplitude of the first tracer.
+    mean_amp_2: float, default 1.0
+        The mean amplitude of the second tracer.
+    sampling_resol: list, default None
+        The sampling resolution of the field in Mpc.
+        If ``sampling_resol`` is "auto", the sampling resolution will be set to the pixel size of the map.
+    include_sky_sampling: list, default [True, False]
+        Whether to include the sky sampling in the model calculation.
+        If just a boolean is provided, it will be used for both tracers.
+    downres_factor_transverse: float, default None
+        The down-sampling factor for the transverse direction of the rectangular box for gridding.
+    downres_factor_radial: float, default None
+        The down-sampling factor for the radial direction of the rectangular box for gridding.
+    init_box_from_map_data: bool, default False
+        If True, the box dimensions will be calculated from the input data cube during initialization.
+        You can always manually set the box dimensions later by ``self.get_enclosing_box()``.
+    box_buffkick: float, default 5
+        The buffer kick for the box on each side when gridding. In the unit of Mpc.
+    compensate: list, default [False, False]
+        Whether the gridded fields are compensated according to the mass assignment scheme.
+        Note that the compensation is applied to the model power spectrum, and **not** to the gridded data fields.
+    taper_func: function, default windows.blackmanharris
+        The taper function to be applied to the gridded field.
+        Note that the taper function is not automatically applied, and is only used when calling
+        :meth:`PowerSpectrum.apply_taper_to_field`.
+    kaiser_rsd: bool, default True
+        Whether to include the RSD effect in the model calculation and mock simulation.
+    grid_scheme: str, default "nnb"
+        The grid scheme to be used for gridding.
+        Can be "nnb", "cic", "tsc" or "pcs".
+    interlace_shift: float, default 0.0
+        The shift in the unit of grid cell size for interlacing.
+    num_particle_per_pixel: int, default 1
+        The number of random sampling particles for each sky map pixel.
+    seed: int, default None
+        The seed for the random number generator.
+    kperpbins: list of floats, default None
+        The bin edges of k_perp in Mpc-1 for the cylindrical average power spectrum.
+    kparabins: list of floats, default None
+        The bin edges of k_para in Mpc-1 for the cylindrical average power spectrum.
+    flat_sky: bool, default False
+        Whether to use the flat sky approximation.
+    flat_sky_padding: list, default [0, 0, 0]
+        The padding for the flat sky box.
+    **params: dict
+        Additional parameters to be passed to the base class :class:`meer21cm.cosmology.CosmologyCalculator`.
+    """
+
     def __init__(
         self,
         field_1=None,
@@ -2048,7 +2278,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         include_sky_sampling=[True, False],
         downres_factor_transverse=1.2,
         downres_factor_radial=2.0,
-        field_from_mapdata=False,
+        init_box_from_map_data=False,
         box_buffkick=5,
         compensate=[False, False],
         taper_func=windows.blackmanharris,
@@ -2135,7 +2365,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.upgrade_sampling_from_gridding = False
         self.box_buffkick = box_buffkick
         self.taper_func = taper_func
-        if field_from_mapdata:
+        if init_box_from_map_data:
             self.get_enclosing_box()
         self.grid_scheme = grid_scheme
         self.interlace_shift = interlace_shift
@@ -2198,6 +2428,13 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
     @property
     def downres_factor_transverse(self):
+        """
+        The down-sampling factor for the transverse direction of the rectangular box for gridding.
+        The box resolution is then multiplied by this factor from the resolution of the sky map pixel
+        specified by ``pix_resol_in_mpc``.
+        For example, if ``pix_resol_in_mpc`` is 0.1 Mpc, and ``downres_factor_transverse`` is 2.0,
+        the box resolution will be 0.2 Mpc.
+        """
         return self._downres_factor_transverse
 
     @downres_factor_transverse.setter
@@ -2216,6 +2453,13 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
     @property
     def downres_factor_radial(self):
+        """
+        The down-sampling factor for the radial direction of the rectangular box for gridding.
+        The box resolution is then multiplied by this factor from the resolution of the frequency channel
+        specified by ``los_resol_in_mpc``.
+        For example, if ``los_resol_in_mpc`` is 0.1 Mpc, and ``downres_factor_radial`` is 2.0,
+        the box resolution will be 0.2 Mpc.
+        """
         return self._downres_factor_radial
 
     @downres_factor_radial.setter
@@ -2306,7 +2550,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         power3d,
         k1dbins=None,
         k1dweights=None,
-        filter_dependent_k=False,
         k_xyz_min=None,
         k_xyz_max=None,
         k_perppara_min=None,
@@ -2316,6 +2559,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         Bin the 3D power spectrum into 1D power spectrum.
         If the input ``power3d`` is a string, it is assumed to be an attribute of the class,
         for example ``auto_power_3d_1``.
+        Also see :meth:`meer21cm.power.bin_3d_to_1d` for more details.
 
         Parameters
         ----------
@@ -2393,12 +2637,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         kperpbins=None,
         kparabins=None,
         kcyweights=None,
-        filter_dependent_k=False,
     ):
         """
         Bin the 3D power spectrum into cylindrical k_perp-k_para power spectrum.
         If the input ``power3d`` is a string, it is assumed to be an attribute of the class,
         for example ``auto_power_3d_1``.
+        Also see :meth:`meer21cm.power.bin_3d_to_cy` for more details.
 
         Parameters
         ----------
@@ -2410,8 +2654,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             The k_para bins for the cylindrical ps. Default is the same as the class attribute.
         kcyweights: np.ndarray, default None
             The weights for the 3D power spectrum. Default is equal weights for every k-mode.
-        filter_dependent_k: bool, default False
-            Whether to filter out dependent k-modes (+k and -k will only be counted once).
 
         Returns
         -------
@@ -2460,7 +2702,22 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     # calculate on-the-fly, no cache
     def map_sampling(self, sampling_resol=None, p=1):
         """
-        The sampling window function from the map cube to be convolved with data.
+        The sampling window function from the map cube to be convolved with model power spectrum.
+        This should correspond to the resolution of map-making on the sky and the frequency channel,
+        **not** the resolution of the gridded field.
+
+        Parameters
+        ----------
+        sampling_resol: list, default None
+            The sampling resolution of the field in Mpc.
+            Default is the class attribute ``sampling_resol``.
+        p: int, default 1
+            The index of assignment scheme.
+
+        Returns
+        -------
+        B_sampling: np.ndarray.
+            The sampling window function in 3D k-space.
         """
         if not self.has_resol:
             return 1.0
@@ -2523,6 +2780,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     def use_flat_sky_box(self, flat_sky_padding=None):
         """
         Use flat sky approximation to calculate the box dimensions.
+
+        Parameters
+        ----------
+        flat_sky_padding: list, default None
+            The padding for the flat sky box.
+            If None, use the class attribute ``flat_sky_padding``.
         """
         if flat_sky_padding is None:
             flat_sky_padding = self.flat_sky_padding
@@ -2560,6 +2823,12 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         invoke to calculate the box dimensions for enclosing all
         the map pixels.
+
+        Parameters
+        ----------
+        rot_mat: np.ndarray, default None
+            The rotational matrix from the sky to the box.
+            If None, calculates the suitable rotation matrix automatically.
         """
         if self.flat_sky:
             self.use_flat_sky_box()
@@ -2784,6 +3053,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
 
     def grid_gal_to_field(self, radecfreq=None, flat_sky=None):
+        """
+        Grid the galaxy catalogue to a rectangular grid field.
+
+        If flat_sky is True, no gridding is performed. Instead, the map cube
+        dimensions are taken to be a rectangular grid, with the grid length
+        corresponding to the pixel resolution on x/y and los frequency resolution
+        as z.
+
+        """
         if self.box_origin is None:
             self.get_enclosing_box()
         if flat_sky is None:
@@ -2864,6 +3142,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return gal_map_rg, gal_weights_rg, pixel_counts_gal_rg
 
     def get_n_bar_correction(self):
+        """
+        Calculate the number density correction for the galaxy catalogue.
+        """
         n_bar = self.ra_gal.size / self.survey_volume
         n_bar2 = (
             (self.field_2 * self.weights_2).sum()
@@ -2966,6 +3247,32 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         return map_bin, count_bin
 
     def gen_random_poisson_galaxy(self, sel=None, num_g_rand=None, seed=None):
+        """
+        Generate a random galaxy catalogue from the map cube following the Poisson distribution.
+
+        Note that, by default, the random seed is fixed to the class attribute ``self.seed``.
+        If you want to generate multiple random catalogues, you need to set a different seed manually for each catalogue.
+
+        Parameters
+        ----------
+        sel: array, default None
+            The selection function of the galaxy catalogue.
+            If None, use the class attribute ``self.W_HI``.
+        num_g_rand: int, default None
+            The number of galaxies to generate. Default uses the number of galaxies stored in the data in `self.ra_gal`.
+        seed: int, default None
+            The seed for the random number generator. Default uses the class attribute ``self.seed``.
+
+        Returns
+        -------
+        ra_rand: np.ndarray.
+            The ra of the random galaxies.
+        dec_rand: np.ndarray.
+            The dec of the random galaxies.
+        freq_rand: np.ndarray.
+            The ``frequency`` of the random galaxies. The redshift of the random galaxies can
+            be calculated by ``meer21cm.util.redshift_to_freq(z_rand)``.
+        """
         if sel is None:
             sel = self.W_HI[:, :, 0]
         if num_g_rand is None:

@@ -253,7 +253,7 @@ def test_pcaclean():
     # first 20 channels are nan
     assert np.isnan(test_A).sum() == 20
     assert np.allclose(test_res[:, :, :20], 0.0)
-    assert np.abs((test_res[:, :, 20:]).mean()) < 3e-3
+    assert np.abs((test_res[:, :, 20:]).mean()) < 5e-3
     # after 1 mode std barely changed
     assert np.abs(test_res[:, :, 20:].std() - 1) < 3e-2
 

@@ -264,7 +264,6 @@ def test_cy_power_in_ps():
     ps.kparabins = np.linspace(0, 0.06, 7)
     pscy, _ = ps.get_cy_power(
         "auto_power_matter_model",
-        filter_dependent_k=True,
     )
     kperpcen = (ps.kperpbins[1:] + ps.kperpbins[:-1]) / 2
     kparacen = (ps.kparabins[1:] + ps.kparabins[:-1]) / 2
@@ -746,7 +745,7 @@ def test_grid_gal(test_gal_fits, test_W):
         data=ps.data,
         map_has_sampling=ps.W_HI,
         weights_map_pixel=ps.w_HI,
-        field_from_mapdata=True,
+        init_box_from_map_data=True,
         include_sky_sampling=[True, True],
         survey="meerklass_2021",
         band="L",
@@ -856,7 +855,6 @@ def test_poisson_gal_gen():
     psn = volume / ps.ra_gal.size
     psn1d, _, _ = ps.get_1d_power(
         "auto_power_3d_2",
-        filter_dependent_k=True,
     )
     plateau = psn1d[-5:].mean()
     assert np.abs(plateau - psn) / psn < 2.5e-1

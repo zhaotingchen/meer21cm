@@ -338,7 +338,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         over the critical density of the Universe at z=0.
     **params: dict
         Additional parameters to be passed to the base class :class:`CosmologyParameters`
-        and :class:`Specification`.
+        and :class:`meer21cm.dataanalysis.Specification`.
     """
 
     def __init__(
@@ -528,8 +528,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
 
     @property
     def wa(self):
-        """
-        The dark energy equation of state at a=0.
+        r"""
+        The redshift-dependent part of the dark energy equation of state.
+        :math:`w(a) = w_0 + w_a (1 - a)`.
         """
         return self._wa
 
