@@ -1,3 +1,13 @@
+"""
+This module contains the class for storing the cosmological model used for calculation.
+
+The class :py:class:`CosmologyParameters` is the class for storing the cosmological parameters, and settings for computing matter power spectrum.
+
+The class :py:class:`CosmologyCalculator` is the base class for storing the cosmological model used for calculation.
+It is typically used as a base class for other classes that inherit from it, and not used directly.
+
+"""
+
 import numpy as np
 import camb
 import astropy
@@ -27,7 +37,7 @@ get_ns_from_astropy = lambda x: getattr(astropy.cosmology, x).meta["n"]
 
 def extract_astropy_cosmo_set(value):
     """
-    Extract predefined astropy `FlatLambdaCDM` cosmology and turn it into a ``w0waCDM`` object.
+    Extract predefined astropy :py:class:`astropy.cosmology.FlatLambdaCDM` cosmology and turn it into a :py:class:`astropy.cosmology.w0waCDM` object.
 
     Parameters
     ----------
@@ -56,11 +66,12 @@ def extract_astropy_cosmo_set(value):
 
 
 class CosmologyParameters:
-    """
+    r"""
     The class for storing cosmological parameters, and settings for computing matter power
     spectrum. The naming of the input arguments for
     cosmological parameters follow
     `baccoemu <https://baccoemu.readthedocs.io/en/latest/>`_ .
+    It either uses `camb` or `baccoemu` to compute the matter power spectrum.
 
     Note that everything is **not in h unit** unless explicitly specified in name
     (of course except sigma_8 which follows the definition of 8 Mpc/h).
@@ -71,6 +82,49 @@ class CosmologyParameters:
     backends as differences between the Boltzmann solver codes (although this
     is not well tested on our end). Use it with precaution if you want to do
     precision cosmology type of forecasts and sims.
+
+    Parameters
+    ----------
+    ps_type: str, default "linear"
+        The type of the matter power spectrum.
+    kmin: float, default 1e-3
+        The minimum k in Mpc^-1 for calculating matter power. k below kmin will be extrapolated.
+    kmax: float, default 3.0
+        The maximum k in Mpc^-1 for calculating matter power. k above kmax will be extrapolated.
+    omega_cold: float, default :py:data:`astropy.cosmology.Planck18.Om0`
+        The density fraction of CDM+Baryon at z=0.
+    As: float, default :py:data:`astropy.cosmology.Planck18.As`
+        The amplitude of the initial power spectrum.
+    omega_baryon: float, default :py:data:`astropy.cosmology.Planck18.Ob0`
+        The density fraction of baryons at z=0.
+    ns: float, default :py:data:`astropy.cosmology.Planck18.meta["n"]`
+        The spectral index of the initial power spectrum.
+    h: float, default :py:data:`astropy.cosmology.Planck18.h`
+        The Hubble parameter over 100km/s/Mpc.
+    neutrino_mass: float, default :py:data:`astropy.cosmology.Planck18.m_nu.sum().value`
+        The sum of the neutrino mass in eV.
+    w0: float, default -1.0
+        The dark energy equation of state at a=1 (z=0).
+    wa: float, default 0.0
+        The redshift-dependent part of the dark energy equation of state.
+        :math:`w(a) = w_0 + w_a (1 - a)`.
+    expfactor: float, default 1.0
+        The expansion factor which is calculated as :math:`a = 1 / (1 + z)`.
+    cold: bool, default True
+        Whether to use the cold matter power spectrum.
+        If True, the matter power spectrum refers to CDM+Baryon.
+        If False, the matter power spectrum refers to all matter including massive neutrinos.
+    num_kpoints: int, default 200
+        The number of k points to compute the interpolation of the matter power spectrum.
+    omega_de: float, default None
+        The density fraction of dark energy at z=0. If None, it will be calculated using camb from
+        the rest of the input parameters.
+    tau: float, default 0.0561
+        The optical depth of the reionization.
+        Note that it does not affect the matter and tracer power spectrum calculation.
+    Neff: float, default 3.046
+        The effective number of neutrino species.
+        Note that it does not affect the matter and tracer power spectrum calculation.
     """
 
     def __init__(
@@ -91,6 +145,8 @@ class CosmologyParameters:
         cold=True,
         num_kpoints=200,
         omega_de=None,
+        tau=0.0561,
+        Neff=3.046,
         **params,
     ):
         self.ps_type = ps_type
@@ -110,10 +166,10 @@ class CosmologyParameters:
         # hard coded no curvature for now
         self.Ok0 = 0
         # CMB related, not needed
-        self.Neff = 3.046
+        self.Neff = Neff
         # self.Neff = 2.0
         self.Tcmb0 = Planck18.Tcmb0
-        self.tau = 0.0561
+        self.tau = tau
         self.camb_dark_energy_model = "ppf"
         self.num_kpoints = num_kpoints
         self.karr_in_h = np.geomspace(
@@ -124,6 +180,9 @@ class CosmologyParameters:
 
     @property
     def expfactor(self):
+        r"""
+        The expansion factor which is calculated as :math:`a = 1 / (1 + z)`.
+        """
         return self._expfactor
 
     def set_astropy_cosmo(self, name="new"):
@@ -180,6 +239,7 @@ class CosmologyParameters:
         pars.set_dark_energy(
             w=self._w0, wa=self._wa, dark_energy_model=self.camb_dark_energy_model
         )
+        # suppress the output of camb
         with HiddenPrints():
             pars.set_matter_power(
                 redshifts=np.unique([0.0, 1 / self.expfactor - 1]),
@@ -266,7 +326,19 @@ class CosmologyCalculator(Specification, CosmologyParameters):
     The underlying cosmological model is defined via :class:`astropy.cosmology.LambdaCDM` with all the background
     properties calculated via ``astropy``.
 
-    The matter density fluctuation is calculated using ``camb``.
+    The matter density fluctuation is calculated using ``camb`` or ``baccoemu`` based on the input `backend`.
+
+    Parameters
+    ----------
+    backend: str, default "camb"
+        The backend to use for computing the matter power spectrum.
+        Either "camb" or "bacco".
+    omega_hi: float, default 5e-4
+        The HI density at a given redshift ``self.z``,
+        over the critical density of the Universe at z=0.
+    **params: dict
+        Additional parameters to be passed to the base class :class:`CosmologyParameters`
+        and :class:`meer21cm.dataanalysis.Specification`.
     """
 
     def __init__(
@@ -456,8 +528,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
 
     @property
     def wa(self):
-        """
-        The dark energy equation of state at a=0.
+        r"""
+        The redshift-dependent part of the dark energy equation of state.
+        :math:`w(a) = w_0 + w_a (1 - a)`.
         """
         return self._wa
 
@@ -585,6 +658,9 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         return self._matter_power_spectrum_fnc
 
     def get_matter_power_spectrum(self):
+        """
+        Calculate the matter power spectrum, interpolate it, and save it into the class attribute `matter_power_spectrum_fnc`.
+        """
         kh = self.karr_in_h
         pk = getattr(self, f"get_matter_power_spectrum_{self.backend}")()
         karr = kh * self.h

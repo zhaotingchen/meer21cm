@@ -132,6 +132,29 @@ def read_pickle(
 ):
     """
     Read pickle file of MeerKLASS UHF-band data into arrays.
+    The file format requires the following keys:
+    - map: the map data.
+    - hit: the number of sampling for each pixel.
+    - freq: the frequencies of each channel in the data in MHz. ``meer21cm`` then converts it to Hz.
+    - wcs: the :class:`astropy.wcs.WCS` object for the map.
+
+    Parameters
+    ----------
+        pickle_file: str.
+            The input pickle file.
+        nu_min: float, default -np.inf.
+            The lower end of frequency cut.
+            Channels below this frequency will be thrown away.
+        nu_max: float, default np.inf.
+            The higher end of freuqency cut.
+            Channels above this frequency will be thrown away.
+        los_axis: int, default -1.
+            which axis is the los.
+
+    Returns
+    -------
+        map_data: array.
+            The map data.
     """
     with open(pickle_file, "rb") as f:
         data = pickle.load(f)
