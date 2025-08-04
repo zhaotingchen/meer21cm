@@ -7,7 +7,6 @@ def plot_pixels_along_los(
     map_in,
     map_has_sampling,
     zaxis=None,
-    map_units="",
     xlabel="",
     ylabel="",
     lw=0.01,
