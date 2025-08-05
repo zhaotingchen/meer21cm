@@ -4,11 +4,11 @@ Clone the repo and install the full dependencies
 pip install -e ".[full]"
 ```
 
-A clean conda environment is recommended for this. See [installation guide](INSTALLATION.md) for more details.
+A clean conda environment is recommended for this. See [installation guide](./installation.rst) for more details.
 
 ## Git workflow
 You should always use Git for making changes to the code. To enforce a unified code style automatically, `pre-commit` is used. A typical workflow should look something like this:
-- create a new branch based off main, either using a GUI for git in your IDE of choice or through CLI `git checkout -b new_branch_name` (make sure you are at main by running `git checkout main`)
+- create a new branch based off main, either using a GUI for git in your IDE of choice or through CLI `git checkout -b new_branch_name` (make sure you are at main by running `git checkout main` first before creating the new branch)
 - make your changes
 - run the tests to make sure nothing breaks (see below).
 - Give a brief description of the changes in the CHANGELOG under dev version.
@@ -36,7 +36,7 @@ pytest --cov=meer21cm tests/ --cov-report term --cov-report html:coverage.html
 ```
 This will generate a folder `coverage.html` (do not commit it, leave it untracked). You can open the html files inside to see the coverage.
 
-When you push, Github Actions have been set up so the tests will be checked and a coverage report will also be generated on codecov. **There is a rate limit for the runtime on Github Actions**. That is to say, you should always first check locally that the tests are good before pushing to a PR to trigger the tests on Github, so that we can avoid exceeding the limit quickly.
+When you push, Github Actions have been set up so the tests will be checked and a coverage report will also be generated on codecov (see [here](https://app.codecov.io/gh/zhaotingchen/meer21cm/pull/130) for an example). **There is a rate limit for the runtime on Github Actions**. That is to say, you should always first check locally that the tests are good before pushing to a PR to trigger the tests on Github, so that we can avoid exceeding the limit quickly.
 
 ## Documentation
 When you write new functions and classes, they should be properly documented with docstrings. You can check how they will look in the documentation website by creating the website locally. In the `meer21cm` directory:
@@ -56,7 +56,7 @@ make html
 
 
 ## Caution
-- Avoid even tracking a large file. **Never commit** a change where **a large file** (>50MB) is added to the repo. This should be prohibited by `pre-commit` anyway, but just in case it is not set up properly you should be aware as well. If you have done so, you need to rewind back to the commit before that and start over. No, deleting it in a later commit will not fix it.
+- Avoid tracking a large file. **Never commit** a change where **a large file** (>50MB) is added to the repo. This should be prohibited by `pre-commit` anyway, but just in case it is not set up properly you should be aware as well. If you have done so, you need to rewind back to the commit before that and start over. No, deleting it in a later commit will not fix it.
 - **Never merge into `main` locally**. The only way `main` can be changed is through pull request and pull from remote.
 - Try not to break API, although it will happen since we are at early stages. For example, if the original code has a function `def func1(arg1=None)` and you changed it to `def func1(arg_1=None)`, it breaks API. That is because scripts using older versions of the code will stop working since `func1(arg1=something)` will return an error. `def func1(arg1=None,arg2=None)` is not breaking API for example, because `func1(arg1=something)` still works.
 - **Never let AI write unit tests**. The copilot/cursor AI autocomplete stuff is very useful (so are the agents), but one can easily become lazy and approve AI-generated changes that may be wrong. Avoid AI-designed code in unit test to make sure errors are caught.
