@@ -1190,6 +1190,26 @@ def dft_matrix(N, norm="backward"):
     return np.fft.fft(np.eye(N), norm=norm)
 
 
+def inv_fft_matrix(N, norm="backward"):
+    """
+    Generate the inverse DFT matrix for a given N.
+    The default is the backward normalization, which is the same as np.fft.fft.
+
+    Parameters
+    ----------
+        N: int
+            The size of the matrix.
+        norm: str, default "backward"
+            The normalization of the DFT matrix.
+
+    Returns
+    -------
+        inv_dft_mat: np.ndarray
+            The inverse DFT matrix.
+    """
+    return np.fft.ifft(np.eye(N), norm=norm)
+
+
 def find_block_id(filename):
     """
     Find the MeerKAT data block id from the filename.

@@ -17,10 +17,23 @@ def test_get_nd_slicer():
 
 
 def test_dft_matrix():
-    assert np.allclose(dft_matrix(10), np.fft.fft(np.eye(10)))
+    fft_mat = dft_matrix(10)
+    assert np.allclose(fft_mat, np.fft.fft(np.eye(10)))
     assert np.allclose(
         dft_matrix(10, norm="forward"), np.fft.fft(np.eye(10), norm="forward")
     )
+    rand = np.random.normal(size=10)
+    assert np.allclose(np.fft.fft(rand), fft_mat @ rand)
+
+
+def test_inv_fft_matrix():
+    inv_fft_mat = inv_fft_matrix(10)
+    assert np.allclose(inv_fft_mat, np.fft.ifft(np.eye(10)))
+    assert np.allclose(
+        inv_fft_matrix(10, norm="forward"), np.fft.ifft(np.eye(10), norm="forward")
+    )
+    rand = np.random.normal(size=10)
+    assert np.allclose(np.fft.ifft(rand), inv_fft_mat @ rand)
 
 
 def test_create_wcs_with_range():
