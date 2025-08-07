@@ -1190,7 +1190,7 @@ def dft_matrix(N, norm="backward"):
     return np.fft.fft(np.eye(N), norm=norm)
 
 
-def inv_fft_matrix(N, norm="backward"):
+def inv_dft_matrix(N, norm="backward"):
     """
     Generate the inverse DFT matrix for a given N.
     The default is the backward normalization, which is the same as np.fft.fft.

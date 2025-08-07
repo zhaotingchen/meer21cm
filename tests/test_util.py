@@ -26,11 +26,11 @@ def test_dft_matrix():
     assert np.allclose(np.fft.fft(rand), fft_mat @ rand)
 
 
-def test_inv_fft_matrix():
-    inv_fft_mat = inv_fft_matrix(10)
+def test_inv_dft_matrix():
+    inv_fft_mat = inv_dft_matrix(10)
     assert np.allclose(inv_fft_mat, np.fft.ifft(np.eye(10)))
     assert np.allclose(
-        inv_fft_matrix(10, norm="forward"), np.fft.ifft(np.eye(10), norm="forward")
+        inv_dft_matrix(10, norm="forward"), np.fft.ifft(np.eye(10), norm="forward")
     )
     rand = np.random.normal(size=10)
     assert np.allclose(np.fft.ifft(rand), inv_fft_mat @ rand)
