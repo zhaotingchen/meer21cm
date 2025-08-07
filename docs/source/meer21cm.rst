@@ -73,6 +73,14 @@ meer21cm.telescope module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.transfer module
+-------------------------
+
+.. automodule:: meer21cm.transfer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.util module
 --------------------
 
