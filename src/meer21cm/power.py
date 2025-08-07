@@ -1781,9 +1781,21 @@ def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
 
 
 def power_weights_renorm(weights1_in_real=None, weights2=None):
-    """
+    r"""
     Calculate the renormalization coefficient based on the weights
-    on the density field when calculating power spectrum
+    on the density field when calculating power spectrum.
+    The renormalization is defined as
+
+    .. math::
+        \frac{{N_{\rm grid}}} {\sum_{i} w_1(x_i) w_2(x_i)},
+
+    where :math:`N_{\rm grid}` is the number of grids in the box and
+    :math:`i` loops over all the grids.
+
+    Note that this renormaliszation corresponds to the diagonal
+    renormalisation matrix that does not change the window function convolution,
+    but only renormalises the sum of each row of the window function matrix.
+    See Chen (2025) [1] for more details.
 
     Parameters
     ----------
@@ -1797,6 +1809,11 @@ def power_weights_renorm(weights1_in_real=None, weights2=None):
     -------
         weights_norm: float.
            The renormalization coefficient.
+
+    References
+    ----------
+        [1] Chen, Z., 2025, "A quadratic estimator view of the transfer function correction in intensity mapping surveys",
+        https://ui.adsabs.harvard.edu/abs/2025MNRAS.542L...1C/abstract.
     """
     if weights1_in_real is None and weights2 is None:
         return 1.0
