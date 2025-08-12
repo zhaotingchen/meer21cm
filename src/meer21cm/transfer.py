@@ -1,5 +1,5 @@
 import numpy as np
-from meer21cm.util import pcaclean, dft_matrix, inv_dft_matrix
+from meer21cm.util import pca_clean, dft_matrix, inv_dft_matrix
 
 
 def fft_matrix(mat, norm="backward"):

@@ -213,56 +213,56 @@ def test_get_wcs_coor(test_wproj, test_wcs):
 def test_pcaclean():
     test_arr = np.random.normal(size=(10))
     with pytest.raises(Exception) as e_info:
-        pcaclean(test_arr, 1, return_analysis=True)
+        pca_clean(test_arr, 1, return_analysis=True)
     test_arr = np.random.normal(size=(200, 200, 10))
-    C, eignumb, eigenval, V = pcaclean(test_arr, 1, return_analysis=True)
+    C, eignumb, eigenval, V = pca_clean(test_arr, 1, return_analysis=True)
     assert (np.abs(C - np.eye((test_arr.shape[-1]))) < 0.1).mean() == 1
     test_arr = np.random.normal(size=(10, 200, 200))
     # test renorm
-    C, eignumb, eigenval, V = pcaclean(
+    C, eignumb, eigenval, V = pca_clean(
         test_arr,
         1,
         weights=2 * np.ones_like(test_arr),
         return_analysis=True,
         los_axis=0,
-        mean_centre=True,
+        mean_center=True,
     )
     assert C.shape == (10, 10)
     assert V.shape == (10, 10)
     assert (np.abs(C - np.eye((test_arr.shape[0]))) < 0.1).mean() == 1
     assert np.allclose(eignumb, np.linspace(1, 10, 10))
     assert np.std(eigenval) < 0.1
-    res_arr = pcaclean(
+    res_arr = pca_clean(
         test_arr,
         1,
         return_analysis=False,
         los_axis=0,
         weights=2 * np.ones_like(test_arr),
-        mean_centre=True,
+        mean_center=True,
     )
     assert res_arr.shape == test_arr.shape
     assert np.abs((res_arr).mean()) < 1e-3
-    res_arr, A_mat = pcaclean(
+    res_arr, A_mat = pca_clean(
         test_arr,
         1,
         return_analysis=False,
         los_axis=0,
-        mean_centre=True,
+        mean_center=True,
         return_A=True,
     )
-    res_arr = pcaclean(
+    res_arr = pca_clean(
         test_arr,
         1,
         return_analysis=False,
         los_axis=0,
         weights=2 * np.ones_like(test_arr),
-        mean_centre=True,
-        mean_centre_weights=np.ones_like(test_arr),
+        mean_center=True,
+        mean_center_weights=np.ones_like(test_arr),
     )
     assert res_arr.shape == test_arr.shape
     assert np.abs((res_arr).mean()) < 1e-3
     test_arr[:, :, :20] = np.nan
-    test_res, test_A = pcaclean(test_arr, 1, return_A=True, ignore_nan=True)
+    test_res, test_A = pca_clean(test_arr, 1, return_A=True, ignore_nan=True)
     # first 20 channels are nan
     assert np.isnan(test_A).sum() == 20
     assert np.allclose(test_res[:, :, :20], 0.0)
