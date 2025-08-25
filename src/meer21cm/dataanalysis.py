@@ -300,7 +300,7 @@ class Specification:
 
     def clean_cache(self, attr):
         """
-        Set the input attributes to None.
+        Set the attributes to None.
         This is used to clear the cache of the attributes.
         """
         for att in attr:

@@ -168,12 +168,13 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.has_resol = True
         if self.sampling_resol is None:
             self.has_resol = False
-        if self.sampling_resol == "auto":
-            self.sampling_resol = [
-                self.pix_resol_in_mpc,
-                self.pix_resol_in_mpc,
-                self.los_resol_in_mpc,
-            ]
+        if not isinstance(self.sampling_resol, Iterable):
+            if self.sampling_resol == "auto":
+                self.sampling_resol = [
+                    self.pix_resol_in_mpc,
+                    self.pix_resol_in_mpc,
+                    self.los_resol_in_mpc,
+                ]
         self.fog_profile = fog_profile
         self.kaiser_rsd = kaiser_rsd
         self._compensate = [None, None]  # for initialization

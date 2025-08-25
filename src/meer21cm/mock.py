@@ -36,7 +36,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 20 lines missing before adding in
+
 class MockSimulation(PowerSpectrum):
     """
     The class for generating mock intensity mapping data cube and galaxy catalogues for cross-correlation.
