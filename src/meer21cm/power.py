@@ -2309,6 +2309,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         kparabins=None,
         flat_sky=False,
         flat_sky_padding=[0, 0, 0],
+        k1dweights=None,
         **params,
     ):
         if seed is None:
@@ -2389,6 +2390,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.interlace_shift = interlace_shift
         self.flat_sky = flat_sky
         self.flat_sky_padding = flat_sky_padding
+        self.k1dweights = k1dweights
 
     @property
     def box_buffkick(self):
@@ -2607,6 +2609,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         if k1dbins is None:
             k1dbins = self.k1dbins
+        k1dweights = self.k1dweights
         if k1dweights is None:
             k1dweights = np.ones_like(self.k_mode)
         if isinstance(power3d, str):
