@@ -2609,7 +2609,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         if k1dbins is None:
             k1dbins = self.k1dbins
-        k1dweights = self.k1dweights
+        if k1dweights is None:
+            k1dweights = self.k1dweights
+        # if still None, use equal weights
         if k1dweights is None:
             k1dweights = np.ones_like(self.k_mode)
         if isinstance(power3d, str):
