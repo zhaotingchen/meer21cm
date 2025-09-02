@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meer21cm"
-version = "0.6.0"
+version = "0.7.0"
 authors = [
   { name="Zhaoting Chen", email="ztchenustc@gmail.com" },
 ]
@@ -17,7 +17,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    # due to halomod dependency
     "numpy",
     'scipy',
     "healpy",
@@ -26,6 +25,8 @@ dependencies = [
     'halomod',
     'katbeam@git+https://github.com/ska-sa/katbeam',
     "baccoemu",
+    "emcee",
+    "nautilus-sampler",
 ]
 
 
@@ -37,6 +38,7 @@ Issues = "https://github.com/zhaotingchen/meer21cm/issues"
 test = [
     "pytest",
     "pytest-cov",
+    "mpi4py",
 ]
 lint = [
     "black",
