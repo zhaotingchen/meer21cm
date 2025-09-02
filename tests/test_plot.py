@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from meer21cm.plot import *
-from meer21cm.util import create_wcs, pcaclean
+from meer21cm.util import create_wcs, pca_clean
 
 
 def test_plt(test_W, test_nu, test_wproj):
@@ -17,6 +17,6 @@ def test_plot_projected_map():
     wcs = create_wcs(ra_cr=0, dec_cr=-30, ngrid=[100, 200], resol=[0.1, 0.1])
     test_arr = np.random.normal(size=(100, 200, 200))
     test_arr[:, :, :20] = np.nan
-    test_res, test_A = pcaclean(test_arr, 1, return_A=True, ignore_nan=True)
+    test_res, test_A = pca_clean(test_arr, 1, return_A=True, ignore_nan=True)
     plot_projected_map(test_A, test_res, wcs)
     plt.close("all")
