@@ -168,13 +168,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.has_resol = True
         if self.sampling_resol is None:
             self.has_resol = False
-        if not isinstance(self.sampling_resol, Iterable):
-            if self.sampling_resol == "auto":
-                self.sampling_resol = [
-                    self.pix_resol_in_mpc,
-                    self.pix_resol_in_mpc,
-                    self.los_resol_in_mpc,
-                ]
+        if self.sampling_resol == "auto":
+            self.sampling_resol = [
+                self.pix_resol_in_mpc,
+                self.pix_resol_in_mpc,
+                self.los_resol_in_mpc,
+            ]
         self.fog_profile = fog_profile
         self.kaiser_rsd = kaiser_rsd
         self._compensate = [None, None]  # for initialization
@@ -1164,7 +1163,7 @@ class FieldPowerSpectrum(Specification):
         unitless_2=False,
         **params,
     ):
-        super().__init__(**params)
+        Specification.__init__(self, **params)
         self.field_1 = field_1
         self.field_2 = field_2
         self.weights_1 = weights_1
@@ -2189,8 +2188,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         Whether to renormalize the power spectrum of the second tracer by the weights.
     renorm_weights_cross: bool, default True
         Whether to renormalize the power spectrum of the cross-correlation by the weights.
-    corrtype: str, default None
-        The type of the correlation function to be computed.
     k1dbins: list of floats, default None
         The bin edges of k in Mpc-1 for the 1D power spectrum.
     kmode: float, default None
@@ -2278,7 +2275,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         renorm_weights_1=True,
         renorm_weights_2=True,
         renorm_weights_cross=True,
-        corrtype=None,
         k1dbins=None,
         kmode=None,
         mumode=None,
@@ -2334,7 +2330,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             weights_2=weights_grid_2,
             mean_center_2=mean_center_2,
             unitless_2=unitless_2,
-            corrtype=corrtype,
         )
         self.kmode = kmode
         self.mumode = mumode
