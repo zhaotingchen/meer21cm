@@ -25,4 +25,5 @@ core
 misc/*
 issues/*
 .coverage*
+!.coveragerc
 coverage.xml
