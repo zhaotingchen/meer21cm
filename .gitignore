@@ -24,3 +24,5 @@ core
 .DS_Store
 misc/*
 issues/*
+.coverage*
+coverage.xml
