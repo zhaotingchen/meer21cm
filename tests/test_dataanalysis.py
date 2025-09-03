@@ -177,6 +177,9 @@ def test_beam_update():
     assert ps._sigma_beam_ch_in_mpc is None
     s2 = ps.sigma_beam_ch_in_mpc
     assert np.allclose(2 * s1, s2)
+    # test single number input
+    ps.sigma_beam_ch = 2
+    assert np.allclose(ps.sigma_beam_ch_in_mpc, s2)
     ps.beam_unit = units.rad
     s3 = ps.sigma_beam_ch_in_mpc
     assert np.allclose(np.pi * s3 / 180, s2)

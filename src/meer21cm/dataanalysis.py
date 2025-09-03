@@ -354,12 +354,15 @@ class Specification:
     @property
     def sigma_beam_ch(self):
         """
-        The input beam size parameter sigma for each channel
+        The input beam size parameter sigma for each channel.
+        If one number is provided, it will be used for all channels.
         """
         return self._sigma_beam_ch
 
     @sigma_beam_ch.setter
     def sigma_beam_ch(self, value):
+        if isinstance(value, float):
+            value = np.ones(self.nu.size) * value
         self._sigma_beam_ch = value
         if "beam_dep_attr" in dir(self):
             self.clean_cache(self.beam_dep_attr)
