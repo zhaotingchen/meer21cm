@@ -9,6 +9,11 @@ instance as an input to :class:`meer21cm.transfer.TransferFunction`.
 The transfer function class then takes into account of the settings of the power spectrum instance,
 and perform mock simulations to estimate the numerical transfer function,
 keeping the consistency of the gridding, beam, and other settings.
+
+Finally note that, the transfer function calculation supports parallelisation using MPI,
+by using :class:`mpi4py.futures.MPIPoolExecutor`.
+The default installation of meer21cm does not include ``mpi4py``,
+and you need to configure MPI first (usually with openmpi or mpich), and then install ``mpi4py`` manually.
 """
 import numpy as np
 from meer21cm.util import pca_clean, dft_matrix, inv_dft_matrix
@@ -212,7 +217,25 @@ class TransferFunction:
     A class to perform transfer function analysis.
 
     By default, the transfer function is calculated by generating mock HI signal,
-    and perform PCA cleaning by injecting the mock HI signal into the data.
+    and perform PCA cleaning by injecting the mock HI signal into the data (unless
+    ``R_mat`` is provided, in which case no PCA is performed and R_mat is used to clean the injected data).
+    The transfer function is then calculated by dividing the 1D power spectrum of the cleaned data
+    by the 1D power spectrum of the mock data. A minimum example running 10 realizations:
+
+    .. code-block:: python
+        >>> tf = TransferFunction(ps, N_fg=3)
+        >>> tf1d_arr = tf.run(range(10), type="auto")
+        >>> np.array(tf1d_arr).mean((0,1)) # gives you the 1D transfer function
+
+    If ``type`` is ``"auto"``, the numerator is the **cross-correlation between cleaned HI mock and
+    the original HI mock** (and therefore the result is based on HI "auto" power),
+    and the denominator is the auto power of the original HI mock.
+    If ``type`` is ``"cross"``, the numerator is the cross-correlation between cleaned HI mock
+    and galaxy mock, and the denominator is the cross power of the original HI mock and galaxy mock.
+
+    Additionally, if ``type`` is ``"null"``, instead of running transfer function calculation,
+    no HI mock is generated, and only mock galaxy data is used to cross-correlate with the map
+    data as a null test.
 
     Parameters
     ----------
@@ -222,7 +245,41 @@ class TransferFunction:
             The number of eigenmodes for PCA cleaning.
         R_mat: np.ndarray, default None
             The PCA matrix. If not provided, it will be calculated from the data.
-            If provided, no map injection
+            If provided, no map injection is performed and the cleaning uses this matrix.
+        uncleaned_data: np.ndarray, default None
+            The uncleaned data, which the mock HI signal is to be injected into.
+            If not provided, the mock HI signal is injected into ``ps.data``.
+            Note that this can be **wrong** if ``ps.data`` is already overridden by the residual map.
+            In that case, you should provide the original map.
+        highres_sim: int, default 3
+            The mock field will be gridded to a high resolution sky map,
+            with the resolution specified by this integer times the pixel resolution, and then
+            down-sampled to the pixel resolution.
+        upres_transverse: int, default 4
+            The mock field is first generated in a rectangular box.
+            This is the up-sampling factor of the box comparing to the pixel resolution in the transverse direction.
+        upres_radial: int, default 4
+            The up-sampling factor in the radial direction comparing to the frequency resolution.
+        mean_center_map: bool, default True
+            Whether to mean center the map data for PCA cleaning.
+        pca_map_weights: np.ndarray, default None
+            If mean centering is performed, this is the weights for the mean calculation.
+            Also used to weight the data for covariance calculation for PCA eigendecomposition.
+        parallel_plane: bool, default True
+            Whether to simulate the mock field in the parallel-plane limit (i.e. k_z = k_parallel).
+            Only used if ``rsd_from_field`` is True, otherwise parallel-plane is hard-coded to True.
+        rsd_from_field: bool, default False
+            Whether to generate the RSD effect at field level. If False, the RSD effect is generated at power spectrum level.
+        discrete_source_dndz: function, default np.ones_like
+            The redshift distribution of the discrete tracer sources.
+            Must be a function of redshift.
+            Note that the overall number of discrete sources is set to ``ps.ra_gal.size``, so
+            only the shape of the dndz is used, not the normalization.
+        pool: str, default "multiprocessing"
+            The pool to use for parallelisation. Can be "multiprocessing" or "mpi".
+        num_process: int, default None
+            The number of processes to use for parallelisation.
+            If not provided, the number of processes is set to the number of cores available.
     """
 
     def __init__(
@@ -262,6 +319,23 @@ class TransferFunction:
         self.R_mat = R_mat
 
     def get_mock_instance_attr_dict(self, seed):
+        """
+        Generate the attribute dictionary for the mock instance.
+        It reads the attributes from the input power spectrum instance,
+        and then sets a few mock-specific attributes specified in the input parameters
+        of :class:`meer21cm.transfer.TransferFunction`.
+        The seed attribute is given at the input of this function.
+
+        Parameters
+        ----------
+            seed: int
+                The seed for the mock instance.
+
+        Returns
+        -------
+            attr_dict: dict
+                The attribute dictionary for the mock instance.
+        """
         attr_dict = {}
         for attr in required_attrs:
             attr_dict[attr] = getattr(self.ps, attr)
@@ -284,6 +358,27 @@ class TransferFunction:
         return_power_3d=False,
         return_power_1d=False,
     ):
+        """
+        Generate a list of arguments for parallelisation of the null test runs.
+        This list is then used for ``pool.starmap``.
+
+        Parameters
+        ----------
+            seed_list: list
+                The list of seeds for the mock instances.
+            return_power_3d: bool, default False
+                Whether to return the 3D power spectrum of the null test.
+            return_power_1d: bool, default False
+                Whether to return the 1D power spectrum of the null test.
+                Note that for null test, the result itself is the 1D power, so this
+                is a dummy argument to keep consistency with
+                ``cross`` and ``auto`` runs.
+
+        Returns
+        -------
+            arg_list: list
+                The list of arguments for the parallelisation.
+        """
         arg_list = []
         for seed in seed_list:
             mock_attr_dict = self.get_mock_instance_attr_dict(seed)
@@ -306,6 +401,25 @@ class TransferFunction:
     def get_arg_list_for_parallel_cross(
         self, seed_list, return_power_3d=False, return_power_1d=False
     ):
+        """
+        Generate a list of arguments for parallelisation of the cross-correlation runs
+        (i.e. the transfer function is calculated between mock HI and mock galaxy).
+        This list is then used for ``pool.starmap``.
+
+        Parameters
+        ----------
+            seed_list: list
+                The list of seeds for the mock instances.
+            return_power_3d: bool, default False
+                Whether to return the 3D power spectrum of the cross-correlation.
+            return_power_1d: bool, default False
+                Whether to return the 1D power spectrum of the cross-correlation.
+
+        Returns
+        -------
+            arg_list: list
+                The list of arguments for the parallelisation.
+        """
         arg_list = []
         for seed in seed_list:
             mock_attr_dict = self.get_mock_instance_attr_dict(seed)
@@ -333,6 +447,25 @@ class TransferFunction:
     def get_arg_list_for_parallel_auto(
         self, seed_list, return_power_3d=False, return_power_1d=False
     ):
+        """
+        Generate a list of arguments for parallelisation of the auto-correlation runs
+        (i.e. the transfer function is calculated between cleaned mock HI and original mock HI).
+        This list is then used for ``pool.starmap``.
+
+        Parameters
+        ----------
+            seed_list: list
+                The list of seeds for the mock instances.
+            return_power_3d: bool, default False
+                Whether to return the 3D power spectrum of the auto-correlation.
+            return_power_1d: bool, default False
+                Whether to return the 1D power spectrum of the auto-correlation.
+
+        Returns
+        -------
+            arg_list: list
+                The list of arguments for the parallelisation.
+        """
         arg_list = []
         for seed in seed_list:
             mock_attr_dict = self.get_mock_instance_attr_dict(seed)
@@ -358,6 +491,32 @@ class TransferFunction:
     def run(
         self, seed_list, type="cross", return_power_3d=False, return_power_1d=False
     ):
+        """
+        Run the transfer function calculation.
+
+        Parameters
+        ----------
+            seed_list: list
+                The list of seeds for the mock instances.
+            type: str, default "cross"
+                The type of transfer function calculation to run.
+                Can be "cross", "auto", or "null".
+            return_power_3d: bool, default False
+                Whether to return the 3D power spectrum of the transfer function.
+            return_power_1d: bool, default False
+                Whether to return the 1D power spectrum of the transfer function.
+
+        Returns
+        -------
+            results_arr: list
+                The list of results for the transfer function calculation, with
+                each element being a sublist for the result of one seed.
+                The first element of each sublist is the transfer function.
+                If ``return_power_3d`` is True, the second element is the 3D power spectrum of the original mock data,
+                and the third element is the 3D power spectrum of the cleaned mock data.
+                If ``return_power_1d`` is True, the next element is the 1D power spectrum of the original mock data,
+                and the next element after that is the 1D power spectrum of the cleaned mock data.
+        """
         if type == "cross":
             run_func = run_tf_calculation_cross
         elif type == "auto":
