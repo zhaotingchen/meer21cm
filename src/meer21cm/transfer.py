@@ -1,8 +1,21 @@
-from time import thread_time_ns
+"""
+This module contains the transfer function analysis class and related functions.
+
+In data analysis, you should have already used :class:`meer21cm.power.PowerSpectrum`
+to calculate the power spectrum of the data,
+or :class:`meer21cm.mock.MockSimulation` to generate the mock data for power spectrum estimation.
+In that case, you can pass the :class:`meer21cm.power.PowerSpectrum` or :class:`meer21cm.mock.MockSimulation`
+instance as an input to :class:`meer21cm.transfer.TransferFunction`.
+The transfer function class then takes into account of the settings of the power spectrum instance,
+and perform mock simulations to estimate the numerical transfer function,
+keeping the consistency of the gridding, beam, and other settings.
+"""
 import numpy as np
 from meer21cm.util import pca_clean, dft_matrix, inv_dft_matrix
 from meer21cm.mock import MockSimulation
 from multiprocessing import Pool
+from meer21cm.power import PowerSpectrum
+from typing import Callable
 
 
 def fft_matrix(mat, norm="backward"):
@@ -197,25 +210,37 @@ required_attrs = [
 class TransferFunction:
     """
     A class to perform transfer function analysis.
+
+    By default, the transfer function is calculated by generating mock HI signal,
+    and perform PCA cleaning by injecting the mock HI signal into the data.
+
+    Parameters
+    ----------
+        ps: :class:`meer21cm.power.PowerSpectrum`
+            The power spectrum instance.
+        N_fg: int
+            The number of eigenmodes for PCA cleaning.
+        R_mat: np.ndarray, default None
+            The PCA matrix. If not provided, it will be calculated from the data.
+            If provided, no map injection
     """
 
     def __init__(
         self,
-        ps,
-        N_fg,
-        R_mat=None,
-        uncleaned_data=None,
-        highres_sim=3,
-        upres_transverse=4,
-        upres_radial=4,
-        mean_center_map=True,
-        pca_map_weights=None,
-        parallel_plane=True,
-        rsd_from_field=False,
-        discrete_source_dndz=np.ones_like,
-        recalculate_pca_with_injection=True,
-        pool="multiprocessing",
-        num_process=None,
+        ps: PowerSpectrum,
+        N_fg: int,
+        R_mat: np.ndarray | None = None,
+        uncleaned_data: np.ndarray | None = None,
+        highres_sim: int = 3,
+        upres_transverse: int = 4,
+        upres_radial: int = 4,
+        mean_center_map: bool = True,
+        pca_map_weights: np.ndarray | None = None,
+        parallel_plane: bool = True,
+        rsd_from_field: bool = False,
+        discrete_source_dndz: Callable = np.ones_like,
+        pool: str = "multiprocessing",
+        num_process: int | None = None,
     ):
         self.ps = ps
         self.N_fg = N_fg
@@ -232,7 +257,6 @@ class TransferFunction:
         if uncleaned_data is None:
             uncleaned_data = ps.data
         self.uncleaned_data = uncleaned_data
-        self.recalculate_pca_with_injection = recalculate_pca_with_injection
         self.pool = pool
         self.num_process = num_process
         self.R_mat = R_mat
@@ -295,7 +319,6 @@ class TransferFunction:
                     self.ps.weights_field_2,
                     self.ps.weights_grid_2,
                     self.ps.k1dweights,
-                    self.recalculate_pca_with_injection,
                     self.N_fg,
                     self.pca_map_weights,
                     self.mean_center_map,
@@ -321,7 +344,6 @@ class TransferFunction:
                     self.ps.weights_field_1,
                     self.ps.weights_grid_1,
                     self.ps.k1dweights,
-                    self.recalculate_pca_with_injection,
                     self.N_fg,
                     self.pca_map_weights,
                     self.mean_center_map,
@@ -371,7 +393,6 @@ def run_tf_calculation_cross(
     weights_field_2,
     weights_grid_2,
     k_sel_3d_to_1d,
-    recalculate_pca_with_injection,
     N_fg,
     pca_map_weights,
     mean_center_map,
@@ -401,9 +422,7 @@ def run_tf_calculation_cross(
     if return_power_3d:
         power_3d_uncleaned = mock.cross_power_3d
     # perform PCA cleaning
-    map_to_clean = mock.data
-    if recalculate_pca_with_injection:
-        map_to_clean = uncleaned_data + mock.data
+    map_to_clean = uncleaned_data + mock.data
     R_mat_mock = R_mat
     if R_mat is None:
         R_mat_mock = get_pca_matrix(
@@ -438,7 +457,6 @@ def run_tf_calculation_auto(
     weights_field_1,
     weights_grid_1,
     k_sel_3d_to_1d,
-    recalculate_pca_with_injection,
     N_fg,
     pca_map_weights,
     mean_center_map,
@@ -463,9 +481,7 @@ def run_tf_calculation_auto(
     if return_power_3d:
         power_3d_uncleaned = mock.auto_power_3d_1
     # perform PCA cleaning
-    map_to_clean = mock.data
-    if recalculate_pca_with_injection:
-        map_to_clean = uncleaned_data + mock.data
+    map_to_clean = uncleaned_data + mock.data
     R_mat_mock = R_mat
     if R_mat is None:
         R_mat_mock = get_pca_matrix(
