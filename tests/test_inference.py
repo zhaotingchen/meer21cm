@@ -33,6 +33,25 @@ def test_emcee_run():
         ps_dict=ps_dict,
         data_vector=data_vector,
         data_covariance=data_covariance,
+        params_name=["tracer_bias_1", "sigma_v_1"],
+        params_prior=[
+            ("uniform", 0.5, 2.5),
+            ("gaussian", 100, 10),
+        ],
+        observables=["hi-auto", "cross", "gg-auto"],
+        nwalkers=2,
+        nsteps=1,
+        nthreads=1,
+        mp_backend="multiprocessing",
+        save=True,
+        save_filename="test_fit.h5",
+        save_model_blobs=True,
+    )
+    assert sampler.log_prior(np.array([1.5, 100])) == 0.0
+    sampler = SamplerEmcee(
+        ps_dict=ps_dict,
+        data_vector=data_vector,
+        data_covariance=data_covariance,
         params_name=["tracer_bias_1"],
         params_prior=[
             ("uniform", 0.5, 2.5),
