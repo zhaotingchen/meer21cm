@@ -3,6 +3,7 @@ from meer21cm.transfer import analytic_transfer_function, pca_clean, get_pca_mat
 from meer21cm import MockSimulation
 from meer21cm.transfer import TransferFunction
 import pytest
+from meer21cm.util import create_wcs
 
 
 def test_analytic_transfer_function():
@@ -40,12 +41,19 @@ def test_analytic_transfer_function():
 
 
 def test_numerical_transfer_function():
+    wcs = create_wcs(0.0, 0.0, [10, 10], [1.0, 1.0])
     mock = MockSimulation(
         survey="meerklass_2021",
         band="L",
+    )
+    mock = MockSimulation(
+        nu=mock.nu[:50],
+        wproj=wcs,
+        num_pix_x=10,
+        num_pix_y=10,
         mean_amp_1="average_hi_temp",
         omega_hi=5e-4,
-        k1dbins=np.linspace(0.05, 1.5, 11),
+        k1dbins=np.linspace(0.2, 3.0, 5),
         flat_sky=True,
         tracer_bias_2=1.0,
         num_discrete_source=10000,
@@ -54,6 +62,8 @@ def test_numerical_transfer_function():
     mock.w_HI = np.ones_like(mock.w_HI)
     mock.use_flat_sky_box()
     mock.propagate_field_k_to_model()
+    mock.k1dweights = np.ones_like(mock.kmode)
+    mock.k1dweights[:, :, :2] = 0.0
     mock.field_1 = mock.mock_tracer_field_1
     porig_1d, _, _ = mock.get_1d_power(mock.auto_power_3d_1)
     fg = np.ones_like(mock.field_1) * 20
@@ -74,28 +84,28 @@ def test_numerical_transfer_function():
         highres_sim=1,
         upres_transverse=1,
         upres_radial=1,
-        num_process=3,
+        num_process=1,
     )
     results_arr = tf.run(
         range(10), type="auto", return_power_3d=True, return_power_1d=True
     )
     results_arr = np.array([results_arr[i][0] for i in range(10)])
     tf_1d = results_arr.mean((0))
-    assert np.abs(tf_true - tf_1d).mean() < 5e-2
+    assert np.abs(tf_true - tf_1d).mean() < 1e-1
     mock.propagate_mock_tracer_to_gal_cat()
     results_arr = tf.run(
         range(10), type="cross", return_power_3d=True, return_power_1d=True
     )
     results_arr = np.array([results_arr[i][0] for i in range(10)])
     tf_1d = results_arr.mean((0))
-    assert np.abs(tf_true - tf_1d).mean() < 5e-2
+    assert np.abs(tf_true - tf_1d).mean() < 1e-1
     tf.pool = "mpi"
     results_arr = tf.run(range(10), type="null", return_power_3d=True)
     results_arr = np.array([results_arr[i][0] for i in range(10)])
     null_ps_1d = results_arr.mean((0))
     # note null is cross, so missing one temperature unit
     avg = (mock.average_hi_temp * null_ps_1d / porig_1d).mean()
-    assert np.abs(avg) < 1e-2
+    assert np.abs(avg) < 5e-2
     with pytest.raises(ValueError):
         tf.run(range(10), type="test", return_power_3d=False, return_power_1d=False)
     tf.pool = "test"

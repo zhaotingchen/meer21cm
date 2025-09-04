@@ -20,6 +20,7 @@ Enhancements
 Bugfixes
 ++++++++
 * fix a bug in FPS initialization
+* fix a bug in incorrect sigma_z usage in model power calculation
 
 v0.6.1
 ------
