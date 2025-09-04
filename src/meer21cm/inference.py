@@ -209,21 +209,24 @@ class SamplerEmcee(SamplerBase):
     def ndim(self):
         return len(self.params_name)
 
-    def run(self, resume: bool, progress: bool = True):
+    def run(
+        self, resume: bool, progress: bool = True, start_coord: np.ndarray | None = None
+    ):
         if resume and self.save:
             start_coord = None
         else:
             init_pos = np.array(
                 [self.ps_dict[param_name] for param_name in self.params_name]
             )
-            # TODO: need smarter init position
-            start_coord = (
-                1 + np.random.uniform(-1e-2, 1e-2, size=(self.nwalkers, self.ndim))
-            ) * init_pos[None, :] + np.random.uniform(
-                0, 1e-2, size=(self.nwalkers, self.ndim)
-            ) * (
-                np.abs(init_pos[None, :]) < 1e-2
-            )
+            # TODO: need smarter auto init position
+            if start_coord is None:
+                start_coord = (
+                    1 + np.random.uniform(-1e-2, 1e-2, size=(self.nwalkers, self.ndim))
+                ) * init_pos[None, :] + np.random.uniform(
+                    0, 1e-2, size=(self.nwalkers, self.ndim)
+                ) * (
+                    np.abs(init_pos[None, :]) < 1e-2
+                )
         nsteps = self.nsteps
         if self.save:
             backend = emcee.backends.HDFBackend(self.save_filename)
@@ -266,6 +269,11 @@ class SamplerEmcee(SamplerBase):
         if sampler is None:
             return self.get_backend().get_blobs()
         return sampler.get_blobs()
+
+    def get_log_prob(self, sampler: emcee.EnsembleSampler | None = None) -> np.ndarray:
+        if sampler is None:
+            return self.get_backend().get_log_prob()
+        return sampler.get_log_prob()
 
 
 class SamplerNautilus(SamplerBase):

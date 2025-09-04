@@ -74,6 +74,8 @@ def test_emcee_run():
     assert points.shape == (1, 4, 2)
     blobs = sampler.get_blobs()
     assert blobs.shape == (1, 4, 3, 10)
+    log_prob = sampler.get_log_prob()
+    assert log_prob.shape == (1, 4)
     sampler.save = False
     sampler.mp_backend = "mpi"
     sampler.nsteps = 1
@@ -86,6 +88,8 @@ def test_emcee_run():
     assert points.shape == (1, 4, 2)
     blobs = sampler.get_blobs(mcmc)
     assert blobs.shape == (1, 4, 3, 10)
+    log_prob = sampler.get_log_prob(mcmc)
+    assert log_prob.shape == (1, 4)
     os.remove("test_fit.h5")
 
 
