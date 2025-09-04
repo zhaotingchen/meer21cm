@@ -78,9 +78,7 @@ jobs:
         export PATH="$HOME/miniconda/bin:$PATH"
         source activate ${ENV_NAME}
         #pytest --cov-config=.coveragerc --cov=meer21cm tests/ --cov-report json:cov.json
-        pytest --cov-config=.coveragerc --cov=meer21cm tests/test_transfer.py --cov-report json:cov.json
-        coverage combine
-        coverage xml
+        pytest --cov-config=.coveragerc --cov=meer21cm tests/test_transfer.py --cov-report xml:coverage.xml
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4.0.1
       with:
