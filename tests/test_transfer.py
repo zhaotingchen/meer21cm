@@ -84,7 +84,7 @@ def test_numerical_transfer_function():
         highres_sim=1,
         upres_transverse=1,
         upres_radial=1,
-        num_process=1,
+        num_process=3,
     )
     results_arr = tf.run(
         range(10), type="auto", return_power_3d=True, return_power_1d=True
