@@ -37,6 +37,7 @@ import meer21cm.telescope as telescope
 from astropy.cosmology import w0waCDM, Planck18
 import inspect
 import logging
+import numbers
 
 logger = logging.getLogger(__name__)
 
@@ -361,8 +362,8 @@ class Specification:
 
     @sigma_beam_ch.setter
     def sigma_beam_ch(self, value):
-        if isinstance(value, float):
-            value = np.ones(self.nu.size) * value
+        if isinstance(value, numbers.Number):
+            value = np.ones(self.nu.size) * float(value)
         self._sigma_beam_ch = value
         if "beam_dep_attr" in dir(self):
             self.clean_cache(self.beam_dep_attr)
