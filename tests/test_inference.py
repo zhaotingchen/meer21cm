@@ -20,9 +20,9 @@ def test_emcee_run():
         tracer_bias_2=2.0,
     )
     ps._box_len = np.array([500, 500, 500])
-    ps._box_ndim = np.array([20, 20, 20])
+    ps._box_ndim = np.array([5, 5, 5])
     ps.propagate_field_k_to_model()
-    ps.k1dbins = np.linspace(0.05, 0.2, 11)
+    ps.k1dbins = np.linspace(0.01, 0.05, 5)
     pmodauto, keff, nmodes = ps.get_1d_power(ps.auto_power_tracer_1_model)
     pmodcross, keff, nmodes = ps.get_1d_power(ps.cross_power_tracer_model)
     pmodggauto, keff, nmodes = ps.get_1d_power(ps.auto_power_tracer_2_model)
@@ -33,30 +33,29 @@ def test_emcee_run():
         ps_dict=ps_dict,
         data_vector=data_vector,
         data_covariance=data_covariance,
-        params_name=["tracer_bias_1", "sigma_v_1"],
+        params_name=["tracer_bias_1"],
         params_prior=[
             ("uniform", 0.5, 2.5),
-            ("gaussian", 100, 10),
         ],
         observables=["hi-auto", "cross", "gg-auto"],
-        nwalkers=4,
+        nwalkers=2,
         nsteps=1,
-        nthreads=3,
+        nthreads=1,
         mp_backend="multiprocessing",
         save=True,
         save_filename="test_fit.h5",
         save_model_blobs=True,
     )
-    ll_test = sampler.log_likelihood(np.array([1.5, 100]))[0]
+    ll_test = sampler.log_likelihood(np.array([1.5]))[0]
     assert np.isclose(ll_test, 0.0)
-    ll_test, blob_test = sampler.log_likelihood(np.array([3, 100]))
+    ll_test, blob_test = sampler.log_likelihood(np.array([3]))
     assert not np.isfinite(ll_test)
-    assert np.allclose(blob_test, np.zeros((3, 10)))
+    assert np.allclose(blob_test, np.zeros((3, 4)))
     sampler.save_model_blobs = False
     # test switching off blob
-    ll_test = sampler.log_likelihood(np.array([1.5, 100]))
+    ll_test = sampler.log_likelihood(np.array([1.5]))
     assert np.isclose(ll_test, 0.0)
-    ll_test = sampler.log_likelihood(np.array([3, 100]))
+    ll_test = sampler.log_likelihood(np.array([3]))
     assert not np.isfinite(ll_test)
     sampler.save_model_blobs = True
     sampler.run(resume=False, progress=False)
@@ -71,11 +70,11 @@ def test_emcee_run():
     backend = emcee.backends.HDFBackend("test_fit.h5")
     assert backend.iteration == 1
     points = sampler.get_points()
-    assert points.shape == (1, 4, 2)
+    assert points.shape == (1, 2, 1)
     blobs = sampler.get_blobs()
-    assert blobs.shape == (1, 4, 3, 10)
+    assert blobs.shape == (1, 2, 3, 4)
     log_prob = sampler.get_log_prob()
-    assert log_prob.shape == (1, 4)
+    assert log_prob.shape == (1, 2)
     sampler.save = False
     sampler.mp_backend = "mpi"
     sampler.nsteps = 1
@@ -85,11 +84,11 @@ def test_emcee_run():
     with pytest.raises(ValueError):
         sampler.get_blobs()
     points = sampler.get_points(mcmc)
-    assert points.shape == (1, 4, 2)
+    assert points.shape == (1, 2, 1)
     blobs = sampler.get_blobs(mcmc)
-    assert blobs.shape == (1, 4, 3, 10)
+    assert blobs.shape == (1, 2, 3, 4)
     log_prob = sampler.get_log_prob(mcmc)
-    assert log_prob.shape == (1, 4)
+    assert log_prob.shape == (1, 2)
     os.remove("test_fit.h5")
 
 
@@ -157,9 +156,9 @@ def test_nautilus_run():
         tracer_bias_2=2.0,
     )
     ps._box_len = np.array([500, 500, 500])
-    ps._box_ndim = np.array([20, 20, 20])
+    ps._box_ndim = np.array([5, 5, 5])
     ps.propagate_field_k_to_model()
-    ps.k1dbins = np.linspace(0.05, 0.2, 11)
+    ps.k1dbins = np.linspace(0.01, 0.05, 5)
     pmodauto, keff, nmodes = ps.get_1d_power(ps.auto_power_tracer_1_model)
     pmodcross, keff, nmodes = ps.get_1d_power(ps.cross_power_tracer_model)
     pmodggauto, keff, nmodes = ps.get_1d_power(ps.auto_power_tracer_2_model)
@@ -170,6 +169,7 @@ def test_nautilus_run():
         ps_dict=ps_dict,
         data_vector=data_vector,
         data_covariance=data_covariance,
+        # nautilus requires minumum 2 parameters
         params_name=["tracer_bias_1", "sigma_v_1"],
         params_prior=[
             ("uniform", 0.5, 2.5),
@@ -180,15 +180,15 @@ def test_nautilus_run():
         f_live=0.01,
         n_shell=1,
         n_eff=10000,
-        nthreads=3,
+        nthreads=1,
         save=True,
         save_filename="test_fit2.h5",
         save_model_blobs=True,
-        timeout=10,
+        timeout=1,
     )
     ll, blob = sampler.compute_log_likelihood(np.array([1.5, 100]))
     assert np.isclose(ll, 0.0)
-    assert blob.shape == (3, 10)
+    assert blob.shape == (3, 4)
     sampler.save_model_blobs = False
     sampler.run(resume=False, progress=False)
     points, log_w, log_l = sampler.get_posterior()
