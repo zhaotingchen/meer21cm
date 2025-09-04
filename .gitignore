@@ -27,3 +27,5 @@ issues/*
 .coverage*
 !.coveragerc
 coverage.xml
+*.npy
+!src/meer21cm/data/*.npy
