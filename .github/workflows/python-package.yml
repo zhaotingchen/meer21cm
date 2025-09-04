@@ -15,6 +15,7 @@ jobs:
       ENV_NAME: tests
       PYTHON: ${{ matrix.python-version }}
       OS: ${{ matrix.os }}
+      ACTIONS_RUNNER_DEBUG: true
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
