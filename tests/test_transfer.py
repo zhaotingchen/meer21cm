@@ -1,3 +1,6 @@
+import multiprocessing as mp
+
+mp.set_start_method("spawn", force=True)
 import numpy as np
 from meer21cm.transfer import analytic_transfer_function, pca_clean, get_pca_matrix
 from meer21cm import MockSimulation

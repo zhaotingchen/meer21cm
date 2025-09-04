@@ -1,3 +1,6 @@
+import multiprocessing as mp
+
+mp.set_start_method("spawn", force=True)
 from meer21cm import PowerSpectrum
 import numpy as np
 from meer21cm.inference import (
