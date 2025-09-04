@@ -529,6 +529,24 @@ def test_ModelPowerSpectrum(fog_profile):
     assert model.gridding_compensation() == 1.0
 
 
+def test_sigma_z_model():
+    model = ModelPowerSpectrum(tracer_bias_2=1.0)
+    model.mumode = np.ones_like(model.kmode)
+    matter_ps = model.auto_power_matter_model
+    model.sigma_z_1 = 1e4
+    matter_ps_2 = model.auto_power_matter_model
+    tracer_ps_1_2 = model.auto_power_tracer_1_model
+    # should not affect the matter power
+    assert np.allclose(matter_ps_2, matter_ps)
+    # tracer power should be almost 0
+    assert np.allclose(tracer_ps_1_2, 0)
+    model.sigma_z_2 = 1e4
+    model.sigma_z_1 = 0
+    assert np.all(model.auto_power_tracer_1_model > 0)
+    assert np.allclose(model.auto_power_tracer_2_model, 0)
+    assert np.allclose(model.cross_power_tracer_model, 0)
+
+
 def test_gaussian_beam_attenuation():
     # small scale goes to almost zero
     Bbeam_test = gaussian_beam_attenuation(100, 1)

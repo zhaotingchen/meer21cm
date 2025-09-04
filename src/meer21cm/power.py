@@ -889,14 +889,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self,
         power_in_real_space,
         beta1,
-        sigmav_1,
+        sigma_v_1,
+        sigma_z_1,
         beta2=None,
-        sigmav_2=None,
+        sigma_v_2=None,
+        sigma_z_2=None,
         r=1.0,
         mumode=None,
     ):
         """
         Calculate the redshift space power spectrum.
+        If properties of the second tracer are not set,
+        they will be set to the same as the first tracer so
+        the result will be the auto power spectrum.
 
         Parameters
         ----------
@@ -905,12 +910,16 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
         beta1: float
             The growth rate over bias of the first tracer.
-        sigmav_1: float
+        sigma_v_1: float
             The velocity dispersion of the first tracer.
+        sigma_z_1: float
+            The redshift dispersion of the first tracer.
         beta2: float, default None
             The growth rate over bias of the second tracer.
-        sigmav_2: float, default None
+        sigma_v_2: float, default None
             The velocity dispersion of the second tracer.
+        sigma_z_2: float, default None
+            The redshift dispersion of the second tracer.
         r: float, default 1.0
             The correlation coefficient between the two tracers.
         mumode: np.ndarray, default None
@@ -925,15 +934,17 @@ class ModelPowerSpectrum(CosmologyCalculator):
             mumode = self.mumode
         if beta2 is None:
             beta2 = beta1
-        if sigmav_2 is None:
-            sigmav_2 = sigmav_1
+        if sigma_v_2 is None:
+            sigma_v_2 = sigma_v_1
+        if sigma_z_2 is None:
+            sigma_z_2 = sigma_z_1
         power_in_redshift_space = (
             power_in_real_space
             * (r + (beta1 + beta2) * mumode**2 + beta1 * beta2 * mumode**4)
-            * self.fog_term(self.deltav_to_deltar(sigmav_1), mumode=mumode)
-            * self.fog_term(self.deltav_to_deltar(sigmav_2), mumode=mumode)
-            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_1), mumode=mumode)
-            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_2), mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigma_v_1), mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigma_v_2), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(sigma_z_1), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(sigma_z_2), mumode=mumode)
         )
         return power_in_redshift_space
 
@@ -948,6 +959,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self._auto_power_matter_model = self.cal_rsd_power(
                 pk3d_mm_r,
                 beta_m,
+                0.0,
                 0.0,
             )
         else:
@@ -975,6 +987,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 pk3d_tt_r,
                 beta_i,
                 getattr(self, "sigma_v_" + str(i)),
+                getattr(self, "sigma_z_" + str(i)),
             )
         else:
             power_noobs_i = pk3d_tt_r
@@ -1055,9 +1068,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
             result = self.cal_rsd_power(
                 pk3d_tt_r,
                 beta1=beta_1,
-                sigmav_1=self.sigma_v_1,
+                sigma_v_1=self.sigma_v_1,
+                sigma_z_1=self.sigma_z_1,
                 beta2=beta_2,
-                sigmav_2=self.sigma_v_2,
+                sigma_v_2=self.sigma_v_2,
+                sigma_z_2=self.sigma_z_2,
                 r=self.cross_coeff,
             )
         else:
