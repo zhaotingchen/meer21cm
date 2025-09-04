@@ -163,7 +163,7 @@ def test_transfer_function_value():
     for arg in arglist:
         results_arr.append(run_tf_calculation_auto(*arg))
     results_arr = np.array([results_arr[i][0] for i in range(10)])
-    tf_1d = results_arr.mean((0))
+    tf_1d = np.median(results_arr, axis=0)
     assert np.abs(tf_true - tf_1d).mean() < 1e-1
     mock.propagate_mock_tracer_to_gal_cat()
     arglist = tf.get_arg_list_for_parallel_cross(
@@ -173,14 +173,14 @@ def test_transfer_function_value():
     for arg in arglist:
         results_arr.append(run_tf_calculation_cross(*arg))
     results_arr = np.array([results_arr[i][0] for i in range(10)])
-    tf_1d = results_arr.mean((0))
+    tf_1d = np.median(results_arr, axis=0)
     assert np.abs(tf_true - tf_1d).mean() < 1e-1
     arglist = tf.get_arg_list_for_parallel_null(range(10), return_power_3d=True)
     results_arr = []
     for arg in arglist:
         results_arr.append(run_null_test(*arg))
     results_arr = np.array([results_arr[i][0] for i in range(10)])
-    null_ps_1d = results_arr.mean((0))
+    null_ps_1d = np.median(results_arr, axis=0)
     # note null is cross, so missing one temperature unit
     avg = (mock.average_hi_temp * null_ps_1d / porig_1d).mean()
     assert np.abs(avg) < 5e-2
