@@ -223,6 +223,7 @@ class TransferFunction:
     by the 1D power spectrum of the mock data. A minimum example running 10 realizations:
 
     .. code-block:: python
+
         >>> tf = TransferFunction(ps, N_fg=3)
         >>> tf1d_arr = tf.run(range(10), type="auto")
         >>> np.array(tf1d_arr).mean((0,1)) # gives you the 1D transfer function
@@ -494,6 +495,27 @@ class TransferFunction:
         """
         Run the transfer function calculation.
 
+        Note that, ``run`` automatically uses a parallel pool to loop over the ``seed_list``.
+        If you believe the parallel behaviour is not as expected,
+        you can manually extract the argument list and map the function yourself.
+        For example:
+        .. code-block:: python
+
+        >>> tf = TransferFunction(ps, N_fg=3)
+        >>> tf1d_arr = tf.run(range(10), type="auto")
+
+        is the same as:
+        .. code-block:: python
+
+        >>> tf = TransferFunction(ps, N_fg=3)
+        >>> arg_list = tf.get_arg_list_for_parallel_auto(range(10))
+        >>> tf1d_arr = []
+        >>> with Pool(tf.num_process) as pool:
+        >>>     for result_i in pool.starmap(run_tf_calculation_auto, arg_list):
+        >>>         tf1d_arr.append(result_i)
+
+
+
         Parameters
         ----------
             seed_list: list
@@ -560,6 +582,50 @@ def run_tf_calculation_cross(
     return_power_3d=False,
     return_power_1d=False,
 ):
+    """
+    Run the transfer function calculation by calculating the ratio of the 1D cross-power spectrum of
+    the cleaned mock HI data x mock galaxy data to the 1D cross-power spectrum of the original mock HI data x mock galaxy data.
+
+    Parameters
+    ----------
+        mock_attr_dict: dict
+            The attribute dictionary to initialize the mock instance.
+        downres_factor_radial: float
+            The downres factor for the radial direction for gridding the map data.
+        downres_factor_transverse: float
+            The downres factor for the transverse direction for gridding the map data.
+        weights_field_1: np.ndarray
+            The field-level weights for the field 1.
+        weights_grid_1: np.ndarray
+            The grid-level weights for the field 1.
+        weights_field_2: np.ndarray
+            The field-level weights for the field 2.
+        weights_grid_2: np.ndarray
+            The grid-level weights for the field 2.
+        k_sel_3d_to_1d: np.ndarray
+            The weights for averaging the 3D power spectrum k-modes to 1D power spectrum.
+        N_fg: int
+            The number of foreground components to clean.
+        pca_map_weights: np.ndarray
+            The weights for the mean centering and covariance matrix calculation during PCA.
+        mean_center_map: bool
+            Whether to mean-center the map before PCA cleaning.
+        R_mat: np.ndarray, default None
+            The PCA matrix to clean the map.
+            If not provided, it will be calculated by injecting the original mock HI data into the data map.
+            If provided, it will be used to clean the map, and no injection + PCA is performed.
+        uncleaned_data: np.ndarray, default 0.0
+            The uncleaned data map.
+        return_power_3d: bool, default False
+            Whether to return the 3D power spectrum of the mock results, including the uncleaned and cleaned data.
+        return_power_1d: bool, default False
+            Whether to return the 1D power spectrum of the mock results, including the uncleaned and cleaned data.
+
+    Returns
+    -------
+        result: list
+            The list of results, including the transfer function, the 3D power spectrum of the uncleaned and cleaned data, and the 1D power spectrum of the uncleaned and cleaned data.
+    """
     mock = MockSimulation(**mock_attr_dict)
     mock.data = mock.propagate_mock_field_to_data(mock.mock_tracer_field_1)
     mock.propagate_mock_tracer_to_gal_cat()
@@ -624,6 +690,46 @@ def run_tf_calculation_auto(
     return_power_3d=False,
     return_power_1d=False,
 ):
+    """
+    Run the transfer function calculation by calculating the ratio between the 1D power spectrum of
+    cleaned mock HI data x original mock HI data to the 1D power spectrum of the original mock HI data x original mock HI data.
+
+    Parameters
+    ----------
+        mock_attr_dict: dict
+            The attribute dictionary to initialize the mock instance.
+        downres_factor_radial: float
+            The downres factor for the radial direction for gridding the map data.
+        downres_factor_transverse: float
+            The downres factor for the transverse direction for gridding the map data.
+        weights_field_1: np.ndarray
+            The field-level weights for the field 1.
+        weights_grid_1: np.ndarray
+            The grid-level weights for the field 1.
+        k_sel_3d_to_1d: np.ndarray
+            The weights for averaging the 3D power spectrum k-modes to 1D power spectrum.
+        N_fg: int
+            The number of foreground components to clean.
+        pca_map_weights: np.ndarray
+            The weights for the mean centering and covariance matrix calculation during PCA.
+        mean_center_map: bool
+            Whether to mean-center the map before PCA cleaning.
+        R_mat: np.ndarray, default None
+            The PCA matrix to clean the map.
+            If not provided, it will be calculated by injecting the original mock HI data into the data map.
+            If provided, it will be used to clean the map, and no injection + PCA is performed.
+        uncleaned_data: np.ndarray, default 0.0
+            The uncleaned data map.
+        return_power_3d: bool, default False
+            Whether to return the 3D power spectrum of the mock results, including the uncleaned and cleaned data.
+        return_power_1d: bool, default False
+            Whether to return the 1D power spectrum of the mock results, including the uncleaned and cleaned data.
+
+    Returns
+    -------
+        result: list
+            The list of results, including the transfer function, the 3D power spectrum of the uncleaned and cleaned data, and the 1D power spectrum of the uncleaned and cleaned data.
+    """
     mock = MockSimulation(**mock_attr_dict)
     mock.data = mock.propagate_mock_field_to_data(mock.mock_tracer_field_1)
     mock.downres_factor_radial = downres_factor_radial
@@ -686,6 +792,38 @@ def run_null_test(
     k_sel_3d_to_1d,
     return_power_3d=False,
 ):
+    """
+    Run null test realisations by calculating the 1D cross-power spectrum of the mock galaxy x data map.
+
+    Parameters
+    ----------
+        mock_attr_dict: dict
+            The attribute dictionary to initialize the mock instance.
+        hi_map_rg: np.ndarray
+            The HI data map.
+        downres_factor_radial: float
+            The downres factor for the radial direction for gridding the map data.
+        downres_factor_transverse: float
+            The downres factor for the transverse direction for gridding the map data.
+        weights_field_1: np.ndarray
+            The field-level weights for the field 1.
+        weights_grid_1: np.ndarray
+            The grid-level weights for the field 1.
+        weights_field_2: np.ndarray
+            The field-level weights for the field 2.
+        weights_grid_2: np.ndarray
+            The grid-level weights for the field 2.
+        k_sel_3d_to_1d: np.ndarray
+            The weights for averaging the 3D power spectrum k-modes to 1D power spectrum.
+        return_power_3d: bool, default False
+            Whether to return the 3D power spectrum of the mock results.
+
+    Returns
+    -------
+        result: list
+            The list of results, including the 1D cross-power spectrum of the mock galaxy x data map.
+            If ``return_power_3d`` is True, the second element is the 3D power spectrum of the mock results.
+    """
     mock = MockSimulation(**mock_attr_dict)
     mock.propagate_mock_tracer_to_gal_cat()
     mock.downres_factor_radial = downres_factor_radial
