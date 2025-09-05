@@ -210,7 +210,11 @@ class SamplerEmcee(SamplerBase):
         return len(self.params_name)
 
     def run(
-        self, resume: bool, progress: bool = True, start_coord: np.ndarray | None = None
+        self,
+        resume: bool,
+        progress: bool = True,
+        start_coord: np.ndarray | None = None,
+        run_sampler: bool = True,
     ):
         if resume and self.save:
             start_coord = None
@@ -251,7 +255,8 @@ class SamplerEmcee(SamplerBase):
                 backend=backend,
                 pool=pool,
             )
-            sampler.run_mcmc(start_coord, nsteps, progress=progress)
+            if run_sampler:
+                sampler.run_mcmc(start_coord, nsteps, progress=progress)
         return sampler
 
     def get_backend(self) -> emcee.backends.HDFBackend:
@@ -325,7 +330,7 @@ class SamplerNautilus(SamplerBase):
             prior.add_parameter(param_name, dist=dist)
         return prior
 
-    def run(self, resume: bool, progress: bool = True):
+    def run(self, resume: bool, progress: bool = True, run_sampler: bool = True):
         if not self.save:
             resume = False
         if self.mp_backend == "multiprocessing":
@@ -344,14 +349,16 @@ class SamplerNautilus(SamplerBase):
                 resume=resume,
                 filepath=self.save_filename,
             )
-            sampler.run(
-                f_live=self.f_live,
-                n_shell=self.n_shell,
-                n_eff=self.n_eff,
-                discard_exploration=True,
-                verbose=progress,
-                timeout=self.timeout,
-            )
+            # nautilus does not timeout properly, so no test coverage for this
+            if run_sampler:  # pragma: no cover
+                sampler.run(
+                    f_live=self.f_live,
+                    n_shell=self.n_shell,
+                    n_eff=self.n_eff,
+                    discard_exploration=True,
+                    verbose=progress,
+                    timeout=self.timeout,
+                )
         return sampler
 
     def get_posterior(self, sampler: nautilus.Sampler | None = None):
