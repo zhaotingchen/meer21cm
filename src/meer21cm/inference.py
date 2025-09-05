@@ -1,3 +1,30 @@
+"""
+This module contains the sampler classes for performing model fitting.
+
+Similar to :mod:`meer21cm.transfer`, sampler class takes in the attributes of a :class:`meer21cm.power.PowerSpectrum` instance,
+and perform the model fitting that includes the observational effects, window functions etc defined in the PS instance.
+The difference is that, the sampler class takes the dictionary of attributes instead of the PS itself,
+so you should always use :func:`meer21cm.inference.extract_model_fitting_inputs` to extract the attributes from the PS instance,
+and use the dictionary to initialize the sampler class. For example:
+
+.. code-block:: python
+
+    >>> from meer21cm.inference import extract_model_fitting_inputs, SamplerEmcee
+    >>> from meer21cm.power import PowerSpectrum
+    >>> # the ps instance is usually something you have already defined and used to read data
+    >>> # or it can be a MockSimulation instance you have used to generate the mock
+    >>> ps = PowerSpectrum(band="L", survey="meerklass_2021", sigma_v_1=100, tracer_bias_1=1.5, tracer_bias_2=2.0)
+    >>> ps_dict = extract_model_fitting_inputs(ps)
+    >>> sampler = SamplerEmcee(ps_dict, ...)
+
+similarily, you can also use :class:`meer21cm.inference.SamplerNautilus` to perform model fitting.
+
+Caution:
+
+1. ``data_vector``, ``data_covariance`` and ``observables`` must be in the same order. For example, if ``observables`` is ["cross", "hi-auto"], then the first half of ``data_vector`` should be the cross-power and second half should be the hi-auto power. Similarly, the [:half, :half] of ``data_covariance`` should be the cross-power covariance and the [half:, half:] should be the hi-auto power covariance (the rest of the matrix should be the cross-correlation between cross and auto powers).
+2. ``params_name`` must be in the same order as the ``params_prior``.
+"""
+
 import numpy as np
 from meer21cm.power import PowerSpectrum
 from meer21cm.transfer import required_attrs
@@ -36,6 +63,35 @@ def extract_model_fitting_inputs(
 class SamplerBase:
     """
     Base class for all samplers.
+
+    Parameters
+    ----------
+    ps_dict : dict
+        A dictionary of model fitting inputs.
+    data_vector : np.ndarray
+        The data vector.
+    data_covariance : np.ndarray
+        The data covariance matrix.
+    params_name : list[str]
+        The names of the parameters.
+        Must match the attribute names of the :class:`meer21cm.power.PowerSpectrum` instance.
+    params_prior : list[tuple[str, float, float]]
+        The prior distribution of the parameters.
+        The first element of the tuple is the distribution type, which can be "uniform" or "gaussian".
+        The second and third elements are the parameters of the distribution.
+        For uniform distribution, the second and third elements are the lower and upper bounds of the distribution.
+        For gaussian distribution, the second and third elements are the mean and standard deviation of the distribution.
+    observables : list[str], default ["cross"]
+        The observables to fit.
+        Must be a list of "cross", "hi-auto", or "gg-auto".
+    save : bool, default False
+        Whether to save the fitting results while running the sampler.
+    save_filename : str | None, default None
+        The filename to save the fitting results when ``save`` is True.
+        If not provided, the results will not be saved.
+    save_model_blobs : bool, default False
+        Whether to save the model blobs.
+        The model blobs are the model vectors listed in the ``observables`` argument.
     """
 
     def __init__(
@@ -64,12 +120,18 @@ class SamplerBase:
 
     @property
     def inverse_covariance(self) -> np.ndarray:
+        """
+        The matrix inverse of the data covariance.
+        """
         if self._inverse_covariance is None:
             self._inverse_covariance = np.linalg.inv(self.data_covariance)
         return self._inverse_covariance
 
     @property
     def data_covariance(self) -> np.ndarray:
+        """
+        The data covariance matrix.
+        """
         return self._data_covariance
 
     @data_covariance.setter
@@ -78,6 +140,9 @@ class SamplerBase:
         self._inverse_covariance = None
 
     def validate_input(self):
+        """
+        Validate the input parameters.
+        """
         if not len(self.params_name) == len(self.params_prior):
             raise ValueError("params_names and params_prior must have the same length")
         data_len = self.data_vector.size
@@ -91,6 +156,19 @@ class SamplerBase:
             )
 
     def get_model_instance(self, params: list[float] | np.ndarray) -> PowerSpectrum:
+        """
+        Get the model instance from the input ``ps_dict`` and the updated parameters ``params``.
+
+        Parameters
+        ----------
+        params : list[float] | np.ndarray
+            The updated values of the parameters defined in the ``params_name`` argument.
+
+        Returns
+        -------
+        model_instance : :class:`meer21cm.power.PowerSpectrum`
+            The model PS instance to calculate the model vector.
+        """
         model_instance = PowerSpectrum(**self.ps_dict)
         model_instance._box_len = self.ps_dict["box_len"]
         model_instance._box_ndim = self.ps_dict["box_ndim"]
@@ -100,6 +178,20 @@ class SamplerBase:
         return model_instance
 
     def get_model_vector(self, params: list[float] | np.ndarray) -> np.ndarray:
+        """
+        Calculate the model vector from the input parameter values.
+
+        Parameters
+        ----------
+        params : list[float] | np.ndarray
+            The updated values of the parameters defined in the ``params_name`` argument.
+
+        Returns
+        -------
+        model_vector : np.ndarray
+            The model vector.
+            The shape is (len(observables), len(k1dbins) - 1).
+        """
         model_instance = self.get_model_instance(params)
         model_vector = np.zeros(
             (len(self.observables), len(self.ps_dict["k1dbins"]) - 1)
@@ -127,6 +219,19 @@ class SamplerBase:
     def compute_log_likelihood(
         self, params: list[float] | np.ndarray
     ) -> float | tuple[float, np.ndarray]:
+        """
+        Calculate the log likelihood from the input parameter values.
+
+        Parameters
+        ----------
+        params : list[float] | np.ndarray
+            The updated values of the parameters defined in the ``params_name`` argument.
+
+        Returns
+        -------
+        log_likelihood : float
+            The log likelihood.
+        """
         model_vector = self.get_model_vector(params)
         model_minus_data = model_vector.ravel() - self.data_vector.ravel()
         log_likelihood = (
@@ -138,6 +243,49 @@ class SamplerBase:
 
 
 class SamplerEmcee(SamplerBase):
+    """
+    A sampler class to perform model fitting using the ``emcee`` sampler.
+
+    Parameters
+    ----------
+    ps_dict : dict
+        A dictionary of model fitting inputs.
+    data_vector : np.ndarray
+        The data vector.
+    data_covariance : np.ndarray
+        The data covariance matrix.
+    params_name : list[str]
+        The names of the parameters.
+        Must match the attribute names of the :class:`meer21cm.power.PowerSpectrum` instance.
+    params_prior : list[tuple[str, float, float]]
+        The prior distribution of the parameters.
+        The first element of the tuple is the distribution type, which can be "uniform" or "gaussian".
+        The second and third elements are the parameters of the distribution.
+        For uniform distribution, the second and third elements are the lower and upper bounds of the distribution.
+        For gaussian distribution, the second and third elements are the mean and standard deviation of the distribution.
+    nwalkers : int
+        The number of random walkers.
+    nsteps : int
+        The number of sampling steps.
+    nthreads : int
+        The number of parallel threads.
+    observables : list[str], default ["cross"]
+        The observables to fit.
+        Must be a list of "cross", "hi-auto", or "gg-auto".
+    mp_backend : str, default "multiprocessing"
+        The backend to use for the multiprocessing.
+        Can be "multiprocessing" or "mpi".
+    save : bool, default False
+        Whether to save the fitting results while running the sampler.
+    save_filename : str | None, default None
+        The filename to save the fitting results when ``save`` is True.
+        If not provided, the results will not be saved.
+    save_model_blobs : bool, default False
+        Whether to save the model blobs.
+        The model blobs are the model vectors listed in the ``observables`` argument.
+
+    """
+
     def __init__(
         self,
         ps_dict: dict,
@@ -171,15 +319,62 @@ class SamplerEmcee(SamplerBase):
         )
 
     def log_prior_gaussian(self, value, mean, sigma):
+        """
+        Calculate the log prior for a gaussian distribution.
+
+        Parameters
+        ----------
+        value : float
+            The value to calculate the log prior for.
+        mean : float
+            The mean of the distribution.
+        sigma : float
+            The standard deviation of the distribution.
+
+        Returns
+        -------
+        log_prior : float
+            The log prior.
+        """
         return -0.5 * (value - mean) ** 2 / sigma**2
 
     def log_prior_uniform(self, value, low, high):
+        """
+        Calculate the log prior for a flat (uniform) distribution.
+
+        Parameters
+        ----------
+        value : float
+            The value to calculate the log prior for.
+        low : float
+            The lower bound of the distribution.
+        high : float
+            The upper bound of the distribution.
+
+        Returns
+        -------
+        log_prior : float
+            The log prior.
+        """
         if value < low or value > high:
             return -np.inf
         else:
             return 0.0
 
     def log_prior(self, params_values):
+        """
+        Calculate the log prior from the input parameter values.
+
+        Parameters
+        ----------
+        params_values : list[float] | np.ndarray
+            The updated values of the parameters defined in the ``params_name`` argument.
+
+        Returns
+        -------
+        log_prior : float
+            The log prior.
+        """
         log_prior = 0.0
         for i, param_name in enumerate(self.params_name):
             prior_func = getattr(self, f"log_prior_{self.params_prior[i][0]}")
@@ -192,6 +387,22 @@ class SamplerEmcee(SamplerBase):
         return log_prior
 
     def log_likelihood(self, params_values):
+        """
+        Calculate the log likelihood plus the log prior from the input parameter values.
+
+        Parameters
+        ----------
+        params_values : list[float] | np.ndarray
+            The updated values of the parameters defined in the ``params_name`` argument.
+
+        Returns
+        -------
+        log_likelihood : float
+            The log likelihood plus the log prior.
+        model_vector : np.ndarray, optional
+            The model vector.
+            Only returned when ``save_model_blobs`` is True.
+        """
         lp = self.log_prior(params_values)
         if not np.isfinite(lp):
             if self.save_model_blobs:
@@ -207,6 +418,9 @@ class SamplerEmcee(SamplerBase):
 
     @property
     def ndim(self):
+        """
+        The number of parameters to fit.
+        """
         return len(self.params_name)
 
     def run(
@@ -216,6 +430,29 @@ class SamplerEmcee(SamplerBase):
         start_coord: np.ndarray | None = None,
         run_sampler: bool = True,
     ):
+        """
+        Run the sampler.
+
+        Parameters
+        ----------
+        resume : bool
+            Whether to resume the sampler from the last saved state.
+            If ``resume`` is False and the save file already exists,
+            **the sampler will reset the save file**.
+        progress : bool, default True
+            Whether to show the progress bar.
+        start_coord : np.ndarray | None, default None
+            The initial coordinates of the walkers.
+            If not provided, the sampler will randomly initialize the walkers.
+        run_sampler : bool, default True
+            Whether to run the sampler.
+            If False, the sampler will only initialize the walkers and return the sampler object.
+
+        Returns
+        -------
+        sampler : emcee.EnsembleSampler
+            The sampler object.
+        """
         if resume and self.save:
             start_coord = None
         else:
@@ -260,28 +497,127 @@ class SamplerEmcee(SamplerBase):
         return sampler
 
     def get_backend(self) -> emcee.backends.HDFBackend:
+        """
+        Get the backend of the sampler.
+        """
         if self.save:
             return emcee.backends.HDFBackend(self.save_filename)
         else:
             raise ValueError("No save filename provided")
 
     def get_points(self, sampler: emcee.EnsembleSampler | None = None) -> np.ndarray:
+        """
+        Get the chain from the sampler.
+
+        Parameters
+        ----------
+        sampler : emcee.EnsembleSampler | None, default None
+            The sampler object.
+            If not provided, the sampler will use the backend to get the chain
+            (only works if ``save`` is True).
+
+        Returns
+        -------
+        chain : np.ndarray
+            The chain.
+            The shape is (nwalkers, nsteps, ndim).
+        """
         if sampler is None:
             return self.get_backend().get_chain()
         return sampler.get_chain()
 
     def get_blobs(self, sampler: emcee.EnsembleSampler | None = None) -> np.ndarray:
+        """
+        Get the blobs from the sampler.
+
+        Parameters
+        ----------
+        sampler : emcee.EnsembleSampler | None, default None
+            The sampler object.
+            If not provided, the sampler will use the backend to get the blobs
+            (only works if ``save`` is True).
+
+        Returns
+        -------
+        blobs : np.ndarray
+            The model vectorblobs.
+        """
         if sampler is None:
             return self.get_backend().get_blobs()
         return sampler.get_blobs()
 
     def get_log_prob(self, sampler: emcee.EnsembleSampler | None = None) -> np.ndarray:
+        """
+        Get the log probability from the sampler.
+
+        Parameters
+        ----------
+        sampler : emcee.EnsembleSampler | None, default None
+            The sampler object.
+            If not provided, the sampler will use the backend to get the log probability
+            (only works if ``save`` is True).
+
+        Returns
+        -------
+        log_prob : np.ndarray
+            The log probability.
+            The shape is (nwalkers, nsteps).
+        """
         if sampler is None:
             return self.get_backend().get_log_prob()
         return sampler.get_log_prob()
 
 
 class SamplerNautilus(SamplerBase):
+    """
+    A sampler class to perform model fitting using the ``nautilus`` sampler.
+
+    Parameters
+    ----------
+    ps_dict : dict
+        A dictionary of model fitting inputs.
+    data_vector : np.ndarray
+        The data vector.
+    data_covariance : np.ndarray
+        The data covariance matrix.
+    params_name : list[str]
+        The names of the parameters.
+        Must match the attribute names of the :class:`meer21cm.power.PowerSpectrum` instance.
+    params_prior : list[tuple[str, float, float]]
+        The prior distribution of the parameters.
+        The first element of the tuple is the distribution type, which can be "uniform" or "gaussian".
+        The second and third elements are the parameters of the distribution.
+        For uniform distribution, the second and third elements are the lower and upper bounds of the distribution.
+        For gaussian distribution, the second and third elements are the mean and standard deviation of the distribution.
+    observables : list[str], default ["cross"]
+        The observables to fit.
+        Must be a list of "cross", "hi-auto", or "gg-auto".
+    n_live_points : int, default 2000
+        The number of live points.
+    f_live : float, default 0.01
+        The fraction of live points to keep.
+    n_shell : int, default 1
+        The number of shells to use.
+    n_eff : int, default 10000
+        The effective number of samples.
+    save : bool, default False
+        Whether to save the fitting results while running the sampler.
+    save_filename : str | None, default None
+        The filename to save the fitting results when ``save`` is True.
+        If not provided, the results will not be saved.
+    mp_backend : str, default "multiprocessing"
+        The backend to use for the multiprocessing.
+        Can be "multiprocessing" or "mpi".
+    nthreads : int, default 1
+        The number of parallel threads.
+    timeout : float, default np.inf
+        The timeout for the sampler.
+        If the sampler runs longer than the timeout, it will be terminated.
+    save_model_blobs : bool, default False
+        Whether to save the model blobs.
+        The model blobs are the model vectors listed in the ``observables`` argument.
+    """
+
     def __init__(
         self,
         ps_dict: dict,
@@ -321,6 +657,9 @@ class SamplerNautilus(SamplerBase):
         )
 
     def get_nautilus_prior(self):
+        """
+        Generate the ``nautilus.Prior`` objects from the input parameters.
+        """
         prior = nautilus.Prior()
         for i, param_name in enumerate(self.params_name):
             if self.params_prior[i][0] == "uniform":
@@ -331,6 +670,24 @@ class SamplerNautilus(SamplerBase):
         return prior
 
     def run(self, resume: bool, progress: bool = True, run_sampler: bool = True):
+        """
+        Run the sampler.
+
+        Parameters
+        ----------
+        resume : bool
+            Whether to resume the sampler from the last saved state.
+        progress : bool, default True
+            Whether to show the progress bar.
+        run_sampler : bool, default True
+            Whether to run the sampler.
+            If False, the sampler will only initialize the walkers and return the sampler object.
+
+        Returns
+        -------
+        sampler : nautilus.Sampler
+            The sampler object.
+        """
         if not self.save:
             resume = False
         if self.mp_backend == "multiprocessing":
@@ -362,6 +719,25 @@ class SamplerNautilus(SamplerBase):
         return sampler
 
     def get_posterior(self, sampler: nautilus.Sampler | None = None):
+        """
+        Get the posterior from the sampler.
+
+        Parameters
+        ----------
+        sampler : nautilus.Sampler | None, default None
+            The sampler object.
+            If not provided, the sampler will use the backend to get the posterior
+            (only works if ``save`` is True).
+
+        Returns
+        -------
+        posterior : tuple
+            The posterior.
+            The first element is the points.
+            The second element is the log weights.
+            The third element is the log likelihoods.
+            If ``save_model_blobs`` is True, the fourth element is the model blobs.
+        """
         if sampler is None:
             sampler = nautilus.Sampler(
                 self.get_nautilus_prior(),

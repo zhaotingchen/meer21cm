@@ -225,8 +225,7 @@ class TransferFunction:
     .. code-block:: python
 
         >>> tf = TransferFunction(ps, N_fg=3)
-        >>> tf1d_arr = tf.run(range(10), type="auto")
-        >>> np.array(tf1d_arr).mean((0,1)) # gives you the 1D transfer function
+        >>> tf1d_arr = tf.run(range(10), type="auto") # gives you the 1D transfer function with 10 realizations
 
     If ``type`` is ``"auto"``, the numerator is the **cross-correlation between cleaned HI mock and
     the original HI mock** (and therefore the result is based on HI "auto" power),
