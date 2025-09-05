@@ -1,6 +1,6 @@
 # Installation
 
-The installation is tested on arm64 MacOS system as well as x86_64 Linux system, on python 3.9 and 3.10.
+The installation is tested on arm64 MacOS system as well as x86_64 Linux system, on python 3.9, 3.10 and 3.11.
 
 If you are on ilifu jump straight to [`Installing on ilifu`](#ilifu).
 
@@ -46,6 +46,9 @@ For Linux, most of the time you can install the h5df dependency through `conda`.
 conda install hdf5
 ```
 
+### HPC
+Again, if you are using HPC, most likely there are hdf5 module available, and you can load the module by simply `module load hdf5`.
+
 ## 3. Install `meer21cm`
 Finally, clone the repo for `meer21cm`
 ```
@@ -61,6 +64,7 @@ And run
 ```
 pip install -e .
 ```
+Note that development install `-e` is needed, as this package is in early stage and will not have a stable version before the official release.
 
 If you want to run tests, instead of the installation above do
 ```
@@ -78,7 +82,7 @@ If you want to develop `meer21cm`, you should install the full dependency
 pip install -e ".[full]"
 ```
 
-Note that development install `-e` is needed, as this package is in early stage and will not have a stable version before the official release.
+For developing the code, the development install `-e` is always needed since the installation needs to change dynamically with your edits.
 
 ## 4. Check if installation is successful
 If you did not run the tests, in the conda environment, do
@@ -86,7 +90,8 @@ If you did not run the tests, in the conda environment, do
 python -c "import meer21cm; print(meer21cm.__file__)"
 ```
 If you see the output, then the installation is successful.
-
+The file path is also a useful indicator of the installation. If you have installed it with `-e`, the file path should be the cloned repo,
+whereas a static installation will be in the `site-packages` directory.
 
 ## A. Installing on ilifu
 <a name="ilifu"></a>

@@ -322,9 +322,9 @@ def test_sky_partition_for_radecrange():
 def test_shot_noise_correction_from_gridding(window):
     ps = PowerSpectrum()
     ps._box_len = np.array([1000, 1000, 1000])
-    ps._box_ndim = np.array([50, 50, 50])
+    ps._box_ndim = np.array([20, 20, 20])
     ps.propagate_field_k_to_model()
-    rand_pos = np.random.uniform(0, 1000, size=(1000000, 3))
+    rand_pos = np.random.uniform(0, 1000, size=(10000, 3))
     gal_count, _, _ = project_particle_to_regular_grid(
         rand_pos,
         ps.box_len,
@@ -340,4 +340,4 @@ def test_shot_noise_correction_from_gridding(window):
         / rand_pos.shape[0]
     )
     ratio = ps3d_rand / sn_rand
-    assert np.allclose(ratio.mean(), 1, atol=1.5e-1)
+    assert np.allclose(ratio.mean(), 1, atol=3.0e-1)

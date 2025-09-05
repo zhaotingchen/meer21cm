@@ -7,9 +7,17 @@
 .. include:: ../../README.md
    :parser: myst_parser.sphinx_
 
+Getting Started
+===============
+See :doc:`installation` for installation instructions.
+
+Extensive tutorials and examples can be found in :doc:`cookbook`.
+
+
+
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
    installation

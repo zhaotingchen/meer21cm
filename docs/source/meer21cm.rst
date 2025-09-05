@@ -33,6 +33,14 @@ meer21cm.grid module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.inference module
+-------------------------
+
+.. automodule:: meer21cm.inference
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.io module
 ------------------
 
@@ -69,6 +77,14 @@ meer21cm.telescope module
 -------------------------
 
 .. automodule:: meer21cm.telescope
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+meer21cm.transfer module
+-------------------------
+
+.. automodule:: meer21cm.transfer
    :members:
    :undoc-members:
    :show-inheritance:

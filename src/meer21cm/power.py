@@ -168,12 +168,14 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self.has_resol = True
         if self.sampling_resol is None:
             self.has_resol = False
-        if self.sampling_resol == "auto":
-            self.sampling_resol = [
-                self.pix_resol_in_mpc,
-                self.pix_resol_in_mpc,
-                self.los_resol_in_mpc,
-            ]
+        # avoid ambiguity problem of == auto
+        if isinstance(self.sampling_resol, str):
+            if self.sampling_resol == "auto":
+                self.sampling_resol = [
+                    self.pix_resol_in_mpc,
+                    self.pix_resol_in_mpc,
+                    self.los_resol_in_mpc,
+                ]
         self.fog_profile = fog_profile
         self.kaiser_rsd = kaiser_rsd
         self._compensate = [None, None]  # for initialization
@@ -887,14 +889,19 @@ class ModelPowerSpectrum(CosmologyCalculator):
         self,
         power_in_real_space,
         beta1,
-        sigmav_1,
+        sigma_v_1,
+        sigma_z_1,
         beta2=None,
-        sigmav_2=None,
+        sigma_v_2=None,
+        sigma_z_2=None,
         r=1.0,
         mumode=None,
     ):
         """
         Calculate the redshift space power spectrum.
+        If properties of the second tracer are not set,
+        they will be set to the same as the first tracer so
+        the result will be the auto power spectrum.
 
         Parameters
         ----------
@@ -903,12 +910,16 @@ class ModelPowerSpectrum(CosmologyCalculator):
 
         beta1: float
             The growth rate over bias of the first tracer.
-        sigmav_1: float
+        sigma_v_1: float
             The velocity dispersion of the first tracer.
+        sigma_z_1: float
+            The redshift dispersion of the first tracer.
         beta2: float, default None
             The growth rate over bias of the second tracer.
-        sigmav_2: float, default None
+        sigma_v_2: float, default None
             The velocity dispersion of the second tracer.
+        sigma_z_2: float, default None
+            The redshift dispersion of the second tracer.
         r: float, default 1.0
             The correlation coefficient between the two tracers.
         mumode: np.ndarray, default None
@@ -923,15 +934,17 @@ class ModelPowerSpectrum(CosmologyCalculator):
             mumode = self.mumode
         if beta2 is None:
             beta2 = beta1
-        if sigmav_2 is None:
-            sigmav_2 = sigmav_1
+        if sigma_v_2 is None:
+            sigma_v_2 = sigma_v_1
+        if sigma_z_2 is None:
+            sigma_z_2 = sigma_z_1
         power_in_redshift_space = (
             power_in_real_space
             * (r + (beta1 + beta2) * mumode**2 + beta1 * beta2 * mumode**4)
-            * self.fog_term(self.deltav_to_deltar(sigmav_1), mumode=mumode)
-            * self.fog_term(self.deltav_to_deltar(sigmav_2), mumode=mumode)
-            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_1), mumode=mumode)
-            * self.fog_gaussian(self.deltaz_to_deltar(self.sigma_z_2), mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigma_v_1), mumode=mumode)
+            * self.fog_term(self.deltav_to_deltar(sigma_v_2), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(sigma_z_1), mumode=mumode)
+            * self.fog_gaussian(self.deltaz_to_deltar(sigma_z_2), mumode=mumode)
         )
         return power_in_redshift_space
 
@@ -946,6 +959,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self._auto_power_matter_model = self.cal_rsd_power(
                 pk3d_mm_r,
                 beta_m,
+                0.0,
                 0.0,
             )
         else:
@@ -973,6 +987,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
                 pk3d_tt_r,
                 beta_i,
                 getattr(self, "sigma_v_" + str(i)),
+                getattr(self, "sigma_z_" + str(i)),
             )
         else:
             power_noobs_i = pk3d_tt_r
@@ -1053,9 +1068,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
             result = self.cal_rsd_power(
                 pk3d_tt_r,
                 beta1=beta_1,
-                sigmav_1=self.sigma_v_1,
+                sigma_v_1=self.sigma_v_1,
+                sigma_z_1=self.sigma_z_1,
                 beta2=beta_2,
-                sigmav_2=self.sigma_v_2,
+                sigma_v_2=self.sigma_v_2,
+                sigma_z_2=self.sigma_z_2,
                 r=self.cross_coeff,
             )
         else:
@@ -1163,7 +1180,7 @@ class FieldPowerSpectrum(Specification):
         unitless_2=False,
         **params,
     ):
-        super().__init__(**params)
+        Specification.__init__(self, **params)
         self.field_1 = field_1
         self.field_2 = field_2
         self.weights_1 = weights_1
@@ -1781,9 +1798,21 @@ def get_modelpk_conv(psmod, weights1_in_real=None, weights2=None, renorm=True):
 
 
 def power_weights_renorm(weights1_in_real=None, weights2=None):
-    """
+    r"""
     Calculate the renormalization coefficient based on the weights
-    on the density field when calculating power spectrum
+    on the density field when calculating power spectrum.
+    The renormalization is defined as
+
+    .. math::
+        \frac{{N_{\rm grid}}} {\sum_{i} w_1(x_i) w_2(x_i)},
+
+    where :math:`N_{\rm grid}` is the number of grids in the box and
+    :math:`i` loops over all the grids.
+
+    Note that this renormaliszation corresponds to the diagonal
+    renormalisation matrix that does not change the window function convolution,
+    but only renormalises the sum of each row of the window function matrix.
+    See Chen (2025) [1] for more details.
 
     Parameters
     ----------
@@ -1797,6 +1826,11 @@ def power_weights_renorm(weights1_in_real=None, weights2=None):
     -------
         weights_norm: float.
            The renormalization coefficient.
+
+    References
+    ----------
+        [1] Chen, Z., 2025, "A quadratic estimator view of the transfer function correction in intensity mapping surveys",
+        https://ui.adsabs.harvard.edu/abs/2025MNRAS.542L...1C/abstract.
     """
     if weights1_in_real is None and weights2 is None:
         return 1.0
@@ -2171,8 +2205,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         Whether to renormalize the power spectrum of the second tracer by the weights.
     renorm_weights_cross: bool, default True
         Whether to renormalize the power spectrum of the cross-correlation by the weights.
-    corrtype: str, default None
-        The type of the correlation function to be computed.
     k1dbins: list of floats, default None
         The bin edges of k in Mpc-1 for the 1D power spectrum.
     kmode: float, default None
@@ -2260,7 +2292,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         renorm_weights_1=True,
         renorm_weights_2=True,
         renorm_weights_cross=True,
-        corrtype=None,
         k1dbins=None,
         kmode=None,
         mumode=None,
@@ -2291,6 +2322,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         kparabins=None,
         flat_sky=False,
         flat_sky_padding=[0, 0, 0],
+        k1dweights=None,
         **params,
     ):
         if seed is None:
@@ -2315,7 +2347,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             weights_2=weights_grid_2,
             mean_center_2=mean_center_2,
             unitless_2=unitless_2,
-            corrtype=corrtype,
         )
         self.kmode = kmode
         self.mumode = mumode
@@ -2371,6 +2402,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.interlace_shift = interlace_shift
         self.flat_sky = flat_sky
         self.flat_sky_padding = flat_sky_padding
+        self.k1dweights = k1dweights
 
     @property
     def box_buffkick(self):
@@ -2589,6 +2621,9 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         """
         if k1dbins is None:
             k1dbins = self.k1dbins
+        if k1dweights is None:
+            k1dweights = self.k1dweights
+        # if still None, use equal weights
         if k1dweights is None:
             k1dweights = np.ones_like(self.k_mode)
         if isinstance(power3d, str):

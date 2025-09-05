@@ -581,19 +581,19 @@ def get_wcs_coor(wcs, xx, yy, ang_unit="deg"):
     return ra, dec
 
 
-def pcaclean(
+def pca_clean(
     signal,
     N_fg,
     weights=None,
     return_analysis=False,
-    mean_centre=False,
+    mean_center=False,
     los_axis=-1,
     return_A=False,
-    mean_centre_weights=None,
+    mean_center_weights=None,
     ignore_nan=False,
 ):
     r"""
-    Performs PCA cleaning of the map data. If ``mean_centre`` is set to ``True``,
+    Performs PCA cleaning of the map data. If ``mean_center`` is set to ``True``,
     then the input signal is first mean-centered so that
 
     .. math::
@@ -620,7 +620,7 @@ def pcaclean(
     However, in practice, many people don't remove the mean of the data.
     Some use one type of weights (often just binary masks) for mean calculation, and then
     use different weights for covariance calculation. While it is not encouraged, that flexibility
-    is allowed in the function, by setting a different weight ``mean_centre_weights``.
+    is allowed in the function, by setting a different weight ``mean_center_weights``.
 
     If there are frequency gaps in the data, you can set ``ignore_nan=True`` to ignore these
     channels, and treat the rest of the data as a continuous spectrum.
@@ -636,13 +636,13 @@ def pcaclean(
             Default will set uniform weights for each element.
         return_analysis: bool, default False
             If True, instead of residual maps the function will return eigenanalysis quantities.
-        mean_centre: bool, default False
+        mean_center: bool, default False
             Whether to mean-center the input data vector
         los_axis: int, default -1.
             Which axis is the line-of-sight, i.e. spectral axis.
         return_A: bool, default False.
             Whether to return the mixing matrix A.
-        mean_centre_weights: array, default None.
+        mean_center_weights: array, default None.
             The weights of each element for mean calculation.
             Default follows the ``weights`` argument.
         ignore_nan: bool, default False.
@@ -688,11 +688,11 @@ def pcaclean(
     else:
         weights = np.ones_like(signal)
 
-    if mean_centre_weights is not None:
-        mean_centre_weights = np.transpose(mean_centre_weights, axes=axes)
-        mean_centre_weights = mean_centre_weights.reshape((nz, -1))
-    if mean_centre:
-        if mean_centre_weights is None:
+    if mean_center_weights is not None:
+        mean_center_weights = np.transpose(mean_center_weights, axes=axes)
+        mean_center_weights = mean_center_weights.reshape((nz, -1))
+    if mean_center:
+        if mean_center_weights is None:
             signal = (
                 signal
                 - np.sum(signal * weights, 1)[:, None] / np.sum(weights, 1)[:, None]
@@ -700,8 +700,8 @@ def pcaclean(
         else:
             signal = (
                 signal
-                - np.sum(signal * mean_centre_weights, 1)[:, None]
-                / np.sum(mean_centre_weights, 1)[:, None]
+                - np.sum(signal * mean_center_weights, 1)[:, None]
+                / np.sum(mean_center_weights, 1)[:, None]
             )
     ### Covariance calculation:
     covariance = (
@@ -1188,6 +1188,26 @@ def dft_matrix(N, norm="backward"):
             The DFT matrix.
     """
     return np.fft.fft(np.eye(N), norm=norm)
+
+
+def inv_dft_matrix(N, norm="backward"):
+    """
+    Generate the inverse DFT matrix for a given N.
+    The default is the backward normalization, which is the same as np.fft.fft.
+
+    Parameters
+    ----------
+        N: int
+            The size of the matrix.
+        norm: str, default "backward"
+            The normalization of the DFT matrix.
+
+    Returns
+    -------
+        inv_dft_mat: np.ndarray
+            The inverse DFT matrix.
+    """
+    return np.fft.ifft(np.eye(N), norm=norm)
 
 
 def find_block_id(filename):

@@ -15,11 +15,12 @@ jobs:
       ENV_NAME: tests
       PYTHON: ${{ matrix.python-version }}
       OS: ${{ matrix.os }}
+      ACTIONS_RUNNER_DEBUG: true
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10"]
+        python-version: ["3.10", "3.11"]
         os: ["ubuntu-latest", "macos-latest"]
 
     steps:
@@ -44,6 +45,10 @@ jobs:
         export PATH="$HOME/miniconda/bin:$PATH"
         conda create --name=${ENV_NAME}  python=$PYTHON --quiet
         source activate ${ENV_NAME}
+    - name: Setup MPI
+      uses: mpi4py/setup-mpi@v1
+      with:
+        mpi: openmpi
     - name: Install dependencies
       run: |
         export PATH="$HOME/miniconda/bin:$PATH"
@@ -72,7 +77,7 @@ jobs:
       run: |
         export PATH="$HOME/miniconda/bin:$PATH"
         source activate ${ENV_NAME}
-        pytest --cov=meer21cm tests/ --cov-report xml:./coverage.xml
+        pytest --cov-config=.coveragerc --cov=meer21cm tests/ --cov-report xml:coverage.xml
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4.0.1
       with:

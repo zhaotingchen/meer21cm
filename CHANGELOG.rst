@@ -1,12 +1,26 @@
 Releases
 ========
 
-dev
----
+v0.7.0
+------
+Features
+++++++++
+* transfer function class
+* parallelization for transfer function
+* numerical transfer function calculation from cross and auto mock
+* parameter fitting sampler class
+* parallelization for parameter fitting
+* support emcee and nautilus for sampling
+
 Enhancements
 ++++++++++++
 * allow k-mode cut in 1D power spectrum
 * add validation tests 00 and 01 in paper
+
+Bugfixes
+++++++++
+* fix a bug in FPS initialization
+* fix a bug in incorrect sigma_z usage in model power calculation
 
 v0.6.1
 ------

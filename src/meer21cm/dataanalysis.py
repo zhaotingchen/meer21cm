@@ -37,6 +37,7 @@ import meer21cm.telescope as telescope
 from astropy.cosmology import w0waCDM, Planck18
 import inspect
 import logging
+import numbers
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +301,7 @@ class Specification:
 
     def clean_cache(self, attr):
         """
-        Set the input attributes to None.
+        Set the attributes to None.
         This is used to clear the cache of the attributes.
         """
         for att in attr:
@@ -354,12 +355,15 @@ class Specification:
     @property
     def sigma_beam_ch(self):
         """
-        The input beam size parameter sigma for each channel
+        The input beam size parameter sigma for each channel.
+        If one number is provided, it will be used for all channels.
         """
         return self._sigma_beam_ch
 
     @sigma_beam_ch.setter
     def sigma_beam_ch(self, value):
+        if isinstance(value, numbers.Number):
+            value = np.ones(self.nu.size) * float(value)
         self._sigma_beam_ch = value
         if "beam_dep_attr" in dir(self):
             self.clean_cache(self.beam_dep_attr)
