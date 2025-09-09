@@ -10,13 +10,14 @@ Theory Recipes
     :maxdepth: 1
 
     cookbook/weights
+    cookbook/survey_dimension
 
 Data Analysis Recipes
 ---------------------
 .. toctree::
     :maxdepth: 1
 
-    cookbook/survey_dimension
+    cookbook/2021_Lband_gama_cross
 
 Mock Recipes
 ------------
