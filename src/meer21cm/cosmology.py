@@ -15,7 +15,6 @@ from meer21cm import Specification
 from scipy.interpolate import interp1d
 from meer21cm.util import omega_hi_to_average_temp, tagging, HiddenPrints
 from astropy.cosmology import Planck18, w0waCDM
-import baccoemu
 from copy import deepcopy
 import inspect
 import logging
@@ -304,6 +303,8 @@ class CosmologyParameters:
         """
         Emulate the CDM power spectrum using bacco.
         """
+        import baccoemu
+
         emulator = baccoemu.Matter_powerspectrum()
         bacco_pars = self.get_bacco_pars()
         _, baccopk = getattr(emulator, f"get_{self.ps_type}_pk")(

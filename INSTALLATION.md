@@ -66,12 +66,12 @@ pip install -e .
 ```
 Note that development install `-e` is needed, as this package is in early stage and will not have a stable version before the official release.
 
-If you want to run tests, instead of the installation above do
+If you want to run tests, or if you want to use `baccoemu` instead of `camb`, or run sampler with `mpi` pools, instead of the installation above do
 ```
 pip install -e ".[test]"
 ```
 
-and run
+and you can run
 ```
 pytest tests/
 ```
@@ -98,7 +98,7 @@ whereas a static installation will be in the `site-packages` directory.
 If you are on ilifu, the installation has been tested so you can follow the exact steps listed here.
 
 ```
-git clone git@github.com:zhaotingchen/meer21cm.git
+git clone https://github.com/zhaotingchen/meer21cm
 module load anaconda3
 conda create -n meer21cm python=3.10
 conda activate meer21cm
