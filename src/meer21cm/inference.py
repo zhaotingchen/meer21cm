@@ -456,11 +456,12 @@ class SamplerEmcee(SamplerBase):
         if resume and self.save:
             start_coord = None
         else:
-            init_pos = np.array(
-                [self.ps_dict[param_name] for param_name in self.params_name]
-            )
             # TODO: need smarter auto init position
             if start_coord is None:
+                init_pos = np.array(
+                    [self.ps_dict[param_name] for param_name in self.params_name]
+                )
+                # TODO: need smarter auto init position
                 start_coord = (
                     1 + np.random.uniform(-1e-2, 1e-2, size=(self.nwalkers, self.ndim))
                 ) * init_pos[None, :] + np.random.uniform(
