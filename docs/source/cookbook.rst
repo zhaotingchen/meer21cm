@@ -18,6 +18,7 @@ Data Analysis Recipes
     :maxdepth: 1
 
     cookbook/2021_Lband_gama_cross
+    cookbook/2019_Lband
 
 Mock Recipes
 ------------
