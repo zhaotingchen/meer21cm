@@ -55,7 +55,7 @@ def test_wproj():
 
 @pytest.fixture
 def test_pickle():
-    map_file = data_dir + "test_dict.pkl"
+    map_file = data_dir + "test.pickle"
     return map_file
 
 

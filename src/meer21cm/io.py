@@ -174,7 +174,9 @@ def read_pickle(
     # masked pixels are filled with 0
     # in case there is nan in the map
     map_data = np.nan_to_num(map_data.filled(0)[sel_indx])
-    counts = counts.filled(0)[sel_indx]
+    if isinstance(counts, np.ma.MaskedArray):
+        counts = counts.filled(0)
+    counts = counts[sel_indx]
     map_has_sampling = map_has_sampling[sel_indx]
     # in case there is inconsistency between hit and map_has_sampling
     map_has_sampling = (map_has_sampling * (counts > 0)).astype("bool")
