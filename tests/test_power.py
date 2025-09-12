@@ -705,9 +705,12 @@ def test_noise_power_from_map(test_W):
     ps.box_buffkick = 10
     ps.compensate = False
     noise_map, noise_weights, pix_counts = ps.grid_data_to_field()
+    ps.field_1 = noise_map
+    ps.weights_field_1 = (ps.counts_in_box > 0).astype("float")
+    ps.weights_grid_1 = None
     renorm = power_weights_renorm(ps.weights_grid_1, ps.weights_grid_1)
-    sigma_n = np.zeros_like(ps.weights_grid_1)
-    sigma_n[pix_counts > 0] = np.sqrt(1 / pix_counts[pix_counts > 0])
+    sigma_n = np.zeros_like(ps.field_1)
+    sigma_n[ps.counts_in_box > 0] = np.sqrt(1 / ps.counts_in_box[ps.counts_in_box > 0])
     ptn = (sigma_n**2).mean() * np.prod(ps.box_resol) * renorm
     assert np.abs((ps.auto_power_3d_1.mean() - ptn) / ptn) < 1e-2
     gaussian_ness = np.abs(
