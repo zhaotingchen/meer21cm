@@ -320,14 +320,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def rescale_ps_1(self):
         """
-        The factor to rescale the power spectrum of the first field based on the weights.
+        The factor to rescale the power spectrum estimator of the first field based on the grid weights.
         """
         if self.renorm_weights_1:
-            weights_field = self.get_weights_none_to_one("weights_field_1")
             weights_grid = self.get_weights_none_to_one("weights_grid_1")
-            renorm_tot = power_weights_renorm(
-                weights_field * weights_grid, weights_field * weights_grid
-            )
+            renorm_tot = power_weights_renorm(weights_grid, weights_grid)
         else:
             renorm_tot = 1.0
         return renorm_tot
@@ -335,14 +332,11 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def rescale_ps_2(self):
         """
-        The factor to rescale the power spectrum of the second field based on the weights.
+        The factor to rescale the power spectrum estimator of the second field based on the grid weights.
         """
         if self.renorm_weights_2:
-            weights_field = self.get_weights_none_to_one("weights_field_2")
             weights_grid = self.get_weights_none_to_one("weights_grid_2")
-            renorm_tot = power_weights_renorm(
-                weights_field * weights_grid, weights_field * weights_grid
-            )
+            renorm_tot = power_weights_renorm(weights_grid, weights_grid)
         else:
             renorm_tot = 1.0
         return renorm_tot
@@ -350,16 +344,12 @@ class ModelPowerSpectrum(CosmologyCalculator):
     @property
     def rescale_ps_cross(self):
         """
-        The factor to rescale the power spectrum of the cross-correlation based on the weights.
+        The factor to rescale the power spectrum estimator of the cross-correlation based on the weights.
         """
         if self.renorm_weights_cross:
             weights_grid_1 = self.get_weights_none_to_one("weights_grid_1")
-            weights_field_1 = self.get_weights_none_to_one("weights_field_1")
             weights_grid_2 = self.get_weights_none_to_one("weights_grid_2")
-            weights_field_2 = self.get_weights_none_to_one("weights_field_2")
-            renorm_tot = power_weights_renorm(
-                weights_grid_1 * weights_field_1, weights_grid_2 * weights_field_2
-            )
+            renorm_tot = power_weights_renorm(weights_grid_1, weights_grid_2)
         else:
             renorm_tot = 1.0
         return renorm_tot
@@ -3005,6 +2995,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
                 grid_scheme=self.grid_scheme,
                 particle_mass=self.w_HI[self.W_HI.sum(-1) > 0].ravel(),
                 compensate=False,  # compensate should be at model level
+                average=False,
             )
         return counts_in_grids
 
