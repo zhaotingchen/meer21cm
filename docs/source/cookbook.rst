@@ -11,6 +11,7 @@ Theory Recipes
 
     cookbook/weights
     cookbook/survey_dimension
+    cookbook/mode_mixing
 
 Data Analysis Recipes
 ---------------------
