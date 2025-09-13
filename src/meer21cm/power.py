@@ -1633,6 +1633,25 @@ def get_vec_mode(vecarr):
     return result
 
 
+def get_shot_noise_galaxy(
+    gal_count,
+    box_len,
+    weights=None,
+):
+    """
+    Calculate the shot noise of a galaxy number count field.
+    """
+    if weights is None:
+        weights = np.ones(gal_count.shape)
+    shot_noise = (
+        np.prod(box_len)
+        / np.sum(gal_count)
+        * power_weights_renorm(weights, weights)
+        * weights.mean() ** 2
+    )
+    return shot_noise
+
+
 def get_shot_noise(
     real_field,
     box_len,

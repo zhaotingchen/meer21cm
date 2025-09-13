@@ -73,6 +73,13 @@ def test_get_fourier_density():
     assert np.abs((np.abs(rand_fourier) ** 2).mean() - 1) < 5e-2
 
 
+def test_get_shot_noise_galaxy():
+    gal_count = np.ones(100000)
+    box_len = [1, 1, 1]
+    shot_noise = get_shot_noise_galaxy(gal_count, box_len)
+    assert np.allclose(shot_noise, 1e-5)
+
+
 def test_get_power_spectrum():
     complex_rand = np.random.normal(size=100000) + 1j * np.random.normal(size=100000)
     complex_rand /= np.sqrt(2)
