@@ -25,3 +25,5 @@ Mock Recipes
 ------------
 .. toctree::
     :maxdepth: 1
+
+    cookbook/resolution
