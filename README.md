@@ -4,7 +4,7 @@
 
 `meer21cm` deals with single dish 21cm intensity mapping using MeerKAT.
 It is used by [the MeerKLASS collaboration](https://meerklass.org/) for performing power spectrum analysis for the UHF band data.
-It rewrites and extends [`meerpower`](https://github.com/meerklass/meerpower), the previous power spectrum analysis pipeline used by the MeerKLASS collaboration.
+It rewrites and extends [`meerpower`](https://github.com/meerklass/meerpower), the previous power spectrum analysis pipeline used by [the MeerKLASS collaboration](https://meerklass.github.io).
 
 ## Documentation
 The detailed documentation is available at https://meer21cm.readthedocs.io
@@ -12,7 +12,7 @@ The detailed documentation is available at https://meer21cm.readthedocs.io
 ## Installation
 Clone this repo:
 ```
-git clone git@github.com:zhaotingchen/meer21cm.git
+git clone https://github.com/zhaotingchen/meer21cm.git
 ```
 
 And run
@@ -21,4 +21,4 @@ cd meer21cm/
 pip install -e .
 ```
 
-For more detailed instruction check the documentation website.
+For more detailed instruction check [the documentation website](https://meer21cm.readthedocs.io).
