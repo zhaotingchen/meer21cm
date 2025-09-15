@@ -927,3 +927,19 @@ class Specification:
         Returns the index of the frequency channel with the maximum sampling on the sky map.
         """
         return np.argmax(self.map_has_sampling.sum(axis=(0, 1)))
+
+    def get_weights_none_to_one(self, attr_name):
+        """
+        Get the weights, and if it is None, convert it to 1.0 of size of kmode.
+        Only used for power spectrum calculation.
+        Defined here for inheritance.
+        """
+        weights = getattr(self, attr_name)
+        if weights is None:
+            if hasattr(self, "box_ndim"):
+                weights = np.ones(self.box_ndim)
+            else:
+                shape = np.array(self.kmode.shape)
+                shape[-1] = 2 * shape[-1] - 2
+                weights = np.ones(shape)
+        return weights

@@ -1,6 +1,16 @@
 Releases
 ========
 
+dev
+------
+Features
+++++++++
+* add get_shot_noise_galaxy function
+
+Fixes
++++++
+* Fixed an issue of model power convolution for auto power with same weights
+
 v0.7.0
 ------
 Features

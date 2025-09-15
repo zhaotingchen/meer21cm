@@ -73,10 +73,17 @@ def test_get_fourier_density():
     assert np.abs((np.abs(rand_fourier) ** 2).mean() - 1) < 5e-2
 
 
+def test_get_shot_noise_galaxy():
+    gal_count = np.ones(100000)
+    box_len = [1, 1, 1]
+    shot_noise = get_shot_noise_galaxy(gal_count, box_len)
+    assert np.allclose(shot_noise, 1e-5)
+
+
 def test_get_power_spectrum():
     complex_rand = np.random.normal(size=100000) + 1j * np.random.normal(size=100000)
     complex_rand /= np.sqrt(2)
-    power_3d = get_power_spectrum(complex_rand, [1, 1, 1])
+    power_3d = get_power_spectrum(complex_rand, [1, 1, 1], weights=np.ones(100000))
     assert np.abs(power_3d.mean() - 1) < 2e-2
     assert np.abs(power_3d.std() - 1) < 2e-2
     spindx = np.random.uniform(-3, 0)
@@ -177,17 +184,6 @@ def test_FieldPowerSpectrum():
     p1d, k1d, nmodes = ps.get_1d_power("cross_power_3d")
 
 
-def test_rescale_ps():
-    ps = PowerSpectrum(
-        renorm_weights_field_1=False,
-        renorm_weights_field_2=False,
-        renorm_weights_field_cross=False,
-    )
-    assert ps.rescale_ps_1 == 1.0
-    assert ps.rescale_ps_2 == 1.0
-    assert ps.rescale_ps_cross == 1.0
-
-
 def test_get_shot_noise():
     # test poisson galaxies
     delta_x = np.zeros(100**3)
@@ -279,15 +275,30 @@ def test_power_weights_renorm():
     assert np.allclose(power_weights_renorm(weights, None), 1)
     assert np.allclose(power_weights_renorm(None, None), 1)
 
-    # try a typical taper with uniform power
-    power1 = np.ones([100, 100, 51])
-    taper = (
-        windows.blackmanharris(101)[None, None, :]
-        * np.ones_like(power1[:, :, 0])[:, :, None]
+    # random noise, with random taper
+    field_1 = np.random.normal(size=[100, 100, 101])
+    power_1 = np.abs(np.fft.rfft(field_1)) ** 2
+    taper_1 = np.random.uniform(0, 1, size=[100, 100, 101])
+    taper_2 = np.random.uniform(0, 1, size=[100, 100, 101])
+    assert np.allclose(
+        get_modelpk_conv(power_1, taper_1, None).mean(), power_1.mean(), rtol=1e-2
     )
-    assert np.allclose(get_modelpk_conv(np.ones_like(power1), taper, None).mean(), 1)
-    assert np.allclose(get_modelpk_conv(np.ones_like(power1), None, taper).mean(), 1)
-    assert np.allclose(get_modelpk_conv(np.ones_like(power1), None, None).mean(), 1)
+    assert np.allclose(
+        get_modelpk_conv(power_1, None, taper_2).mean(), power_1.mean(), rtol=1e-2
+    )
+    assert np.allclose(
+        get_modelpk_conv(power_1, None, None).mean(), power_1.mean(), rtol=1e-2
+    )
+    assert np.allclose(
+        get_modelpk_conv(power_1, taper_1, taper_1).mean(), power_1.mean(), rtol=1e-2
+    )
+    assert np.allclose(
+        get_modelpk_conv(power_1, taper_2, taper_2).mean(), power_1.mean(), rtol=1e-2
+    )
+    assert np.allclose(
+        get_modelpk_conv(power_1, taper_1, taper_2).mean(), power_1.mean(), rtol=1e-2
+    )
+
     # try a random thermal noise
     box_len = np.array([80, 50, 100])
     box_dim = np.array([100, 200, 41])
@@ -358,7 +369,7 @@ def test_power_weights_renorm():
 
 
 def test_get_modelpk_conv():
-    box_dim = np.array([100, 200, 41])
+    box_dim = np.array([100, 200, 40])
     test_ps = np.ones([100, 200, 21])
     # uniform weights
     test_ps_conv = get_modelpk_conv(
@@ -705,9 +716,12 @@ def test_noise_power_from_map(test_W):
     ps.box_buffkick = 10
     ps.compensate = False
     noise_map, noise_weights, pix_counts = ps.grid_data_to_field()
-    renorm = power_weights_renorm(ps.weights_grid_1, ps.weights_grid_1)
-    sigma_n = np.zeros_like(ps.weights_grid_1)
-    sigma_n[pix_counts > 0] = np.sqrt(1 / pix_counts[pix_counts > 0])
+    ps.field_1 = noise_map
+    ps.weights_field_1 = (ps.counts_in_box > 0).astype("float")
+    ps.weights_grid_1 = None
+    renorm = power_weights_renorm(ps.weights_field_1, ps.weights_field_1)
+    sigma_n = np.zeros_like(ps.field_1)
+    sigma_n[ps.counts_in_box > 0] = np.sqrt(1 / ps.counts_in_box[ps.counts_in_box > 0])
     ptn = (sigma_n**2).mean() * np.prod(ps.box_resol) * renorm
     assert np.abs((ps.auto_power_3d_1.mean() - ptn) / ptn) < 1e-2
     gaussian_ness = np.abs(
@@ -715,6 +729,25 @@ def test_noise_power_from_map(test_W):
         / ps.auto_power_3d_1.mean()
     )
     assert gaussian_ness < 0.05
+
+
+def test_renorm_ps():
+    # need better test later
+    ps = PowerSpectrum()
+    ps._box_len = np.array([10, 10, 10])
+    ps._box_ndim = np.array([10, 10, 10])
+    ps.weights_field_1 = np.ones_like(ps.kmode)
+    ps.weights_field_2 = np.ones_like(ps.kmode)
+    ps.unitless_1 = False
+    ps.unitless_2 = False
+    assert np.allclose(ps.renorm_ps_1, 1.0)
+    assert np.allclose(ps.renorm_ps_2, 1.0)
+    assert np.allclose(ps.renorm_ps_cross, 1.0)
+    ps.unitless_1 = True
+    ps.unitless_2 = True
+    assert np.allclose(ps.renorm_ps_1, 1.0)
+    assert np.allclose(ps.renorm_ps_2, 1.0)
+    assert np.allclose(ps.renorm_ps_cross, 1.0)
 
 
 def test_cache():
@@ -876,19 +909,6 @@ def test_poisson_gal_gen():
     )
     plateau = psn1d[-5:].mean()
     assert np.abs(plateau - psn) / psn < 2.5e-1
-
-
-def test_no_renorm_weights():
-    ps = PowerSpectrum(
-        survey="meerklass_2021",
-        band="L",
-        renorm_weights_1=False,
-        renorm_weights_2=False,
-        renorm_weights_cross=False,
-    )
-    assert ps.rescale_ps_1 == 1.0
-    assert ps.rescale_ps_2 == 1.0
-    assert ps.rescale_ps_cross == 1.0
 
 
 def test_1d_k_cut():
