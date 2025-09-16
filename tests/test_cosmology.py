@@ -67,6 +67,13 @@ def test_cosmo():
     # test update omega_hi, scales correctly
     coscal.omega_hi = 5.5e-4
     np.allclose(coscal.average_hi_temp / t1, (coscal.omega_hi.mean() / ohi1))
+    # test omega_hi_z_func, proper z func
+    coscal.nu = np.array([8e8, 9e8])
+    coscal.omega_hi = np.array([6e-4, 5e-4])
+    assert np.allclose(coscal.omega_hi_z_mean, 5.5e-4)
+    coscal.omega_hi = np.array([5e-4, 5e-4])
+    coscal.nu = np.array([8e8, 9e8])
+    assert np.allclose(coscal.omega_hi_z_mean, 5e-4)
 
 
 def test_update_pars():

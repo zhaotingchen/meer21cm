@@ -600,6 +600,18 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         self.cosmo = cosmo.clone(Ode0=value)
 
     @property
+    def omega_hi_z_func(self):
+        """
+        Interpolate the input ``self.omega_hi`` at each frequency channel ``self.z_ch`` to a function of redshift.
+        """
+        if np.all(self.omega_hi == self.omega_hi[0]):
+            return lambda z: self.omega_hi[0] * np.ones_like(z)
+        func = interp1d(
+            self.z_ch, self.omega_hi, bounds_error=False, fill_value="extrapolate"
+        )
+        return func
+
+    @property
     @tagging("nu")
     def omega_hi_z_mean(self):
         """
@@ -607,9 +619,7 @@ class CosmologyCalculator(Specification, CosmologyParameters):
         Interpolated from the input ``self.omega_hi`` at each frequency channel ``self.z_ch``.
         """
         if self._omega_hi_z_mean is None:
-            self._omega_hi_z_mean = interp1d(
-                self.z_ch, self.omega_hi, bounds_error=False, fill_value="extrapolate"
-            )(self.z)
+            self._omega_hi_z_mean = self.omega_hi_z_func(self.z)
         return self._omega_hi_z_mean
 
     @property
