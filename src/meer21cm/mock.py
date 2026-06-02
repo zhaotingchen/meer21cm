@@ -130,7 +130,6 @@ class MockSimulation(PowerSpectrum):
                 "box dimensions and model power will be inconsistent"
             )
 
-    @PowerSpectrum.seed.setter
     def _set_seed(self, pseed):
         super()._set_seed(pseed)
         init_attr = [

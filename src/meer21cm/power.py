@@ -2344,15 +2344,15 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.flat_sky_padding = flat_sky_padding
         self.k1dweights = k1dweights
 
+    def _set_seed(self, pseed):
+        self._seed = pseed
+
     @property
     def seed(self):
         """
         seed value for RNG calls throughout the code.
         """
         return self._seed
-
-    def _set_seed(self, pseed):
-        self._seed = pseed
 
     @seed.setter
     def seed(self, pseed):
