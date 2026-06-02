@@ -2345,6 +2345,22 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.k1dweights = k1dweights
 
     @property
+    def seed(self):
+        """
+        seed value for RNG calls throughout the code.
+        """
+        return self._seed
+
+    def _set_seed(self, pseed):
+        self._seed = pseed
+
+    @seed.setter
+    def seed(self, pseed):
+        self._set_seed(pseed)
+        # The only quantity in this class that uses the seed is
+        # get_enclosing box which does not need recomputing (probably)
+
+    @property
     def box_buffkick(self):
         """
         The buffer kick for the box on each side when gridding. In the unit of Mpc.
@@ -3559,6 +3575,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             sel = self.W_HI[:, :, 0]
         if num_g_rand is None:
             num_g_rand = self.ra_gal.size
+        if seed is None:
+            seed = self.seed
         rng = np.random.default_rng(seed=seed)
         ra_rand = self.ra_map[sel]
         dec_rand = self.dec_map[sel]

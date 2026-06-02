@@ -130,6 +130,31 @@ class MockSimulation(PowerSpectrum):
                 "box dimensions and model power will be inconsistent"
             )
 
+    @PowerSpectrum.seed.setter
+    def _set_seed(self, pseed):
+        super()._set_seed(pseed)
+        init_attr = [
+            "_halo_mass_mock_tracer",
+            "_hi_mass_mock_tracer",
+            "_hi_profile_mock_tracer",
+            "_mock_tracer_position_in_box",
+            "_mock_tracer_position_in_radecz",
+            "_mock_matter_field_r",
+            "_mock_velocity_u_matter",
+            "_mock_kaiser_field_k_matter",
+            "_mock_matter_field",
+            "_mock_tracer_field_1_r",
+            "_mock_velocity_u_tracer_1",
+            "_mock_kaiser_field_k_tracer_1",
+            "_mock_tracer_field_1",
+            "_mock_tracer_field_2_r",
+            "_mock_velocity_u_tracer_2",
+            "_mock_kaiser_field_k_tracer_2",
+            "_mock_tracer_field_2",
+            ]
+
+        self.clean_cache(init_attr)
+
     def _iter_last_axis_batches(self, axis_size):
         """
         Return stable last-axis batches for chunked processing.

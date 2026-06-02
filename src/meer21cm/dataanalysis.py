@@ -1382,7 +1382,6 @@ class Specification:
         Create a white noise map with the given standard deviation.
         The sigma in each pixel is then scaled by the counts 1/sqrt(counts).
 
-        Note that, the default seed is **fixed** to the class attribute ``self.seed``.
         If you want to generate multiple random catalogues, you need to set a different seed manually for each catalogue.
 
         If you want to use different noise level per pixel, you can either pass a 3D
@@ -1400,7 +1399,7 @@ class Specification:
         counts: array, default None.
             The counts in each pixel. If None, the counts will be one across the cube.
         seed: int, default None.
-            The seed for the random number generator. Default uses the class attribute ``self.seed``.
+           If none, the seed is pulled from OS as described by the numpy documentation.
         inf_to_zero: bool, default True.
             If True, the inf values in the noise map will be set to zero.
         Returns
