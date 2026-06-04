@@ -2344,9 +2344,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         self.flat_sky_padding = flat_sky_padding
         self.k1dweights = k1dweights
 
-    def _set_seed(self, pseed):
-        self._seed = pseed
-
     @property
     def seed(self):
         """
@@ -2356,9 +2353,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
 
     @seed.setter
     def seed(self, pseed):
-        self._set_seed(pseed)
-        # The only quantity in this class that uses the seed is
-        # get_enclosing box which does not need recomputing (probably)
+        self._seed = pseed
+        self.clean_cache(self.seed_dep_attr)
 
     @property
     def box_buffkick(self):

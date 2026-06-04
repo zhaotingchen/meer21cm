@@ -234,6 +234,7 @@ class Specification:
                 "Predefined survey/band grids are WCS-only; omit hp_nside when using "
                 "survey=... and band=..., or use a non-default survey/band key."
             )
+
         self.dependency_dict = find_property_with_tags(self)
         funcs = list(chain.from_iterable(list(self.dependency_dict.values())))
         for func_i in np.unique(np.array(funcs)):
