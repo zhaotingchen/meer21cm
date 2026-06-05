@@ -16,6 +16,23 @@ from scipy.signal import windows
 from scipy.interpolate import interp1d
 
 
+def test_seed_clean_cache():
+    mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
+        kaiser_rsd=True,
+        parallel_plane=True,
+        density="lognormal",
+        tracer_bias_2=1.5,
+    )
+    mock.seed = 42
+    field_1 = np.array(mock.mock_tracer_field_1)
+    mock.seed = 43
+    assert mock._mock_tracer_field_1 is None
+    field_2 = np.array(mock.mock_tracer_field_2)
+    assert not np.allclose(field_1, field_2)
+
+
 @pytest.mark.parametrize("parallel_plane", [True, False])
 def test_rsd_from_field(parallel_plane):
     # rsd from field only works at quite large scales

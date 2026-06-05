@@ -2347,7 +2347,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     @property
     def seed(self):
         """
-        seed value for RNG calls throughout the code.
+        Seed value for RNG calls throughout the instance.
         """
         return self._seed
 
@@ -3544,8 +3544,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     def gen_random_poisson_galaxy(self, sel=None, num_g_rand=None, seed=None):
         """
         Generate a random galaxy catalogue from the map cube following the Poisson distribution.
-
-        Note that, by default, the random seed is fixed to the class attribute ``self.seed``.
+        The generation of the sample does not use the instance seed if not explicitly passed and will use a random one otherwise.
         If you want to generate multiple random catalogues, you need to set a different seed manually for each catalogue.
 
         Parameters
@@ -3556,7 +3555,7 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
         num_g_rand: int, default None
             The number of galaxies to generate. Default uses the number of galaxies stored in the data in `self.ra_gal`.
         seed: int, default None
-            The seed for the random number generator. Default uses the class attribute ``self.seed``.
+            The seed for the random number generator.
 
         Returns
         -------
@@ -3572,8 +3571,6 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
             sel = self.W_HI[:, :, 0]
         if num_g_rand is None:
             num_g_rand = self.ra_gal.size
-        if seed is None:
-            seed = self.seed
         rng = np.random.default_rng(seed=seed)
         ra_rand = self.ra_map[sel]
         dec_rand = self.dec_map[sel]
