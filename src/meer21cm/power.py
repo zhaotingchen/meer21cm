@@ -2354,7 +2354,8 @@ class PowerSpectrum(FieldPowerSpectrum, ModelPowerSpectrum):
     @seed.setter
     def seed(self, pseed):
         self._seed = pseed
-        self.clean_cache(self.seed_dep_attr)
+        if "seed_dep_attr" in dir(self):
+            self.clean_cache(self.seed_dep_attr)
 
     @property
     def box_buffkick(self):
