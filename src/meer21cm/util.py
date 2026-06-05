@@ -1247,7 +1247,9 @@ def cal_himf(x, mmin, cosmo, mmax=11, integrate_step=500):
     marr = np.logspace(mmin, mmax, num=integrate_step)
     omegahi = (
         (
-            np.trapz(himf(np.log10(marr), x[0], x[1], x[2]) * marr, x=np.log10(marr))
+            np.trapezoid(
+                himf(np.log10(marr), x[0], x[1], x[2]) * marr, x=np.log10(marr)
+            )
             * units.M_sun
             / units.Mpc**3
             / cosmo.critical_density0
@@ -1256,10 +1258,13 @@ def cal_himf(x, mmin, cosmo, mmax=11, integrate_step=500):
         .value
     )
     psn = (
-        np.trapz(himf(np.log10(marr), x[0], x[1], x[2]) * marr**2, x=np.log10(marr))
-        / np.trapz(himf(np.log10(marr), x[0], x[1], x[2]) * marr, x=np.log10(marr)) ** 2
+        np.trapezoid(
+            himf(np.log10(marr), x[0], x[1], x[2]) * marr**2, x=np.log10(marr)
+        )
+        / np.trapezoid(himf(np.log10(marr), x[0], x[1], x[2]) * marr, x=np.log10(marr))
+        ** 2
     )
-    nhi = np.trapz(himf(np.log10(marr), x[0], x[1], x[2]), x=np.log10(marr))
+    nhi = np.trapezoid(himf(np.log10(marr), x[0], x[1], x[2]), x=np.log10(marr))
     return nhi, omegahi, psn
 
 
@@ -1312,7 +1317,7 @@ def cumu_nhi_from_himf(m, mmin, x):
             The integrated number density of HI galaxies, in the units of phi_s * dex
     """
     marr = np.logspace(mmin, m, num=500)
-    nhi = np.trapz(himf(np.log10(marr), x[0], x[1], x[2]), x=np.log10(marr), axis=0)
+    nhi = np.trapezoid(himf(np.log10(marr), x[0], x[1], x[2]), x=np.log10(marr), axis=0)
     return nhi
 
 
