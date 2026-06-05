@@ -138,8 +138,8 @@ jobs:
         source activate ${ENV_NAME}
         pytest --cov-config=.coveragerc --cov=meer21cm tests/ --cov-report xml:coverage.xml
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4.0.1
+      uses: codecov/codecov-action@v5
       with:
-        file: ./coverage.xml
+        files: ./coverage.xml
         flags: core-tests
         token: ${{ secrets.CODECOV_TOKEN }}

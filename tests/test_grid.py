@@ -135,7 +135,7 @@ def test_project_function():
     for scheme in allowed_window_scheme:
         s_arr = np.linspace(-1.5, 1.5, 601)
         weight_arr = project_function(s_arr, scheme)
-        assert np.abs(np.trapz(weight_arr, s_arr) - 1) < 1e-2
+        assert np.abs(np.trapezoid(weight_arr, x=s_arr) - 1) < 1e-2
         s_test = 0.25
         func_value = project_function(s_test, scheme)
         if scheme == "nnb":
