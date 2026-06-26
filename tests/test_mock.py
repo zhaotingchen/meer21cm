@@ -33,6 +33,36 @@ def test_seed_clean_cache():
     assert not np.allclose(field_1, field_2)
 
 
+def test_tot_num_source_in_box_cache():
+    mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
+        ra_range=(334, 357),
+        dec_range=(-35, -26.5),
+        tracer_bias_1=1.5,
+        num_discrete_source=100,
+    )
+    mock.get_enclosing_box()
+    # cache starts empty and is populated on first access
+    assert mock._tot_num_source_in_box is None
+    v1 = mock.tot_num_source_in_box
+    assert mock._tot_num_source_in_box is not None
+    # the side-effect dndz renorm callable is also set
+    assert mock._dndz_renorm is not None
+    # repeated access returns the cached value
+    assert mock.tot_num_source_in_box == v1
+    # the cached attribute is registered against all its dependency tags
+    assert "_tot_num_source_in_box" in mock.discrete_dep_attr
+    assert "_tot_num_source_in_box" in mock.box_dep_attr
+    assert "_tot_num_source_in_box" in mock.nu_dep_attr
+    assert "_tot_num_source_in_box" in mock.cosmo_model_dep_attr
+    # changing a discrete-tagged setting clears the cache and triggers a recompute
+    mock.num_discrete_source = 200
+    assert mock._tot_num_source_in_box is None
+    v2 = mock.tot_num_source_in_box
+    assert np.isclose(v2, v1 * 2)
+
+
 @pytest.mark.parametrize("parallel_plane", [True, False])
 def test_rsd_from_field(parallel_plane):
     # rsd from field only works at quite large scales

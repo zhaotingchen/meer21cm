@@ -111,6 +111,8 @@ class MockSimulation(PowerSpectrum):
             "_mock_velocity_u_tracer_2",
             "_mock_amp_1",
             "_mock_amp_2",
+            "_tot_num_source_in_box",
+            "_dndz_renorm",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -235,6 +237,7 @@ class MockSimulation(PowerSpectrum):
         return tracer_positions
 
     @property
+    @tagging("cosmo_model", "nu", "box", "discrete")
     def tot_num_source_in_box(self):
         """
         The total number of mock sources in the box needed to achieve
@@ -243,7 +246,25 @@ class MockSimulation(PowerSpectrum):
         Note that if you change the simulation settings such as ``self.num_discrete_source``,
         ``self.discrete_source_dndz``, ``self.z_ch``, ``self.W_HI``, etc,
         this property will be automatically updated but the mock catalog is not.
+
+        This is a cached, tagged property: it is computed once via
+        :meth:`get_tot_num_source_in_box` and only recomputed when one of its
+        dependencies (tagged ``cosmo_model``, ``nu``, ``box`` or ``discrete``) changes.
         """
+        if self._tot_num_source_in_box is None:
+            self.get_tot_num_source_in_box()
+        return self._tot_num_source_in_box
+
+    def get_tot_num_source_in_box(self):
+        """
+        Compute and cache :attr:`tot_num_source_in_box`.
+
+        This also sets the internal ``self._dndz_renorm`` callable used when
+        sampling the discrete tracer positions.
+        """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to set _tot_num_source_in_box"
+        )
         if self.flat_sky:
             dndz_arr = self.discrete_source_dndz(self.box_voxel_redshift)
             z_sel = (self.box_voxel_redshift >= self.z_ch.min()) & (
@@ -259,7 +280,7 @@ class MockSimulation(PowerSpectrum):
                 np.prod(np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding))
                 / self.W_HI.sum()
             )
-            return self.num_discrete_source * ratio
+            self._tot_num_source_in_box = self.num_discrete_source * ratio
         else:
             nu_ext = center_to_edges(self.nu)
             z_ext = freq_to_redshift(nu_ext)
@@ -280,7 +301,7 @@ class MockSimulation(PowerSpectrum):
             ratio = np.prod(self.box_len) / self.survey_volume
             renorm *= np.prod(self.box_len) / (self.num_discrete_source * ratio)
             self._dndz_renorm = lambda z: self.discrete_source_dndz(z) * renorm
-            return self.num_discrete_source * ratio
+            self._tot_num_source_in_box = self.num_discrete_source * ratio
 
     @property
     def highres_sim(self):
