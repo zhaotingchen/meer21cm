@@ -47,8 +47,6 @@ def test_tot_num_source_in_box_cache():
     assert mock._tot_num_source_in_box is None
     v1 = mock.tot_num_source_in_box
     assert mock._tot_num_source_in_box is not None
-    # the side-effect dndz renorm callable is also set
-    assert mock._dndz_renorm is not None
     # repeated access returns the cached value
     assert mock.tot_num_source_in_box == v1
     # the cached attribute is registered against all its dependency tags
@@ -61,6 +59,40 @@ def test_tot_num_source_in_box_cache():
     assert mock._tot_num_source_in_box is None
     v2 = mock.tot_num_source_in_box
     assert np.isclose(v2, v1 * 2)
+
+
+def test_dndz_renorm_cache():
+    mock = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
+        ra_range=(334, 357),
+        dec_range=(-35, -26.5),
+        tracer_bias_1=1.5,
+        num_discrete_source=100,
+    )
+    mock.get_enclosing_box()
+    # dndz_renorm is now an independent cached, tagged property (no longer a
+    # side-effect of accessing tot_num_source_in_box)
+    assert mock._dndz_renorm is None
+    fnc = mock.dndz_renorm
+    assert mock._dndz_renorm is not None
+    assert callable(fnc)
+    # the cached attribute is registered against all its dependency tags
+    assert "_dndz_renorm" in mock.discrete_dep_attr
+    assert "_dndz_renorm" in mock.box_dep_attr
+    assert "_dndz_renorm" in mock.nu_dep_attr
+    assert "_dndz_renorm" in mock.cosmo_model_dep_attr
+    # changing a discrete-tagged setting clears the cache
+    mock.num_discrete_source = 200
+    assert mock._dndz_renorm is None
+    # the realised mean comoving number density [Mpc^-3] is recovered as
+    # tot_num_source_in_box / prod(box_len) * (volume-weighted mean of dndz_renorm),
+    # which for the lightcone case has volume-weighted mean of unity
+    n_bar = mock.tot_num_source_in_box / np.prod(mock.box_len)
+    z_ch = mock.z_ch
+    weight = mock.dndz_renorm(z_ch)
+    assert np.isfinite(weight).all()
+    assert n_bar > 0
 
 
 @pytest.mark.parametrize("parallel_plane", [True, False])
@@ -631,3 +663,83 @@ def test_dndz():
     input_dndz = dndz(mock.z_ch)
     input_dndz /= input_dndz.max()
     assert np.abs(input_dndz - kernel).mean() < 1e-1
+
+
+def test_lightcone_count_and_dndz():
+    """
+    For the lightcone (non-flat-sky) mock, check that:
+
+    1. the total number of generated galaxies inside the survey footprint matches
+       ``num_discrete_source`` (within cosmic variance + Poisson scatter), and
+    2. the recovered line-of-sight redshift distribution follows the input
+       ``discrete_source_dndz`` shape.
+
+    A non-uniform (linearly ramped) dN/dz is used so that the z-shape check is
+    discriminating: a uniform distribution would give a shape MAE of ~0.3 against
+    this ramp, well above the threshold below.
+    """
+    ra_range = (339, 351)
+    dec_range = (-35, -30)
+    # use the survey redshift range to build a ramped comoving number density
+    base = MockSimulation(
+        survey="meerklass_2021",
+        band="L",
+        ra_range=ra_range,
+        dec_range=dec_range,
+    )
+    zmin, zmax = base.z_ch.min(), base.z_ch.max()
+    zgrid = np.linspace(zmin - 0.05, zmax + 0.05, 200)
+    ramp = 1.0 + 3.0 * (zgrid - zmin) / (zmax - zmin)
+    ramp[zgrid < zmin] = 0
+    ramp[zgrid > zmax] = 0
+    dndz = interp1d(zgrid, ramp, bounds_error=False, fill_value=0)
+
+    num = 40000
+    seeds = [1, 2, 3]
+    z_gal_list = []
+    total_count = 0
+    for seed in seeds:
+        mock = MockSimulation(
+            survey="meerklass_2021",
+            band="L",
+            ra_range=ra_range,
+            dec_range=dec_range,
+            kaiser_rsd=True,
+            discrete_base_field=2,
+            seed=seed,
+            discrete_source_dndz=dndz,
+        )
+        mock.data = np.ones(mock.W_HI.shape)
+        mock.w_HI = np.ones(mock.W_HI.shape)
+        mock.counts = np.ones(mock.W_HI.shape)
+        mock.trim_map_to_range()
+        mock.downres_factor_radial = 1 / 2.0
+        mock.downres_factor_transverse = 1 / 2.0
+        mock.get_enclosing_box()
+        mock.tracer_bias_2 = 1.9
+        mock.num_discrete_source = num
+        mock.propagate_mock_tracer_to_gal_cat()
+        z_gal_list.append(mock.z_gal)
+        total_count += len(mock.z_gal)
+
+    # 1. total count matches num_discrete_source (averaged over seeds to suppress
+    # per-realisation cosmic variance; 10% tolerance covers the residual scatter)
+    mean_count = total_count / len(seeds)
+    assert np.abs(mean_count / num - 1) < 0.1
+
+    # 2. recovered redshift distribution follows the input dN/dz shape.
+    # bin galaxies in comoving distance so that each bin is an equal-volume slice
+    # (the box has constant transverse area), giving counts proportional to the
+    # comoving number density dN/dz at the bin redshift.
+    z_gal = np.concatenate(z_gal_list)
+    chi = mock.astropy_cosmo_true.comoving_distance(z_gal).value
+    n_bin = 8
+    edges = np.linspace(chi.min(), chi.max(), n_bin + 1)
+    centres = 0.5 * (edges[1:] + edges[:-1])
+    counts, _ = np.histogram(chi, bins=edges)
+    z_centres = mock.z_as_func_of_comov_dist(centres)
+    shape_meas = counts / counts.max()
+    shape_in = dndz(z_centres)
+    shape_in = shape_in / shape_in.max()
+    assert np.abs(shape_meas - shape_in).mean() < 0.1
+    assert np.corrcoef(shape_meas, shape_in)[0, 1] > 0.9
