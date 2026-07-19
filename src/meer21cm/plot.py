@@ -263,7 +263,7 @@ def plot_map_wcs(
             vcenter=0,
             vmax=np.nanmax(map_in) if vmax is None else vmax,
         )
-        cmap = copy.copy(matplotlib.cm.get_cmap("seismic"))
+        cmap = copy.copy(matplotlib.colormaps["seismic"])
         cmap.set_bad(color="grey")
     else:
         divnorm = None
@@ -426,7 +426,7 @@ def plot_map_healpix(
             ysize = auto_y
 
     if ZeroCentre:
-        cmap_use = copy.copy(matplotlib.cm.get_cmap("seismic"))
+        cmap_use = copy.copy(matplotlib.colormaps["seismic"])
         cmap_use.set_bad(color="grey")
         norm = colors.TwoSlopeNorm(
             vmin=np.nanmin(vals), vcenter=0, vmax=np.nanmax(vals)

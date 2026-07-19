@@ -111,6 +111,8 @@ class MockSimulation(PowerSpectrum):
             "_mock_velocity_u_tracer_2",
             "_mock_amp_1",
             "_mock_amp_2",
+            "_tot_num_source_in_box",
+            "_dndz_renorm",
         ]
         for attr in init_attr:
             setattr(self, attr, None)
@@ -235,6 +237,7 @@ class MockSimulation(PowerSpectrum):
         return tracer_positions
 
     @property
+    @tagging("cosmo_model", "nu", "box", "discrete")
     def tot_num_source_in_box(self):
         """
         The total number of mock sources in the box needed to achieve
@@ -243,24 +246,88 @@ class MockSimulation(PowerSpectrum):
         Note that if you change the simulation settings such as ``self.num_discrete_source``,
         ``self.discrete_source_dndz``, ``self.z_ch``, ``self.W_HI``, etc,
         this property will be automatically updated but the mock catalog is not.
+
+        This is a cached, tagged property: it is computed once via
+        :meth:`get_tot_num_source_in_box` and only recomputed when one of its
+        dependencies (tagged ``cosmo_model``, ``nu``, ``box`` or ``discrete``) changes.
+        The companion redshift sampling weight is :attr:`dndz_renorm`.
         """
+        if self._tot_num_source_in_box is None:
+            self.get_tot_num_source_in_box()
+        return self._tot_num_source_in_box
+
+    def get_tot_num_source_in_box(self):
+        """
+        Compute and cache :attr:`tot_num_source_in_box`.
+        """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to set _tot_num_source_in_box"
+        )
         if self.flat_sky:
+            ratio = (
+                np.prod(np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding))
+                / self.W_HI.sum()
+            )
+        else:
+            ratio = np.prod(self.box_len) / self.survey_volume
+        self._tot_num_source_in_box = self.num_discrete_source * ratio
+
+    @property
+    @tagging("cosmo_model", "nu", "box", "discrete")
+    def dndz_renorm(self):
+        r"""
+        The redshift weight used to redistribute the discrete tracers along the
+        line of sight when sampling the mock catalogue.
+
+        This is a callable ``dndz_renorm(z)`` and is **dimensionless** (it is *not*
+        a number density in :math:`{\rm Mpc}^{-3}`). It rescales the input
+        :attr:`discrete_source_dndz` so that, when multiplied into the per-cell
+        expected counts in :meth:`get_mock_tracer_position_in_box`, the total number
+        of sampled sources matches :attr:`tot_num_source_in_box`.
+
+        The physical realised comoving number density (in :math:`{\rm Mpc}^{-3}`) is
+        recovered from this weight as
+
+        .. math::
+            n(z) = \frac{N_{\rm box}}{V_{\rm box}}\, \texttt{dndz\_renorm}(z),
+
+        where :math:`N_{\rm box}` is :attr:`tot_num_source_in_box` and
+        :math:`V_{\rm box} = \prod(\texttt{box\_len})`. In the lightcone
+        (``flat_sky=False``) case the volume-weighted mean of ``dndz_renorm`` is unity,
+        so :math:`N_{\rm box}/V_{\rm box}` is the mean comoving number density in the box.
+
+        This is a cached, tagged property: it is computed once via
+        :meth:`get_dndz_renorm` and only recomputed when one of its dependencies
+        (tagged ``cosmo_model``, ``nu``, ``box`` or ``discrete``) changes.
+        """
+        if self._dndz_renorm is None:
+            self.get_dndz_renorm()
+        return self._dndz_renorm
+
+    def get_dndz_renorm(self):
+        """
+        Compute and cache the :attr:`dndz_renorm` redshift sampling weight.
+        """
+        logger.info(
+            f"invoking {inspect.currentframe().f_code.co_name} to set _dndz_renorm"
+        )
+        if self.flat_sky:
+            # only the shape of the input dndz matters; normalise it to unit mean
+            # over the survey redshift range
             dndz_arr = self.discrete_source_dndz(self.box_voxel_redshift)
             z_sel = (self.box_voxel_redshift >= self.z_ch.min()) & (
                 self.box_voxel_redshift <= self.z_ch.max()
             )
             dndz_arr = dndz_arr[z_sel]
-            dndz_arr /= dndz_arr.max()
+            dndz_arr = dndz_arr / dndz_arr.max()
             ratio_dndz = 1 / dndz_arr.mean()
-            self._dndz_renorm = (
-                lambda z: self.discrete_source_dndz(z) / dndz_arr.max() * ratio_dndz
-            )
-            ratio = (
-                np.prod(np.array(self.data.shape) + 2 * np.array(self.flat_sky_padding))
-                / self.W_HI.sum()
-            )
-            return self.num_discrete_source * ratio
+            self._dndz_renorm = lambda z: self.discrete_source_dndz(z) * ratio_dndz
         else:
+            # lightcone: dn_channel is treated as a comoving number density [Mpc^-3],
+            # and (dn_channel * volume_per_channel).sum() is the expected source count
+            # over the survey. The weight is normalised by the survey volume so that the
+            # per-cell counts in get_mock_tracer_position_in_box integrate to
+            # tot_num_source_in_box.
             nu_ext = center_to_edges(self.nu)
             z_ext = freq_to_redshift(nu_ext)
             volume_per_channel = (
@@ -276,11 +343,8 @@ class MockSimulation(PowerSpectrum):
                 ).value
             )
             dn_channel = self.discrete_source_dndz(self.z_ch)
-            renorm = self.num_discrete_source / (dn_channel * volume_per_channel).sum()
-            ratio = np.prod(self.box_len) / self.survey_volume
-            renorm *= np.prod(self.box_len) / (self.num_discrete_source * ratio)
+            renorm = self.survey_volume / (dn_channel * volume_per_channel).sum()
             self._dndz_renorm = lambda z: self.discrete_source_dndz(z) * renorm
-            return self.num_discrete_source * ratio
 
     @property
     def highres_sim(self):
@@ -861,8 +925,9 @@ class MockSimulation(PowerSpectrum):
         else:
             density_field[:] = 0
         tracer_positions_list = []
+        dndz_renorm_fnc = self.dndz_renorm
         for z_sel, density_chunk in self._iter_field_los_chunks(density_field):
-            dndz_prob_chunk = self._dndz_renorm(self.box_voxel_redshift[..., z_sel])
+            dndz_prob_chunk = dndz_renorm_fnc(self.box_voxel_redshift[..., z_sel])
             tracer_positions_i = self._sample_tracer_positions_from_density_chunk(
                 density_chunk=density_chunk,
                 dndz_prob_chunk=dndz_prob_chunk,
