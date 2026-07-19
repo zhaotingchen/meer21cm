@@ -1,11 +1,25 @@
 import numpy as np
-from meer21cm.stack import sum_3d_stack, stack
+from meer21cm.stack import sum_3d_stack, stack, stack_cubelet
 from meer21cm import Specification
 import pytest
 
 
-@pytest.mark.parametrize("sym", [(False), (True)])
-def test_stack(sym):
+def test_stack_invoke_error():
+    with pytest.raises(ValueError):
+        stack_cubelet(
+            1.0,
+            1.0,
+            [0],
+            [0],
+            [0],
+            weighting="random",
+        )
+
+
+@pytest.mark.parametrize(
+    "sym, weighting", [(False, "conventional"), (True, "quadratic")]
+)
+def test_stack(sym, weighting):
     raminMK, ramaxMK = 334, 357
     decminMK, decmaxMK = -35, -26.5
     ra_range_MK = (raminMK, ramaxMK)
@@ -31,7 +45,7 @@ def test_stack(sym):
     sp._dec_gal = dec_g
     sp._z_gal = z_g
     sp._data = data
-    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym)
+    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym, weighting=weighting)
     indx = np.where(stack_3D_map > 0)
     assert np.allclose(np.unique(indx[0]), [10])
     assert np.allclose(np.unique(indx[1]), [10])
@@ -43,7 +57,7 @@ def test_stack(sym):
     # source 1 no weights
     w_HI[80, 30, 80 - 4 : 80 + 5] = 0.0
     sp.w_HI = w_HI
-    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym)
+    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym, weighting=weighting)
     indx = np.where(stack_3D_map > 0)
     assert np.allclose(np.unique(indx[0]), [10])
     assert np.allclose(np.unique(indx[1]), [10])
@@ -68,10 +82,37 @@ def test_stack(sym):
     sp._dec_gal = dec_g
     sp._z_gal = z_g
     sp._data = data
-    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym)
+    stack_3D_map, stack_3D_weight = stack(sp, symmetrize=sym, weighting=weighting)
     average_profile = stack_3D_map[10, 10, peak_point - 4 : peak_point + 5]
     # due to double counting
     assert np.allclose(average_profile, source_avg * 2)
+
+
+@pytest.mark.parametrize("weighting", ["conventional", "quadratic"])
+def test_stack_weights(weighting):
+    input_map = np.zeros((3, 3, 1))
+    input_map[1, 1, 0] = 1.0
+    input_map[0, 1, 0] = 1.0
+    weights_map = np.zeros((3, 3, 1))
+    weights_map[1, 1, 0] = 1.0
+    weights_map[0, 1, 0] = 2.0
+    stack_3D_map, stack_3D_weight = stack_cubelet(
+        input_map,
+        weights_map,
+        [1],
+        [1],
+        [0],
+        weighting=weighting,
+        stack_angular_num_nearby_pix=1,
+        symmetrize=False,
+    )
+    if weighting == "conventional":
+        assert np.allclose(stack_3D_map, input_map)
+    elif weighting == "quadratic":
+        output_map = np.zeros((3, 3, 1))
+        output_map[1, 1, 0] = 1.0
+        output_map[0, 1, 0] = 2.0
+        assert np.allclose(stack_3D_map, output_map)
 
 
 def test_raise_error():
