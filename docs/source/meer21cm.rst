@@ -25,6 +25,14 @@ meer21cm.fg module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.estimator module
+-------------------------
+
+.. automodule:: meer21cm.estimator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.grid module
 --------------------
 
@@ -53,6 +61,14 @@ meer21cm.mock module
 --------------------
 
 .. automodule:: meer21cm.mock
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+meer21cm.model module
+---------------------
+
+.. automodule:: meer21cm.model
    :members:
    :undoc-members:
    :show-inheritance:

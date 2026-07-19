@@ -1208,3 +1208,8 @@ def test_grid_field_to_sky_map_healpix(average):
             ValueError, match="field shape .* does not match expected shape"
         ):
             mock.grid_field_to_sky_map(bad_field)
+
+
+def test_sync_k_skip():
+    ps = PowerSpectrum(model_k_from_field=False)
+    assert ps._sync_model_k_from_field() is None
