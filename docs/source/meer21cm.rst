@@ -17,6 +17,14 @@ meer21cm.dataanalysis module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.fftlog module
+----------------------
+
+.. automodule:: meer21cm.fftlog
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.fg module
 ------------------
 
