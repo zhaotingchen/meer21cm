@@ -202,6 +202,10 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
         Whether to use the flat sky approximation.
     flat_sky_padding: list, default [0, 0, 0]
         The padding for the flat sky box.
+    los : {'global', 'endpoint', 'firstpoint', 'midpoint'}, default 'global'
+        Line-of-sight convention for field multipoles (see
+        :class:`~meer21cm.estimator.FieldPowerSpectrum`). Only ``'global'``
+        is implemented.
     **params: dict
         Additional parameters to be passed to the base class :class:`meer21cm.cosmology.CosmologyCalculator`.
     """
@@ -250,6 +254,7 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
         flat_sky=False,
         flat_sky_padding=[0, 0, 0],
         k1dweights=None,
+        los="global",
         **params,
     ):
         if seed is None:
@@ -299,6 +304,7 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
             weights_2=weights_grid_2,
             mean_center_2=mean_center_2,
             unitless_2=unitless_2,
+            los=los,
             _skip_specification=True,
         )
         if model_k_from_field:

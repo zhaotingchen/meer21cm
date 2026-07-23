@@ -596,6 +596,48 @@ def shot_noise_correction_from_gridding(
     return ci
 
 
+def _random_radec_in_radec_rectangles(ra0, dec0, half_ra, half_dec, rng):
+    """
+    Draw points uniformly in solid angle inside RA–Dec rectangles.
+
+    Each rectangle is centred at ``(ra0, dec0)`` with half-widths
+    ``half_ra`` and ``half_dec`` in degrees. Declination is sampled from
+    the ``sin(δ)`` measure so the density is uniform on the sphere.
+    """
+    ra0 = np.asarray(ra0, dtype=float)
+    dec0 = np.asarray(dec0, dtype=float)
+    dec_lo = np.clip(np.radians(dec0 - half_dec), -0.5 * np.pi, 0.5 * np.pi)
+    dec_hi = np.clip(np.radians(dec0 + half_dec), -0.5 * np.pi, 0.5 * np.pi)
+    u = rng.uniform(0.0, 1.0, size=ra0.shape)
+    sin_dec = np.sin(dec_lo) + u * (np.sin(dec_hi) - np.sin(dec_lo))
+    sin_dec = np.clip(sin_dec, -1.0, 1.0)
+    dec = np.degrees(np.arcsin(sin_dec))
+    ra = ra0 + rng.uniform(-half_ra, half_ra, size=ra0.shape)
+    return ra, dec
+
+
+def _random_radec_in_healpix_pixels(nside, ipix, rng):
+    """
+    Draw points uniformly in solid angle inside HEALPix pixels.
+
+    Uses nested fine-pixel subdivision (same idea as astrotools
+    ``rand_vec_in_pix``): each coarse RING pixel is split into
+    ``4**(29 - log2(nside))`` nested subpixels at ``nside=2**29``, and one
+    subpixel centre is chosen uniformly.
+    """
+    nside = int(nside)
+    ipix = np.asarray(ipix, dtype=np.int64).ravel()
+    n_order = int(round(np.log2(nside)))
+    if 2**n_order != nside:
+        raise ValueError(f"hp_nside must be a power of 2, got {nside}")
+    nest_pix = hp.ring2nest(nside, ipix)
+    n_up = 29 - n_order
+    n_sub = 4**n_up
+    i_up = nest_pix * n_sub + rng.integers(0, n_sub, size=ipix.size)
+    lon, lat = hp.pix2ang(2**29, i_up, nest=True, lonlat=True)
+    return np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
+
+
 class LightconeGriddingMixin:
     """
     Mixin providing lightcone↔rectangular-box gridding for power spectrum objects.
@@ -1513,21 +1555,40 @@ class LightconeGriddingMixin:
                 los_sel=los_sel,
             )
 
-    def gen_random_poisson_galaxy(self, sel=None, num_g_rand=None, seed=None):
+    def gen_random_poisson_galaxy(
+        self, sel=None, num_g_rand=None, seed=None, dndz=None
+    ):
         """
         Generate a random galaxy catalogue from the map cube following the Poisson distribution.
         The generation of the sample does not use the instance seed if not explicitly passed and will use a random one otherwise.
         If you want to generate multiple random catalogues, you need to set a different seed manually for each catalogue.
 
+        Angular positions are drawn uniformly in solid angle within the
+        selected footprint (WCS or HEALPix). RA and Dec are always taken
+        from the same map pixel before intra-pixel sampling.
+
         Parameters
         ----------
         sel: array, default None
-            The selection function of the galaxy catalogue.
-            If None, use the class attribute ``self.W_HI``.
+            Boolean (or truthy) sky-plane selection matching ``ra_map`` /
+            ``dec_map``. If None, use ``self.W_HI[..., 0]`` (first frequency
+            channel), which works for both WCS ``(nx, ny, nch)`` and HEALPix
+            ``(n_pix, nch)`` maps.
         num_g_rand: int, default None
             The number of galaxies to generate. Default uses the number of galaxies stored in the data in `self.ra_gal`.
         seed: int, default None
             The seed for the random number generator.
+        dndz: callable or array, default None
+            Optional radial selection in the same per-volume convention as
+            :attr:`~meer21cm.mock.MockSimulation.discrete_source_dndz`
+            (shape only; overall count is ``num_g_rand``). If a callable, it
+            is evaluated on candidate redshifts ``dndz(z)`` and used as
+            comoving number-density weights (renormalised), i.e. sampling
+            uses ``p(chi) ∝ dndz(z(chi)) * chi**2``. If an array, it must
+            match the number of frequency channels and is interpolated in
+            redshift. If None, use constant comoving number density
+            (``p(chi) ∝ chi**2``), matching the mock default
+            ``discrete_source_dndz=np.ones_like``.
 
         Returns
         -------
@@ -1540,32 +1601,101 @@ class LightconeGriddingMixin:
             be calculated by ``meer21cm.util.redshift_to_freq(z_rand)``.
         """
         if sel is None:
-            sel = self.W_HI[:, :, 0]
+            sel = self.W_HI[..., 0]
+        sel = np.asarray(sel)
+        if sel.shape != self.ra_map.shape:
+            raise ValueError(
+                f"sel shape {sel.shape} must match ra_map shape {self.ra_map.shape}"
+            )
         if num_g_rand is None:
             num_g_rand = self.ra_gal.size
+        num_g_rand = int(num_g_rand)
+        if num_g_rand < 0:
+            raise ValueError("num_g_rand must be non-negative")
         rng = np.random.default_rng(seed=seed)
-        ra_rand = self.ra_map[sel]
-        dec_rand = self.dec_map[sel]
-        ra_rand = rng.choice(ra_rand, size=num_g_rand, replace=True)
-        dec_rand = rng.choice(dec_rand, size=num_g_rand, replace=True)
-        rand_disp = rng.uniform(
-            -self.pix_resol / 2, self.pix_resol / 2, size=num_g_rand * 2
-        )
-        ra_rand += rand_disp[:num_g_rand]
-        dec_rand += rand_disp[num_g_rand:]
-        # in future this should be a dNdz
-        cov_dist_limit = [
+
+        mask = np.asarray(sel, dtype=bool)
+        if not np.any(mask):
+            raise ValueError(
+                "selection is empty; no pixels to draw random galaxies from"
+            )
+        idx_all = np.flatnonzero(mask.ravel())
+        ra_flat = np.asarray(self.ra_map, dtype=float).ravel()
+        dec_flat = np.asarray(self.dec_map, dtype=float).ravel()
+
+        fmt = self.skymap.format
+        if fmt == "healpix":
+            # Equal-area pixels: uniform among selected, then uniform in pixel.
+            pick = rng.choice(idx_all.size, size=num_g_rand, replace=True)
+            ipix = np.asarray(self.pixel_id, dtype=np.int64)[idx_all[pick]]
+            ra_rand, dec_rand = _random_radec_in_healpix_pixels(
+                self.hp_nside, ipix, rng
+            )
+        else:
+            # WCS: weight by pixel solid angle for equal Δα×Δδ cells, then sample
+            # uniformly in solid angle inside each RA–Dec rectangle.
+            half = float(self.pix_resol) / 2.0
+            dec0 = dec_flat[idx_all]
+            solid = np.abs(
+                np.sin(np.radians(dec0 + half)) - np.sin(np.radians(dec0 - half))
+            )
+            solid = solid / solid.sum()
+            pick = rng.choice(idx_all.size, size=num_g_rand, replace=True, p=solid)
+            idx = idx_all[pick]
+            ra_rand, dec_rand = _random_radec_in_radec_rectangles(
+                ra_flat[idx], dec_flat[idx], half, half, rng
+            )
+
+        chi_min = (
             self.astropy_cosmo_fiducial.comoving_distance(self.z_ch.min())
             .to("Mpc")
-            .value,
+            .value
+        )
+        chi_max = (
             self.astropy_cosmo_fiducial.comoving_distance(self.z_ch.max())
             .to("Mpc")
-            .value,
-        ]
-        cov_dist_rand = rng.uniform(
-            cov_dist_limit[0], cov_dist_limit[1], size=num_g_rand
+            .value
         )
-        z_rand = self.z_as_func_of_comov_dist(cov_dist_rand)
+        if dndz is None:
+            # Constant comoving number density: p(χ) ∝ χ² ⇒ sample via χ³ CDF.
+            u = rng.uniform(0.0, 1.0, size=num_g_rand)
+            cov_dist_rand = np.cbrt(chi_min**3 + u * (chi_max**3 - chi_min**3))
+            z_rand = self.z_as_func_of_comov_dist(cov_dist_rand)
+        else:
+            # Per-volume weights on an equal-χ grid: p(χ) ∝ dndz(z(χ)) χ².
+            n_grid = max(512, int(num_g_rand))
+            cov_grid = np.linspace(chi_min, chi_max, n_grid)
+            z_grid = self.z_as_func_of_comov_dist(cov_grid)
+            if callable(dndz):
+                w = np.asarray(dndz(z_grid), dtype=float)
+            else:
+                dndz_arr = np.asarray(dndz, dtype=float)
+                if dndz_arr.shape == self.z_ch.shape:
+                    from scipy.interpolate import interp1d
+
+                    w = interp1d(
+                        self.z_ch,
+                        dndz_arr,
+                        kind="linear",
+                        bounds_error=False,
+                        fill_value=0.0,
+                    )(z_grid)
+                else:
+                    raise ValueError(
+                        "dndz array must match frequency-channel redshift shape"
+                    )
+            w = np.clip(w, 0.0, None) * cov_grid**2
+            if not np.any(w > 0):
+                raise ValueError("dndz weights are zero everywhere in the survey range")
+            w = w / w.sum()
+            cov_dist_rand = rng.choice(cov_grid, size=num_g_rand, replace=True, p=w)
+            # small continuous jitter within bin
+            dc = (cov_grid[1] - cov_grid[0]) if n_grid > 1 else 0.0
+            cov_dist_rand = cov_dist_rand + rng.uniform(
+                -0.5 * dc, 0.5 * dc, size=num_g_rand
+            )
+            cov_dist_rand = np.clip(cov_dist_rand, chi_min, chi_max)
+            z_rand = self.z_as_func_of_comov_dist(cov_dist_rand)
         return ra_rand, dec_rand, redshift_to_freq(z_rand)
 
     def apply_taper_to_field(
