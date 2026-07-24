@@ -9,7 +9,8 @@ pre-gridded ``field_1`` and ``box_len``. Sky↔box gridding lives on
 Multipole binning (global plane-parallel by default; other LOS conventions
 reserved) is provided via :meth:`FieldPowerSpectrum.measure_multipoles`.
 Survey-window matrix construction for theory multipoles lives in
-:mod:`meer21cm.smooth_window`.
+:mod:`meer21cm.smooth_window` (discrete-shell / 2A-β). Local Yamamoto
+(Hand et al.) LOS conventions are reserved on ``los`` for a future update.
 """
 
 from __future__ import annotations
@@ -44,6 +45,47 @@ _SUPPORTED_LOS: frozenset[str] = frozenset(
     {"global", "endpoint", "firstpoint", "midpoint"}
 )
 _IMPLEMENTED_LOS: frozenset[str] = frozenset({"global"})
+
+
+@dataclass
+class MultipoleShellMap:
+    """
+    Discrete Fourier-mode → 1D-|k| bin assignment for multipole estimation.
+
+    Shares the same bin edges and weighting convention as
+    :meth:`FieldPowerSpectrum.measure_multipoles` so that
+    :mod:`meer21cm.smooth_window` can apply the identical shell projector
+    (global plane-parallel today; local LOS later via :attr:`los`).
+
+    Attributes
+    ----------
+    bin_index : ndarray
+        Integer bin index per Fourier mode (same shape as :attr:`k`), or
+        ``-1`` if the mode falls outside ``k1dbins``.
+    k : ndarray
+        Per-mode :math:`|k|` (same shape as the FFT grid ``k_mode``).
+    mu : ndarray
+        Per-mode :math:`\\mu` from :attr:`FieldPowerSpectrum.mu_mode`.
+    weights : ndarray
+        Per-mode binning weights (default ones; same role as ``k1dweights``).
+    k1dbins : ndarray
+        1D ``k`` bin edges used to build the map.
+    k_eff : ndarray
+        Effective :math:`k` centre per bin (weight-averaged).
+    nmodes : ndarray
+        Number of modes with positive weight per bin.
+    los : str
+        Line-of-sight convention used for :attr:`mu`.
+    """
+
+    bin_index: NDArray[np.integer]
+    k: NDArray[np.floating]
+    mu: NDArray[np.floating]
+    weights: NDArray[np.floating]
+    k1dbins: NDArray[np.floating]
+    k_eff: NDArray[np.floating]
+    nmodes: NDArray[np.floating]
+    los: LOSMode | str = "global"
 
 
 @dataclass
@@ -561,6 +603,91 @@ class FieldPowerSpectrum(Specification):
             power_weights_renorm(grid_w_1 * field_w_1, grid_w_2 * field_w_2)
             * mean_renorm_1
             * mean_renorm_2
+        )
+
+    def multipole_bin_index_map(
+        self,
+        k1dbins: ArrayLike | None = None,
+        k1dweights: ArrayLike | None = None,
+    ) -> MultipoleShellMap:
+        r"""
+        Map each Fourier mode to a 1D :math:`|k|` multipole bin.
+
+        Uses the same edges, :attr:`k_mode`, :attr:`mu_mode`, and weighting
+        convention as :meth:`measure_multipoles`. Intended for the opt-in
+        discrete-shell window matrix (:mod:`meer21cm.discrete_window`) and for
+        future local-LOS estimators that share the same radial binning.
+
+        Parameters
+        ----------
+        k1dbins : array_like, optional
+            1D ``k`` bin edges. Defaults to ``self.k1dbins`` when set.
+        k1dweights : array_like, optional
+            Per-mode weights (same role as in :meth:`measure_multipoles`).
+
+        Returns
+        -------
+        shell_map : MultipoleShellMap
+
+        Raises
+        ------
+        NotImplementedError
+            If ``los`` is not yet implemented.
+        ValueError
+            If ``k1dbins`` is missing.
+        """
+        self._require_implemented_los("multipole_bin_index_map")
+        if k1dbins is None:
+            k1dbins = getattr(self, "k1dbins", None)
+        if k1dbins is None:
+            raise ValueError("k1dbins is required for multipole_bin_index_map")
+        k1dbins_np = np.asarray(k1dbins, dtype=float)
+        if k1dbins_np.ndim != 1 or k1dbins_np.size < 2:
+            raise ValueError("k1dbins must be a 1D array of bin edges (length >= 2)")
+
+        k_mode = np.asarray(self.k_mode, dtype=float)
+        mu = np.asarray(self.mu_mode, dtype=float)
+        if k1dweights is None:
+            k1dweights = getattr(self, "k1dweights", None)
+        if k1dweights is None:
+            weights = np.ones_like(k_mode, dtype=float)
+        else:
+            weights = np.asarray(k1dweights, dtype=float)
+            if weights.shape != k_mode.shape:
+                raise ValueError(
+                    "k1dweights shape %s does not match k_mode shape %s"
+                    % (weights.shape, k_mode.shape)
+                )
+
+        n_bins = k1dbins_np.size - 1
+        bin_index = np.full(k_mode.shape, -1, dtype=np.intp)
+        k_flat = k_mode.ravel()
+        w_flat = weights.ravel()
+        idx_flat = np.full(k_flat.shape, -1, dtype=np.intp)
+        for i in range(n_bins):
+            mask = (k_flat >= k1dbins_np[i]) & (k_flat < k1dbins_np[i + 1])
+            idx_flat[mask] = i
+        bin_index = idx_flat.reshape(k_mode.shape)
+
+        k_eff = np.full(n_bins, np.nan, dtype=float)
+        nmodes = np.zeros(n_bins, dtype=float)
+        for i in range(n_bins):
+            in_bin = bin_index == i
+            w_bin = weights * in_bin
+            w_sum = np.sum(w_bin)
+            nmodes[i] = np.sum(in_bin & (weights > 0))
+            if w_sum > 0:
+                k_eff[i] = np.sum(k_mode * w_bin) / w_sum
+
+        return MultipoleShellMap(
+            bin_index=bin_index,
+            k=k_mode,
+            mu=mu,
+            weights=weights,
+            k1dbins=k1dbins_np,
+            k_eff=k_eff,
+            nmodes=nmodes,
+            los=self.los,
         )
 
     def measure_multipoles(
