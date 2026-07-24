@@ -11,6 +11,7 @@ import inspect
 import logging
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from .cosmology import CosmologyCalculator
 from .power_ops import get_modelpk_conv, gaussian_beam_attenuation
@@ -656,10 +657,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if self._auto_power_tracer_1_model is None:
             self.get_model_power_i(1)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            logger.info(f"getting mean_amp_1 from self.{mean_amp}")
-            mean_amp = getattr(self, mean_amp)
+        mean_amp = self.mean_amp_value(1)
         logger.info(
             f"multiplying _auto_power_tracer_1_model with mean_amp_1**2: {mean_amp}**2"
             " to get auto_power_tracer_1_model",
@@ -676,10 +674,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if self._auto_power_tracer_2_model is None:
             self.get_model_power_i(2)
-        mean_amp = self.mean_amp_2
-        if isinstance(mean_amp, str):
-            logger.info(f"getting mean_amp_2 from self.{mean_amp}")
-            mean_amp = getattr(self, mean_amp)
+        mean_amp = self.mean_amp_value(2)
         logger.info(
             f"multiplying _auto_power_tracer_2_model with mean_amp_2**2: {mean_amp}**2"
             " to get auto_power_tracer_2_model",
@@ -706,17 +701,100 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         if self._cross_power_tracer_model is None:
             self.get_model_power_cross()
-        mean_amp2 = self.mean_amp_2
-        if isinstance(mean_amp2, str):
-            mean_amp2 = getattr(self, mean_amp2)
-        mean_amp = self.mean_amp_1
-        if isinstance(mean_amp, str):
-            mean_amp = getattr(self, mean_amp)
+        mean_amp = self.mean_amp_value(1)
+        mean_amp2 = self.mean_amp_value(2)
         logger.info(
             f"multiplying _cross_power_tracer_model with mean_amp: {mean_amp} and mean_amp2: {mean_amp2} "
             " to get cross_power_tracer_model",
         )
         return self._cross_power_tracer_model * mean_amp * mean_amp2
+
+    def mean_amp_value(self, i: int) -> float:
+        """
+        Resolve ``mean_amp_i`` to a float (attribute name lookup if a string).
+        """
+        mean_amp = getattr(self, f"mean_amp_{i}")
+        if isinstance(mean_amp, str):
+            logger.info("getting mean_amp_%s from self.%s", i, mean_amp)
+            mean_amp = getattr(self, mean_amp)
+        if mean_amp is None:
+            return 1.0
+        return float(mean_amp)
+
+    def power_kmu(
+        self, which: str = "auto_1", include_mean_amp: bool = False
+    ) -> NDArray[np.floating]:
+        r"""
+        Anisotropic model :math:`P(k,\mu)` on the current ``kmode`` / ``mumode``.
+
+        Returns the tracer auto or cross spectrum **without** beam, map
+        sampling, MAS compensation, or survey-weight convolution — i.e. the
+        ``*_model_noobs`` caches. Observational factors are applied later by
+        :meth:`get_model_power_i` / :meth:`get_model_power_cross` (3D path) or
+        by a multipole window matrix.
+
+        Parameters
+        ----------
+        which : {'auto_1', 'auto_2', 'cross'}
+            Tracer combination.
+        include_mean_amp : bool, default False
+            If True, multiply by ``mean_amp`` (squared for autos).
+        """
+        which_s = str(which).lower()
+        if which_s == "auto_1":
+            power = np.asarray(self.auto_power_tracer_1_model_noobs, dtype=float)
+            if include_mean_amp:
+                power = power * self.mean_amp_value(1) ** 2
+            return power
+        if which_s == "auto_2":
+            power = np.asarray(self.auto_power_tracer_2_model_noobs, dtype=float)
+            if include_mean_amp:
+                power = power * self.mean_amp_value(2) ** 2
+            return power
+        if which_s == "cross":
+            power = np.asarray(self.cross_power_tracer_model_noobs, dtype=float)
+            if include_mean_amp:
+                power = power * self.mean_amp_value(1) * self.mean_amp_value(2)
+            return power
+        raise ValueError("which must be 'auto_1', 'auto_2', or 'cross'")
+
+    def power_kmu_on_grid(
+        self,
+        k_in: ArrayLike,
+        mu: ArrayLike,
+        which: str = "auto_1",
+        include_mean_amp: bool = True,
+    ) -> NDArray[np.floating]:
+        r"""
+        Evaluate :meth:`power_kmu` on a broadcast ``(n_k, n_mu)`` mesh.
+
+        Temporarily retargets ``kmode`` / ``mumode`` and clears dependent
+        caches; restores them afterward.
+        """
+        k_in_np = np.asarray(k_in, dtype=float)
+        mu_np = np.asarray(mu, dtype=float)
+        k_mesh = np.broadcast_to(k_in_np[:, None], (k_in_np.size, mu_np.size)).copy()
+        mu_mesh = np.broadcast_to(mu_np[None, :], (k_in_np.size, mu_np.size)).copy()
+
+        old_kmode = self.kmode
+        old_mumode = self.mumode
+        self._auto_power_matter_model_r = None
+        self._auto_power_matter_model = None
+        self._auto_power_tracer_1_model_noobs = None
+        self._auto_power_tracer_2_model_noobs = None
+        self._cross_power_tracer_model_noobs = None
+        try:
+            self.kmode = k_mesh
+            self.mumode = mu_mesh
+            return self.power_kmu(which=which, include_mean_amp=include_mean_amp)
+        finally:
+            self._auto_power_matter_model_r = None
+            self._auto_power_matter_model = None
+            self._auto_power_tracer_1_model_noobs = None
+            self._auto_power_tracer_2_model_noobs = None
+            self._cross_power_tracer_model_noobs = None
+            self.kmode = old_kmode
+            self.mumode = old_mumode
 
     def map_sampling(self):
         """
@@ -880,6 +958,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         Calculate the model power spectrum for the i-th tracer.
         The attribute f"_auto_power_tracer_{i}_model" will be set by the output.
 
+        Starts from :meth:`power_kmu` (cosmo + RSD), then applies beam, map
+        sampling, MAS compensation, and survey-weight convolution.
+
         Parameters
         ----------
         i: int
@@ -901,7 +982,7 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_beam_indx = np.array(self.include_beam).astype("int")[i - 1]
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")[i - 1]
         tracer_comp_indx = np.array(self.compensate).astype("int")[i - 1]
-        auto_power_model = getattr(self, f"auto_power_tracer_{i}_model_noobs").copy()
+        auto_power_model = self.power_kmu(f"auto_{i}", include_mean_amp=False).copy()
         # first apply the beam
         logger.debug("applying beam attenuation?: %s", tracer_beam_indx)
         auto_power_model *= B_beam ** (tracer_beam_indx * 2)
@@ -964,6 +1045,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         """
         Calculate the model cross power spectrum between the two tracers.
         The attribute f"_cross_power_tracer_model" will be set by the output.
+
+        Starts from :meth:`power_kmu` (cosmo + RSD), then applies beam, map
+        sampling, MAS compensation, and survey-weight convolution.
         """
         if getattr(self, "tracer_bias_" + str(2)) is None:
             raise ValueError(
@@ -978,7 +1062,9 @@ class ModelPowerSpectrum(CosmologyCalculator):
         tracer_beam_indx = np.array(self.include_beam).astype("int")
         tracer_samp_indx = np.array(self.include_sky_sampling).astype("int")
         tracer_comp_indx = np.array(self.compensate).astype("int")
-        self._cross_power_tracer_model = self.cross_power_tracer_model_noobs.copy()
+        self._cross_power_tracer_model = self.power_kmu(
+            "cross", include_mean_amp=False
+        ).copy()
         # then apply the beam, sky-map sampling, and gridding compensation
         logger.debug(
             "applying beam attenuation for tracer 1 and/or 2?: %s", tracer_beam_indx

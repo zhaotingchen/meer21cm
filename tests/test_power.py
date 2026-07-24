@@ -479,6 +479,39 @@ def test_model_in_real_space():
     assert np.allclose(model.cross_power_tracer_model, matter_ps_real * 6)
 
 
+def test_power_kmu_mean_amp_none_and_tracer_2():
+    """Cover mean_amp=None → 1, auto_2 / cross with mean_amp, and bad which."""
+    model = ModelPowerSpectrum(
+        kaiser_rsd=False,
+        tracer_bias_1=2.0,
+        tracer_bias_2=3.0,
+        mean_amp_1=None,
+        mean_amp_2=None,
+    )
+    assert model.mean_amp_value(1) == 1.0
+    assert model.mean_amp_value(2) == 1.0
+
+    p1 = model.power_kmu("auto_1", include_mean_amp=True)
+    p2 = model.power_kmu("auto_2", include_mean_amp=True)
+    px = model.power_kmu("cross", include_mean_amp=True)
+    np.testing.assert_allclose(p1, model.auto_power_tracer_1_model_noobs)
+    np.testing.assert_allclose(p2, model.auto_power_tracer_2_model_noobs)
+    np.testing.assert_allclose(px, model.cross_power_tracer_model_noobs)
+
+    model.mean_amp_1 = 2.0
+    model.mean_amp_2 = 5.0
+    np.testing.assert_allclose(
+        model.power_kmu("auto_2", include_mean_amp=True),
+        model.auto_power_tracer_2_model_noobs * 25.0,
+    )
+    np.testing.assert_allclose(
+        model.power_kmu("cross", include_mean_amp=True),
+        model.cross_power_tracer_model_noobs * 2.0 * 5.0,
+    )
+    with pytest.raises(ValueError, match="auto_1"):
+        model.power_kmu("auto_3")
+
+
 @pytest.mark.parametrize("fog_profile", ["gaussian", "lorentz"])
 def test_ModelPowerSpectrum(fog_profile):
     # test fog
