@@ -9,9 +9,13 @@ overridden on :class:`meer21cm.power.PowerSpectrum`.
 
 import inspect
 import logging
+import warnings
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from scipy.special import eval_legendre
 
 from .cosmology import CosmologyCalculator
 from .power_ops import get_modelpk_conv, gaussian_beam_attenuation
@@ -795,6 +799,67 @@ class ModelPowerSpectrum(CosmologyCalculator):
             self._cross_power_tracer_model_noobs = None
             self.kmode = old_kmode
             self.mumode = old_mumode
+
+    def _warn_if_global_los_for_continuous_multipoles(self) -> None:
+        """
+        Prefer :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` under global LOS.
+
+        Continuous multipoles ignore discrete FFT-shell :math:`\\mu` sampling;
+        for ``los='global'`` the estimator-matched 1D path is
+        ``get_1d_power``.
+        """
+        if not hasattr(self, "los"):
+            return
+        if str(getattr(self, "los")).lower() != "global":
+            return
+        warnings.warn(
+            "los='global': preferred 1D power is get_1d_power (discrete FFT "
+            "shells), not get_theory_multipoles_kmu (continuous μ integral).",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    def get_theory_multipoles_kmu(
+        self,
+        k_in: ArrayLike,
+        ells: Sequence[int] = (0, 2, 4),
+        nmu: int = 64,
+        which: str = "auto_1",
+    ) -> dict[str, Any]:
+        r"""
+        Continuous spherical multipoles at ``k_in``.
+
+        .. math::
+
+            P_\ell(k)
+            =
+            \frac{2\ell+1}{2}
+            \int_{-1}^{1}\!\mathrm{d}\mu\,
+            P(k,\mu)\,
+            \mathcal{L}_\ell(\mu)
+
+        using Gauss–Legendre quadrature (``nmu`` nodes). ``P(k,\mu)`` comes
+        from :meth:`power_kmu_on_grid` (noobs + mean amplitude; no beam /
+        sampling / MAS).
+
+        If this object has ``los='global'``, a :class:`UserWarning` notes that
+        :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` is preferred for
+        estimator-matched 1D power.
+        """
+        self._warn_if_global_los_for_continuous_multipoles()
+        ells_t = tuple(int(e) for e in ells)
+        k_in_np = np.asarray(k_in, dtype=float)
+        mu_nodes, mu_w = np.polynomial.legendre.leggauss(int(nmu))
+        power = self.power_kmu_on_grid(
+            k_in_np, mu_nodes, which=which, include_mean_amp=True
+        )
+
+        P_ell: dict[int, NDArray[np.floating]] = {}
+        for ell in ells_t:
+            L = eval_legendre(ell, mu_nodes)
+            integ = np.sum(power * L[None, :] * mu_w[None, :], axis=1)
+            P_ell[ell] = (2 * ell + 1) / 2.0 * integ
+        return {"k": k_in_np, "P_ell": P_ell, "ells": ells_t, "nmu": int(nmu)}
 
     def map_sampling(self):
         """

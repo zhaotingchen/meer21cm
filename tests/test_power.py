@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from meer21cm.power import *
 import pytest
@@ -510,6 +512,39 @@ def test_power_kmu_mean_amp_none_and_tracer_2():
     )
     with pytest.raises(ValueError, match="auto_1"):
         model.power_kmu("auto_3")
+
+
+def test_get_theory_multipoles_kmu_on_model():
+    model = ModelPowerSpectrum(kaiser_rsd=False, tracer_bias_1=1.0, mean_amp_1=1.0)
+    k_in = np.geomspace(0.05, 0.3, 12)
+    # ModelPowerSpectrum has no los → no warning
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        raw = model.get_theory_multipoles_kmu(k_in, ells=(0, 2), nmu=32, which="auto_1")
+    assert not any(issubclass(w.category, UserWarning) for w in caught)
+    assert raw["P_ell"][0].shape == k_in.shape
+    assert np.all(np.isfinite(raw["P_ell"][0]))
+
+
+def test_get_theory_multipoles_kmu_warns_for_global_los():
+    from meer21cm.power import PowerSpectrum
+
+    box_len = np.array([80.0, 80.0, 80.0])
+    field = np.ones((8, 8, 8))
+    ps = PowerSpectrum(
+        field,
+        box_len,
+        los="global",
+        tracer_bias_1=1.0,
+        mean_amp_1=1.0,
+        kaiser_rsd=False,
+        include_beam=[False, False],
+        include_sky_sampling=[False, False],
+        model_k_from_field=True,
+    )
+    k_in = np.geomspace(0.05, 0.3, 8)
+    with pytest.warns(UserWarning, match="get_1d_power"):
+        ps.get_theory_multipoles_kmu(k_in, ells=(0,), nmu=16, which="auto_1")
 
 
 @pytest.mark.parametrize("fog_profile", ["gaussian", "lorentz"])

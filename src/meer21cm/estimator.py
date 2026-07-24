@@ -9,7 +9,7 @@ pre-gridded ``field_1`` and ``box_len``. Sky↔box gridding lives on
 Multipole binning (global plane-parallel by default; other LOS conventions
 reserved) is provided via :meth:`FieldPowerSpectrum.measure_multipoles`.
 Survey-window matrix construction for theory multipoles lives in
-:mod:`meer21cm.smooth_window` (discrete-shell / 2A-β). Local Yamamoto
+:mod:`meer21cm.smooth_window` (discrete-shell matrix). Local Yamamoto
 (Hand et al.) LOS conventions are reserved on ``los`` for a future update.
 """
 
