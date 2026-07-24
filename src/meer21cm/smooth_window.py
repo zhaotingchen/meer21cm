@@ -4,8 +4,8 @@ Discrete-shell survey-window matrix for theory multipoles.
 Builds a dense matrix that maps continuous theory multipoles
 :math:`P_{\ell'}(k_{\mathrm{in}})` to estimator bin multipoles
 :math:`P_\ell(k_{\mathrm{out}})`. Each output row averages over discrete
-FFT modes in a :math:`k`-shell (same projector as
-:meth:`~meer21cm.estimator.FieldPowerSpectrum.measure_multipoles`):
+FFT modes in a :math:`k`-shell using the same projector as
+:meth:`~meer21cm.estimator.FieldPowerSpectrum.measure_multipoles`:
 
 .. math::
 
@@ -16,6 +16,33 @@ FFT modes in a :math:`k`-shell (same projector as
     \sum_{L}
     \mathcal{L}_L(\mu_n)\,
     W_{L\ell'}\bigl(|\mathbf{k}_n|,\,k'_j\bigr).
+
+Notation
+--------
+- :math:`i` — estimator output bin index (``k_out``; edges from
+  :class:`~meer21cm.estimator.MultipoleShellMap`).
+- :math:`j` — theory input node index (``k_in`` / :math:`k'_j`).
+- :math:`S_i` — discrete Fourier modes with
+  :math:`|\mathbf{k}_n|` in bin :math:`i` (shell membership from
+  :attr:`~meer21cm.estimator.MultipoleShellMap.bin_index`).
+- :math:`\mu_n` — LOS cosine of mode :math:`\mathbf{k}_n`
+  (:attr:`~meer21cm.estimator.MultipoleShellMap.mu`).
+- :math:`B_{\ell,i}(\mathbf{k}_n)` — multipole binning weight matching
+  :meth:`~meer21cm.estimator.FieldPowerSpectrum.measure_multipoles`:
+
+  .. math::
+
+      B_{\ell,i}(\mathbf{k}_n)
+      =
+      \frac{w_n}{U_i}\,
+      (2\ell+1)\,\mathcal{L}_\ell(\mu_n),
+
+  where :math:`w_n` is the per-mode weight and
+  :math:`U_i=\sum_{\mathbf{k}_m\in S_i} w_m` normalises the shell average.
+- :math:`L` — continuous multipoles used to rebuild anisotropic power at a
+  fixed :math:`|\mathbf{k}|`,
+  :math:`P(\mathbf{k})=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)`.
+- :math:`W_{L\ell'}(k,k')` — continuous response kernel (see below).
 
 The continuous kernel :math:`W_{L\ell'}(k,k')` may be:
 

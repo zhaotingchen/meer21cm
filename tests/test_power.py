@@ -547,6 +547,16 @@ def test_get_theory_multipoles_kmu_warns_for_global_los():
         ps.get_theory_multipoles_kmu(k_in, ells=(0,), nmu=16, which="auto_1")
 
 
+def test_warn_continuous_multipoles_skips_nonglobal_los():
+    """``los`` present but not ``'global'`` → no continuous-multipole warning."""
+    model = ModelPowerSpectrum(kaiser_rsd=False, tracer_bias_1=1.0, mean_amp_1=1.0)
+    model.los = "endpoint"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        model._warn_if_global_los_for_continuous_multipoles()
+    assert not any(issubclass(w.category, UserWarning) for w in caught)
+
+
 @pytest.mark.parametrize("fog_profile", ["gaussian", "lorentz"])
 def test_ModelPowerSpectrum(fog_profile):
     # test fog
