@@ -81,10 +81,26 @@ meer21cm.model module
    :undoc-members:
    :show-inheritance:
 
+meer21cm.multipole_model module
+-------------------------------
+
+.. automodule:: meer21cm.multipole_model
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 meer21cm.power module
 ---------------------
 
 .. automodule:: meer21cm.power
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+meer21cm.smooth_window module
+-----------------------------
+
+.. automodule:: meer21cm.smooth_window
    :members:
    :undoc-members:
    :show-inheritance:
