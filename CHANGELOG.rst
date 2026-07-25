@@ -11,7 +11,7 @@ Features
 * add opt-in multipole survey-window path (global plane-parallel): ``SmoothWindowEstimator``,
   ``DiscreteShellWindowMatrix``, and ``WindowedMultipoleModel``
 * measure HI window multipoles from the selection / weight field; galaxy windows from Poisson randoms
-* support continuous kernels ``beutler`` (Hankel / Wigner) and ``identity`` (discrete FFT ``μ``-selection only)
+* support continuous kernels ``smooth`` (Hankel / Wigner) and ``identity`` (discrete FFT ``μ``-selection only)
 * add continuous theory multipoles via ``ModelPowerSpectrum.get_theory_multipoles_kmu`` /
   ``power_kmu`` hierarchy (beam / sampling / MAS deferred to the window path)
 * add ``fftlog`` Hankel utilities for smooth-window transforms

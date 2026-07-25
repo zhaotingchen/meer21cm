@@ -3,12 +3,13 @@ Multipole theory and selection-based survey-window estimation.
 
 Opt-in alternative to 3D :func:`~meer21cm.power_ops.get_modelpk_conv`:
 
-1. Measure window multipoles :math:`W_L(k)` from the HI selection / weight
-   field (or galaxy randoms) via :class:`SmoothWindowEstimator`.
+1. Measure window multipoles :math:`W_L(k)` on a **fine**
+   ``k1dbins_window`` via :class:`SmoothWindowEstimator`.
 2. Build a discrete-shell matrix
    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` that maps
-   continuous theory :math:`P_{\ell'}(k_{\mathrm{in}})` onto estimator bins
-   :math:`P_\ell(k_{\mathrm{out}})`.
+   continuous theory :math:`P_{\ell'}(k_{\mathrm{in}})` onto coarse
+   estimator bins :math:`P_\ell(k_{\mathrm{out}})` (legacy ``k1dbins`` /
+   ``k1dbins_out``).
 3. Evaluate convolved multipoles with :class:`WindowedMultipoleModel`.
 
 HI windows use the selection that multiplies the data cube (not white noise).
@@ -17,7 +18,11 @@ use :class:`~meer21cm.estimator.FieldPowerSpectrum` with ``los='global'``
 today; local Yamamoto LOS is reserved for later. Default 3D modelling on
 :class:`~meer21cm.power.PowerSpectrum` is unchanged.
 
-Matrix algebra lives in :mod:`meer21cm.smooth_window`.
+Window multipoles are scaled by the same weight-squared renorm
+:func:`~meer21cm.power_ops.power_weights_renorm` used by the data
+estimator, so :math:`W_L` is :math:`O(1)` (:math:`Q_0(s\to 0)\sim 1`)
+while the estimator still divides by :math:`\sum w^2`. Matrix algebra
+lives in :mod:`meer21cm.smooth_window`.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ from .estimator import (
     MultipoleShellMap,
 )
 from .model import ModelPowerSpectrum
+from .power_ops import power_weights_renorm
 from .smooth_window import (
     DiscreteShellWindowMatrix,
     WindowEllMap,
@@ -161,8 +167,8 @@ def accumulate_window_multipoles(
 
 def run_smooth_window_realization(
     box_len: ArrayLike,
-    k1dbins: ArrayLike,
-    seed: int,
+    k1dbins: ArrayLike | None = None,
+    seed: int = 0,
     tracer: Tracer | str = "hi",
     ells: Sequence[int] = (0, 2, 4),
     los: str = "global",
@@ -177,6 +183,7 @@ def run_smooth_window_realization(
     mean_center_2: bool = False,
     unitless_1: bool = False,
     unitless_2: bool = False,
+    k1dbins_window: ArrayLike | None = None,
 ) -> MultipoleMeasurement:
     """
     Pickleable worker for smooth-window multipoles.
@@ -187,8 +194,16 @@ def run_smooth_window_realization(
     ``tracer='cross'``, cross-correlates the HI selection field with a
     galaxy random realization (``seed`` used only for the galaxy draw).
 
+    ``k1dbins_window`` (preferred) or legacy ``k1dbins`` are the **fine**
+    bin edges used only to measure :math:`W_L(k)`. They are independent of
+    estimator ``k_out`` / ``ps.k1dbins``.
+
     Intended for external batching (no pool is opened here).
     """
+    if k1dbins_window is not None:
+        k1dbins = k1dbins_window
+    if k1dbins is None:
+        raise TypeError("k1dbins_window (or legacy k1dbins) is required")
     tracer_s = str(tracer).lower()
     ells_t = tuple(int(e) for e in ells)
 
@@ -237,7 +252,12 @@ def run_smooth_window_realization(
             los=los,
             _skip_specification=True,
         )
-        return fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
+        meas = fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
+        # Selection is stored as the FFT *field* with optional grid weights;
+        # FPS renorm then sees only weights_1 (often None → 1). Rescale so W_L
+        # includes R[w_eff]=N/∑w_eff² matching the data estimator.
+        w_eff = _window_effective_weights(field_1, w1)
+        return _rescale_window_multipoles(meas, w_eff, w_eff, float(fps.renorm_ps_1))
     if tracer_s == "gal":
         assert field_2 is not None
         fps = FieldPowerSpectrum(
@@ -249,6 +269,7 @@ def run_smooth_window_realization(
             los=los,
             _skip_specification=True,
         )
+        # Galaxy randoms: FPS already applies R[weights_grid]; keep as-is.
         return fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
     if tracer_s == "cross":
         assert field_1 is not None and field_2 is not None
@@ -265,17 +286,107 @@ def run_smooth_window_realization(
             los=los,
             _skip_specification=True,
         )
-        return fps.measure_multipoles(which="cross", k1dbins=k1dbins, ells=ells_t)
+        meas = fps.measure_multipoles(which="cross", k1dbins=k1dbins, ells=ells_t)
+        w_eff_1 = _window_effective_weights(field_1, w1)
+        # Second leg is a galaxy random realization; use grid weights only
+        # for its renorm target (same as FPS when weights_2 is set).
+        w_eff_2 = _window_effective_weights(
+            np.ones_like(field_2), w2 if w2 is not None else np.ones_like(field_2)
+        )
+        return _rescale_window_multipoles(
+            meas, w_eff_1, w_eff_2, float(fps.renorm_ps_cross)
+        )
     raise ValueError("Unknown tracer %r; expected 'hi', 'gal', or 'cross'" % tracer_s)
+
+
+def _window_effective_weights(
+    selection: ArrayLike, weights_grid: ArrayLike | None
+) -> NDArray[np.floating]:
+    """Multiplicative weights whose Fourier transform enters the window PS."""
+    sel = np.asarray(selection, dtype=float)
+    if weights_grid is None:
+        return sel
+    return sel * np.asarray(weights_grid, dtype=float)
+
+
+def _rescale_window_multipoles(
+    meas: MultipoleMeasurement,
+    weights_1: ArrayLike,
+    weights_2: ArrayLike,
+    renorm_already: float,
+) -> MultipoleMeasurement:
+    """
+    Multiply measured window multipoles so they include
+    ``power_weights_renorm(weights_1, weights_2)``.
+
+    The data estimator keeps that renorm on the observed PS; baking the same
+    factor into ``W_L`` makes the Hankel window :math:`O(1)` without dropping
+    ``∑w²`` normalisation on the estimator side.
+    """
+    r_want = float(power_weights_renorm(weights_1, weights_2))
+    scale = r_want / float(renorm_already) if renorm_already != 0.0 else r_want
+    if not np.isfinite(scale) or scale == 1.0:
+        return meas
+    meas.P_ell = {
+        int(ell): scale * np.asarray(p, dtype=float) for ell, p in meas.P_ell.items()
+    }
+    return meas
+
+
+def _resolve_window_k_edges(
+    k1dbins: ArrayLike | None,
+    k1dbins_window: ArrayLike | None,
+    k1dbins_out: ArrayLike | None,
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+    """
+    Resolve fine window-measure edges and coarse estimator ``k_out`` edges.
+
+    Legacy ``k1dbins`` alone sets both (old behaviour). Prefer explicit
+    ``k1dbins_window`` (fine :math:`W_L` bins) and ``k1dbins_out`` (estimator
+    / matrix rows; usually ``ps.k1dbins``).
+    """
+    if k1dbins_out is None:
+        k1dbins_out = k1dbins
+    if k1dbins_window is None:
+        k1dbins_window = k1dbins if k1dbins is not None else k1dbins_out
+    if k1dbins_out is None:
+        raise TypeError(
+            "k1dbins_out (or legacy k1dbins) is required for estimator k_out bins"
+        )
+    if k1dbins_window is None:
+        raise TypeError(
+            "k1dbins_window (or legacy k1dbins) is required to measure W_L(k)"
+        )
+    return (
+        np.asarray(k1dbins_window, dtype=float),
+        np.asarray(k1dbins_out, dtype=float),
+    )
 
 
 class SmoothWindowEstimator:
     """
     Measure survey-window multipoles from the HI selection and/or galaxy randoms.
 
+    Three distinct :math:`k` grids (do not conflate them):
+
+    - ``k1dbins_window`` — fine bin **edges** used only to measure
+      :math:`W_L(k)` (stored centres in :attr:`k_window` / :attr:`k` after
+      :meth:`accumulate`). Should resolve the low-``k`` window peak.
+    - ``k_in`` — fine theory nodes, passed to :meth:`build_window_matrix`
+      (matrix columns).
+    - ``k1dbins_out`` — coarse estimator bin **edges** (legacy
+      ``ps.k1dbins``); shell map / matrix rows (:attr:`k_out`).
+
+    Legacy ``k1dbins`` alone still sets both window and out edges (old
+    behaviour). Prefer passing ``k1dbins_window`` and ``k1dbins_out``
+    separately.
+
     For HI, :meth:`run_one` measures multipoles of ``weights_hi`` (the field
-    that multiplies the data cube). Galaxy / cross paths still draw Poisson
-    randoms; ``seed`` only matters for those draws.
+    that multiplies the data cube) and rescales them by
+    :func:`~meer21cm.power_ops.power_weights_renorm` so :math:`W_L` is
+    :math:`O(1)` while the data estimator still applies the same renorm.
+    Galaxy / cross paths still draw Poisson randoms; ``seed`` only matters
+    for those draws.
 
     Does **not** open an MPI or multiprocessing pool. Callers map
     :meth:`get_arg_list_for_seeds` (or :func:`run_smooth_window_realization`)
@@ -287,8 +398,13 @@ class SmoothWindowEstimator:
     ----------
     box_len : array_like
         Box lengths in Mpc.
-    k1dbins : array_like
-        1D ``k`` bin edges for multipole measurements (estimator ``k_out``).
+    k1dbins : array_like, optional
+        Legacy: if ``k1dbins_window`` / ``k1dbins_out`` are omitted, used for
+        **both** window measurement and estimator ``k_out``.
+    k1dbins_window : array_like, optional
+        Fine bin edges for measuring :math:`W_L(k)`.
+    k1dbins_out : array_like, optional
+        Coarse estimator bin edges (matrix ``k_out``; usually ``ps.k1dbins``).
     ells : sequence, default (0, 2, 4)
         Multipoles to measure / store.
     los : {'global', 'endpoint', 'firstpoint', 'midpoint'}, default 'global'
@@ -315,7 +431,7 @@ class SmoothWindowEstimator:
     def __init__(
         self,
         box_len,
-        k1dbins,
+        k1dbins=None,
         ells=(0, 2, 4),
         los="global",
         tracer="hi",
@@ -330,9 +446,15 @@ class SmoothWindowEstimator:
         mean_center_2=False,
         unitless_1=False,
         unitless_2=False,
+        k1dbins_window=None,
+        k1dbins_out=None,
     ):
         self.box_len = np.asarray(box_len, dtype=float)
-        self.k1dbins = np.asarray(k1dbins, dtype=float)
+        self.k1dbins_window, self.k1dbins_out = _resolve_window_k_edges(
+            k1dbins, k1dbins_window, k1dbins_out
+        )
+        # Legacy alias: estimator / shell-map edges (not the W_L measure grid).
+        self.k1dbins = self.k1dbins_out
         self.ells = tuple(int(e) for e in ells)
         self.los = str(los).lower()
         self.tracer = str(tracer).lower()
@@ -357,6 +479,20 @@ class SmoothWindowEstimator:
         self.k_in = None
         self.shell_map: MultipoleShellMap | None = None
 
+    @property
+    def k_window(self) -> NDArray[np.floating] | None:
+        """Measured :math:`W_L` wavenumber centres (after :meth:`accumulate`)."""
+        return self.k
+
+    @property
+    def k_out(self) -> NDArray[np.floating] | None:
+        """Estimator bin centres from the shell map / built window matrix."""
+        if self.window_matrix is not None:
+            return self.window_matrix.k_out
+        if self.shell_map is not None:
+            return np.asarray(self.shell_map.k_eff, dtype=float)
+        return None
+
     @classmethod
     def from_power_spectrum(cls, ps, tracer="hi", ells=(0, 2, 4), **kwargs):
         """
@@ -365,6 +501,10 @@ class SmoothWindowEstimator:
         Uses ``weights_field_1`` (else ``counts_in_box``) as the HI selection
         field for window multipoles, and ``(selection > 0)`` as the default
         galaxy mask.
+
+        ``k1dbins_out`` defaults to ``ps.k1dbins``. Pass a finer
+        ``k1dbins_window`` for measuring :math:`W_L`; if omitted, it falls
+        back to the same edges as ``k1dbins_out`` (legacy behaviour).
         """
         weights_default = getattr(ps, "weights_field_1", None)
         if weights_default is None:
@@ -376,10 +516,16 @@ class SmoothWindowEstimator:
             "selection_mask",
             None if weights_hi is None else (np.asarray(weights_hi) > 0),
         )
-        k1dbins = kwargs.pop("k1dbins", ps.k1dbins)
+        k1dbins = kwargs.pop("k1dbins", None)
+        k1dbins_out = kwargs.pop(
+            "k1dbins_out", k1dbins if k1dbins is not None else ps.k1dbins
+        )
+        k1dbins_window = kwargs.pop("k1dbins_window", None)
         return cls(
             box_len=ps.box_len,
             k1dbins=k1dbins,
+            k1dbins_window=k1dbins_window,
+            k1dbins_out=k1dbins_out,
             ells=ells,
             tracer=tracer,
             weights_hi=weights_hi,
@@ -396,7 +542,7 @@ class SmoothWindowEstimator:
     def _worker_kwargs(self):
         return dict(
             box_len=self.box_len,
-            k1dbins=self.k1dbins,
+            k1dbins_window=self.k1dbins_window,
             tracer=self.tracer,
             ells=self.ells,
             los=self.los,
@@ -428,7 +574,7 @@ class SmoothWindowEstimator:
         return run_smooth_window_realization(seed=seed, **self._worker_kwargs())
 
     def accumulate(self, results):
-        """Average realization results into ``W_ell``."""
+        """Average realization results into ``W_ell`` / :attr:`k_window`."""
         acc = accumulate_window_multipoles(results)
         self.k = acc.k
         self.nmodes = acc.nmodes
@@ -440,9 +586,10 @@ class SmoothWindowEstimator:
 
     def make_shell_map(self, k1dweights=None) -> MultipoleShellMap:
         """
-        Build a :class:`~meer21cm.estimator.MultipoleShellMap` on this box.
+        Build a :class:`~meer21cm.estimator.MultipoleShellMap` for ``k_out``.
 
-        Uses a unit field so only the FFT ``k`` / ``\\mu`` geometry matters.
+        Uses :attr:`k1dbins_out` (legacy estimator edges), not the fine
+        :attr:`k1dbins_window` used to measure :math:`W_L`.
         """
         shape = None
         for candidate in (
@@ -467,7 +614,7 @@ class SmoothWindowEstimator:
             _skip_specification=True,
         )
         self.shell_map = fps.multipole_bin_index_map(
-            k1dbins=self.k1dbins, k1dweights=k1dweights
+            k1dbins=self.k1dbins_out, k1dweights=k1dweights
         )
         return self.shell_map
 
@@ -476,7 +623,7 @@ class SmoothWindowEstimator:
         k_in,
         shell_map: MultipoleShellMap | None = None,
         n_fftlog=512,
-        continuous="beutler",
+        continuous="smooth",
         **kwargs,
     ) -> DiscreteShellWindowMatrix:
         """
@@ -485,15 +632,20 @@ class SmoothWindowEstimator:
         Parameters
         ----------
         k_in : array_like
-            Fine theory grid (independent of estimator bins).
-        continuous : {'beutler', 'identity'}, default 'beutler'
+            Fine theory :math:`k` nodes (matrix columns; independent of
+            :attr:`k1dbins_window` and :attr:`k1dbins_out`).
+        shell_map : MultipoleShellMap, optional
+            Estimator shells for ``k_out``. Defaults to
+            :meth:`make_shell_map` from :attr:`k1dbins_out`.
+        continuous : {'smooth', 'identity'}, default 'smooth'
             ``'identity'`` needs no accumulated ``W_ell`` (discrete ``μ``
-            selection only). ``'beutler'`` requires :meth:`accumulate` first.
+            selection only). ``'smooth'`` requires :meth:`accumulate` first
+            (uses measured :attr:`k_window` / :attr:`W_ell`).
         """
         continuous_s = str(continuous).lower()
-        if continuous_s == "beutler" and (self.W_ell is None or self.k is None):
+        if continuous_s == "smooth" and (self.W_ell is None or self.k is None):
             raise RuntimeError(
-                "Accumulate window multipoles before building a beutler matrix"
+                "Accumulate window multipoles before building a smooth matrix"
             )
         if shell_map is None:
             shell_map = self.shell_map
@@ -502,7 +654,7 @@ class SmoothWindowEstimator:
         self.k_in = np.asarray(k_in, dtype=float)
         self.window_matrix = build_discrete_shell_window_matrix(
             shell_map,
-            None if continuous_s == "identity" else self.k,
+            None if continuous_s == "identity" else self.k_window,
             None if continuous_s == "identity" else self.W_ell,
             k_in=self.k_in,
             ells=self.ells,
@@ -561,11 +713,16 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
         return None
 
     @property
-    def k_in_window(self) -> NDArray[np.floating] | None:
-        """Theory ``k_in`` nodes from the attached discrete-shell matrix."""
+    def k_in(self) -> NDArray[np.floating] | None:
+        """Fine theory ``k_in`` nodes from the attached discrete-shell matrix."""
         if self._window_matrix_obj is not None:
             return self._window_matrix_obj.k_in
         return None
+
+    @property
+    def k_in_window(self) -> NDArray[np.floating] | None:
+        """Alias for :attr:`k_in` (historical name)."""
+        return self.k_in
 
     def set_window_matrix(
         self, window_matrix: DiscreteShellWindowMatrix | ArrayLike

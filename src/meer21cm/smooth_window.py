@@ -48,8 +48,8 @@ The continuous kernel :math:`W_{L\ell'}(k,k')` may be:
 
 - **identity** — :math:`\delta_{L\ell'}\delta(k-k')` (no survey convolution;
   only discrete :math:`\mu`-selection on the FFT grid);
-- **beutler** — Hankel / Wigner response from measured window multipoles
-  :math:`W_L(k)` (selection field or randoms).
+- **smooth** — Hankel / Wigner response from measured window multipoles
+  :math:`W_L(k)` (selection field or randoms; pypower-style smooth window).
 
 Default 3D modelling via :func:`~meer21cm.power_ops.get_modelpk_conv` is
 unchanged. Local Yamamoto LOS will reuse the same shell map once
@@ -291,11 +291,13 @@ def continuous_window_response_blocks(
     q: float = 0.0,
 ) -> dict[tuple[int, int], NDArray[np.floating]]:
     r"""
-    Continuous Beutler response blocks :math:`W_{L\ell'}(k_{\mathrm{eval}}, k_{\mathrm{in}})`.
+    Continuous smooth-window response blocks :math:`W_{L\ell'}(k_{\mathrm{eval}}, k_{\mathrm{in}})`.
 
     Each block has shape ``(len(k_eval), len(k_in))`` and includes the
     discrete :math:`k_{\mathrm{in}}` volume element
-    :math:`\Delta V(k_{\mathrm{in}})`.
+    :math:`\Delta V(k_{\mathrm{in}})=\mathrm{trapz}(k_{\mathrm{in}}^3)/3`
+    once (the FFTlog :math:`k` grid is interpolated as a density before
+    that volume weight is applied).
     """
     ells_out_t = tuple(int(e) for e in ells_out)
     ells_in_t = tuple(int(e) for e in ells_in)
@@ -362,9 +364,11 @@ def continuous_window_response_blocks(
                 xin = xin_rows[0]
                 transformed = np.asarray(transformed_rows)
                 prefactor = 1.0 / (2 * np.pi**2) * ((-1) ** (ell_out // 2))
-                dk_vol = _weights_trapz(xin**3) / 3.0
-                resp = np.real(prefactor * transformed) * dk_vol
-                for j, row in enumerate(resp):
+                # Density W(k_out, k') on the FFTlog grid; apply the k_in
+                # volume element once after interpolating onto theory nodes.
+                # (Applying trapz(xin^3)/3 here *and* dk_vol_in double-counts.)
+                dens = np.real(prefactor * transformed)
+                for j, row in enumerate(dens):
                     interp = interpolate.interp1d(
                         xin,
                         row,
@@ -445,7 +449,7 @@ def build_discrete_shell_window_matrix(
     k_in: ArrayLike | None = None,
     ells: Sequence[int] = (0, 2, 4),
     ells_conv: Sequence[int] | None = None,
-    continuous: str = "beutler",
+    continuous: str = "smooth",
     n_fftlog: int = 512,
     n_k_eval: int = 256,
     k_log_min: float | None = None,
@@ -461,9 +465,9 @@ def build_discrete_shell_window_matrix(
         From :meth:`~meer21cm.estimator.FieldPowerSpectrum.multipole_bin_index_map`.
     k_window : array_like, optional
         Wavenumbers where window multipoles were measured (required for
-        ``continuous='beutler'``).
+        ``continuous='smooth'``).
     W_ell : mapping, optional
-        ``ell -> W_ell(k_window)`` (required for ``continuous='beutler'``).
+        ``ell -> W_ell(k_window)`` (required for ``continuous='smooth'``).
     k_in : array_like
         Fine theory :math:`k` nodes.
     ells : sequence of int, default (0, 2, 4)
@@ -473,20 +477,21 @@ def build_discrete_shell_window_matrix(
         :math:`P(\mathbf{k})=\sum_L P_L(|k|)\mathcal{L}_L(\mu)`.
         Defaults to ``ells`` for ``continuous='identity'``, else sorted keys
         of ``W_ell`` (or ``ells`` if empty).
-    continuous : {'beutler', 'identity'}, default 'beutler'
+    continuous : {'smooth', 'identity'}, default 'smooth'
         Continuous :math:`W_{L\ell'}` kernel. ``'identity'`` uses
         :math:`\delta_{L\ell'}\delta(k-k')` so the discrete shell sum alone
         encodes FFT :math:`\mu`-selection (uniform / no survey window).
-        ``'beutler'`` builds the Hankel / Wigner kernel from ``W_ell``.
+        ``'smooth'`` builds the Hankel / Wigner kernel from ``W_ell``
+        (pypower-style smooth window).
     n_fftlog : int, default 512
-        FFTlog grid size for Hankel transforms (beutler only).
+        FFTlog grid size for Hankel transforms (smooth only).
     n_k_eval : int, default 256
         Intermediate :math:`|k|` grid for interpolating continuous
         :math:`W_{L\ell'}` onto discrete modes.
     k_log_min, k_log_max : float, optional
-        Ends of the intermediate log ``k`` grid (beutler only).
+        Ends of the intermediate log ``k`` grid (smooth only).
     q : float, default 0
-        Extra FFTlog tilt (beutler only).
+        Extra FFTlog tilt (smooth only).
 
     Returns
     -------
@@ -496,9 +501,9 @@ def build_discrete_shell_window_matrix(
     if k_in is None:
         raise TypeError("k_in is required")
     continuous_s = str(continuous).lower()
-    if continuous_s not in ("beutler", "identity"):
+    if continuous_s not in ("smooth", "identity"):
         raise ValueError(
-            "continuous must be 'beutler' or 'identity', got %r" % continuous
+            "continuous must be 'smooth' or 'identity', got %r" % continuous
         )
 
     ells_t = tuple(int(e) for e in ells)
@@ -530,7 +535,7 @@ def build_discrete_shell_window_matrix(
         )
     else:
         if k_window is None or W_ell is None:
-            raise ValueError("k_window and W_ell are required for continuous='beutler'")
+            raise ValueError("k_window and W_ell are required for continuous='smooth'")
         k_window_np = np.asarray(k_window, dtype=float)
         finite = np.isfinite(k_window_np) & (k_window_np > 0)
         if k_log_min is None:

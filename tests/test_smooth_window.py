@@ -121,6 +121,41 @@ def test_uniform_weight_monopole_smoke():
     assert p_out[0].shape == (len(k1dbins) - 1,)
 
 
+def test_three_k_grids_are_independent():
+    """k1dbins_window (W_L), k_in (theory), k1dbins_out (estimator) differ."""
+    ndim = (12, 12, 12)
+    box_len = np.array([120.0, 120.0, 120.0])
+    weights = np.ones(ndim)
+    weights[:2, :, :] = 0.0
+    k1dbins_out = np.linspace(0.08, 0.28, 5)
+    k1dbins_window = np.geomspace(0.02, 0.4, 16)
+    k_in = np.geomspace(0.05, 0.35, 20)
+    ells = (0, 2)
+
+    est = SmoothWindowEstimator(
+        box_len=box_len,
+        k1dbins_window=k1dbins_window,
+        k1dbins_out=k1dbins_out,
+        ells=ells,
+        tracer="hi",
+        weights_hi=weights,
+    )
+    np.testing.assert_allclose(est.k1dbins_out, k1dbins_out)
+    np.testing.assert_allclose(est.k1dbins, k1dbins_out)  # legacy alias
+    np.testing.assert_allclose(est.k1dbins_window, k1dbins_window)
+    assert len(est.k1dbins_window) != len(est.k1dbins_out)
+
+    est.accumulate([est.run_one(0)])
+    assert est.k_window is not None
+    assert len(est.k_window) == len(k1dbins_window) - 1
+
+    mat = est.build_window_matrix(k_in=k_in, n_fftlog=128, n_k_eval=64)
+    n_out = len(k1dbins_out) - 1
+    assert mat.matrix.shape == (len(ells) * n_out, len(ells) * len(k_in))
+    np.testing.assert_allclose(mat.k_out, est.k_out, equal_nan=True)
+    np.testing.assert_allclose(mat.k_in, k_in)
+
+
 def test_windowed_multipole_model_continuous_mu():
     """Continuous μ multipoles are finite on a synthetic (k,μ) model grid."""
     kmode = np.geomspace(0.05, 0.4, 30).reshape(5, 3, 2)
@@ -228,7 +263,7 @@ def test_anisotropic_operator_order_vs_conv3d():
         assert np.median(rel) < 5.0  # loose; documents regression target
 
 
-def test_cross_worker_runs():
+def test_cross_worker_runs_smoke():
     ndim = (13, 13, 13)
     box_len = np.array([130.0, 130.0, 130.0])
     weights = np.ones(ndim)
@@ -444,3 +479,96 @@ def test_discrete_mu_sampling_with_identity_window():
         # mock naive 3d to 1d model is close to continuous model with window
         assert np.median(rel) < 0.01, "ell=%d median rel=%s" % (ell, np.median(rel))
         assert np.max(rel) < 0.05, "ell=%d max rel=%s" % (ell, np.max(rel))
+
+
+def test_continuous_window_matrix_with_tapering():
+    import warnings
+
+    from meer21cm import MockSimulation
+    from meer21cm.util import redshift_to_freq
+
+    # build simple simulation
+    z_min, z_max = 0.6, 0.8
+    nu_arr = np.linspace(redshift_to_freq(z_max), redshift_to_freq(z_min), 100)
+    mock = MockSimulation(
+        seed=42,
+        ra_range=(0, 20),
+        dec_range=(-20, 20),
+        nu=nu_arr,
+        hp_nside=128,
+        mean_amp_1=1.0,
+        include_beam=[False, False],
+        include_sky_sampling=[False, False],
+        compensate=[False, False],
+        sigma_v_1=200,
+        density="gaussian",
+    )
+    mock.k1dbins = np.linspace(0.01, 0.25, 11)
+    mock.field_1 = mock.mock_tracer_field_1
+    mock.weights_1 = np.ones_like(mock.field_1)
+    mock.apply_taper_to_field(1, axis=(0, 1, 2))
+    # 3D model convolution uses weights_grid_1 (Field FFT uses weights_1)
+    mock.weights_grid_1 = mock.weights_1
+    # get the 3D to 1D exact averaging
+    ells = (0, 2, 4)
+    k1dbins = mock.k1dbins
+    shell = mock.multipole_bin_index_map(k1dbins=k1dbins)
+
+    # Discrete shells: mock FFT vs weight-convolved 3D model
+    p3d_model = mock.auto_power_tracer_1_model
+    p3d_mock = mock.auto_power_3d_1
+    P_disc_model = {}
+    P_disc_mock = {}
+    for ell in ells:
+        P_disc_model[ell], keff_disc, _ = mock.get_1d_power(
+            p3d_model, multipole_ell=ell
+        )
+        P_disc_mock[ell], keff_disc, _ = mock.get_1d_power(p3d_mock, multipole_ell=ell)
+    # Measure W_L on fine k1dbins_window; ensure enough sampling in low-k
+    k1dbins_window = np.geomspace(
+        max(float(mock.k1dbins[0]) * 0.1, 1e-3),
+        float(mock.k1dbins[-1]) * 1.1,
+        1000,
+    )
+    swe = SmoothWindowEstimator.from_power_spectrum(
+        mock,
+        tracer="hi",
+        ells=ells,
+        weights_hi=mock.weights_1,
+        weights_grid_1=None,  # avoid double-counting: weights_hi is already the full taper
+        k1dbins_window=k1dbins_window,
+        k1dbins_out=mock.k1dbins,
+    )
+    swe.accumulate([swe.run_one(0)])
+    k_in = np.geomspace(
+        max(float(k1dbins[0]) * 0.5, 1e-3), float(k1dbins[-1]) * 1.5, 160
+    )
+
+    # Smooth continuous kernel + discrete shells
+    mat_smooth = swe.build_window_matrix(
+        k_in,
+        shell_map=shell,
+        continuous="smooth",
+        n_fftlog=256,
+        n_k_eval=128,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        cont_fine = mock.get_theory_multipoles_kmu(
+            k_in, ells=ells, nmu=64, which="auto_1"
+        )
+
+    P_win_smooth = mat_smooth.apply(cont_fine["P_ell"])
+    # ell=4 is noisy
+    for ell in (0, 2):
+        m_ell = (
+            np.isfinite(P_win_smooth[ell])
+            & np.isfinite(P_disc_model[ell])
+            & (np.abs(P_disc_model[ell]) > 0)
+        )
+        rel = np.abs(P_win_smooth[ell][m_ell] - P_disc_model[ell][m_ell]) / np.abs(
+            P_disc_model[ell][m_ell]
+        )
+        assert np.median(rel) < 0.05, "ell=%d median rel=%s" % (ell, np.median(rel))
+        assert np.max(rel) < 0.2, "ell=%d max rel=%s" % (ell, np.max(rel))
