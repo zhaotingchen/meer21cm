@@ -4,6 +4,13 @@ Cookbook
 This section contains some recipes that are useful for using `meer21cm` for simulation,
 power spectrum modelling, and data analysis.
 
+Multipole Recipes
+-----------------
+.. toctree::
+    :maxdepth: 1
+
+    cookbook/discrete_k_sampling
+
 Theory Recipes
 --------------
 .. toctree::
