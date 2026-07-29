@@ -397,6 +397,34 @@ def test_hi_window_is_deterministic():
     np.testing.assert_allclose(a.P_ell[2], b.P_ell[2])
 
 
+def test_gal_window_matches_hi_for_same_selection():
+    """
+    Galaxy selection with the same weight cube as HI must give the same W_L
+    (deterministic path; no tot_num Poisson sampling).
+    """
+    ndim = (10, 10, 10)
+    box_len = np.array([100.0, 100.0, 100.0])
+    weights = np.linspace(0.1, 1.0, np.prod(ndim)).reshape(ndim)
+    k1dbins = np.linspace(0.1, 0.4, 5)
+    hi = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="hi",
+        ells=(0, 2),
+        weights_hi=weights,
+    )
+    gal = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="gal",
+        ells=(0, 2),
+        selection_mask=weights,
+        # no tot_num_galaxies → deterministic selection FFT
+    )
+    np.testing.assert_allclose(gal.P_ell[0], hi.P_ell[0])
+    np.testing.assert_allclose(gal.P_ell[2], hi.P_ell[2])
+
+
 def test_field_power_spectrum_los_global_and_reserved():
     field = np.ones((8, 8, 8))
     box_len = np.array([80.0, 80.0, 80.0])

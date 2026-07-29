@@ -13,8 +13,11 @@ Opt-in alternative to 3D :func:`~meer21cm.power_ops.get_modelpk_conv`:
 3. Evaluate convolved multipoles with :class:`WindowedMultipoleModel`.
 
 HI windows use the selection that multiplies the data cube (not white noise).
-Galaxy windows use Poisson randoms of the selection mask. Field multipoles
-use :class:`~meer21cm.estimator.FieldPowerSpectrum` with ``los='global'``
+Galaxy windows use the same selection-weight cube (mask × optional
+:math:`\mathrm{d}N/\mathrm{d}z`); ``tot_num_galaxies`` only sets a Poisson
+sampling density used to *estimate* that selection (then amplitude is
+restored). Field multipoles use
+:class:`~meer21cm.estimator.FieldPowerSpectrum` with ``los='global'``
 today; local Yamamoto LOS is reserved for later. Default 3D modelling on
 :class:`~meer21cm.power.PowerSpectrum` is unchanged.
 
@@ -190,9 +193,12 @@ def run_smooth_window_realization(
 
     For ``tracer='hi'``, measures multipoles of the IM **selection / weight
     field** ``weights_hi`` (deterministic; ``seed`` is unused). For
-    ``tracer='gal'``, draws Poisson randoms of the galaxy selection. For
-    ``tracer='cross'``, cross-correlates the HI selection field with a
-    galaxy random realization (``seed`` used only for the galaxy draw).
+    ``tracer='gal'``, measures the galaxy **selection** (mask × optional
+    dndz), optionally Poisson-sampled at density ``tot_num_galaxies`` with
+    amplitude restored to the selection. For ``tracer='cross'``,
+    cross-correlates the HI selection with that galaxy selection field.
+    All three paths rescale by :func:`~meer21cm.power_ops.power_weights_renorm`
+    so :math:`W_L` matches the data estimator's :math:`\sum w^2` convention.
 
     ``k1dbins_window`` (preferred) or legacy ``k1dbins`` are the **fine**
     bin edges used only to measure :math:`W_L(k)`. They are independent of
@@ -222,20 +228,32 @@ def run_smooth_window_realization(
         field_1 = None
         w1 = None
 
+    # Galaxy selection weight cube (same role as weights_hi for IM). Do *not*
+    # bake tot_num_galaxies into the FFT amplitude — that would scale W_L by
+    # λ² = (N_gal / ∑sel)² relative to the HI-style PS(selection).
+    gal_sel: NDArray[np.floating] | None = None
     if tracer_s in ("gal", "cross"):
         if selection_mask is None:
             if weights_hi is not None:
                 selection_mask = np.asarray(weights_hi) > 0
             else:
                 raise ValueError("selection_mask is required for tracer=%r" % tracer_s)
-        mean = make_galaxy_poisson_mean_density(
+        gal_sel = make_galaxy_poisson_mean_density(
             selection_mask,
             dndz_box=dndz_box,
             mean_density=mean_density,
-            tot_num_galaxies=tot_num_galaxies,
+            tot_num_galaxies=None,
         )
         gal_seed = seed if tracer_s == "gal" else seed + 10_000_003
-        field_2 = make_galaxy_poisson_random(mean, gal_seed)
+        if tot_num_galaxies is not None:
+            # Poisson-sample the selection at density ∝ tot_num, then restore
+            # selection amplitude so ⟨field⟩ ≈ gal_sel (HI-equivalent).
+            lam = float(tot_num_galaxies) / float(np.asarray(gal_sel).sum())
+            if lam <= 0.0:
+                raise ValueError("tot_num_galaxies must be positive")
+            field_2 = make_galaxy_poisson_random(gal_sel * lam, gal_seed) / lam
+        else:
+            field_2 = np.asarray(gal_sel, dtype=float).copy()
         w2 = weights_grid_2
     else:
         field_2 = None
@@ -259,7 +277,7 @@ def run_smooth_window_realization(
         w_eff = _window_effective_weights(field_1, w1)
         return _rescale_window_multipoles(meas, w_eff, w_eff, float(fps.renorm_ps_1))
     if tracer_s == "gal":
-        assert field_2 is not None
+        assert field_2 is not None and gal_sel is not None
         fps = FieldPowerSpectrum(
             field_2,
             box_len,
@@ -269,10 +287,12 @@ def run_smooth_window_realization(
             los=los,
             _skip_specification=True,
         )
-        # Galaxy randoms: FPS already applies R[weights_grid]; keep as-is.
-        return fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
+        meas = fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
+        # Same R rescale as HI: target weights are the selection cube (× grid).
+        w_eff = _window_effective_weights(gal_sel, w2)
+        return _rescale_window_multipoles(meas, w_eff, w_eff, float(fps.renorm_ps_1))
     if tracer_s == "cross":
-        assert field_1 is not None and field_2 is not None
+        assert field_1 is not None and field_2 is not None and gal_sel is not None
         fps = FieldPowerSpectrum(
             field_1,
             box_len,
@@ -288,11 +308,7 @@ def run_smooth_window_realization(
         )
         meas = fps.measure_multipoles(which="cross", k1dbins=k1dbins, ells=ells_t)
         w_eff_1 = _window_effective_weights(field_1, w1)
-        # Second leg is a galaxy random realization; use grid weights only
-        # for its renorm target (same as FPS when weights_2 is set).
-        w_eff_2 = _window_effective_weights(
-            np.ones_like(field_2), w2 if w2 is not None else np.ones_like(field_2)
-        )
+        w_eff_2 = _window_effective_weights(gal_sel, w2)
         return _rescale_window_multipoles(
             meas, w_eff_1, w_eff_2, float(fps.renorm_ps_cross)
         )
@@ -385,8 +401,9 @@ class SmoothWindowEstimator:
     that multiplies the data cube) and rescales them by
     :func:`~meer21cm.power_ops.power_weights_renorm` so :math:`W_L` is
     :math:`O(1)` while the data estimator still applies the same renorm.
-    Galaxy / cross paths still draw Poisson randoms; ``seed`` only matters
-    for those draws.
+    Galaxy / cross use the selection cube the same way; ``tot_num_galaxies``
+    only sets optional Poisson sampling density (amplitude restored).
+    ``seed`` matters only for those Poisson draws.
 
     Does **not** open an MPI or multiprocessing pool. Callers map
     :meth:`get_arg_list_for_seeds` (or :func:`run_smooth_window_realization`)
@@ -419,9 +436,12 @@ class SmoothWindowEstimator:
     dndz_box : ndarray, optional
         Per-voxel dN/dz weight for galaxy randoms.
     tot_num_galaxies : float, optional
-        Target expected galaxy count for Poisson means.
+        If set, Poisson-sample the galaxy selection at this expected count,
+        then divide by ``N/∑sel`` so the FFT field has selection amplitude
+        (not number-count amplitude). Omit for a deterministic selection FFT.
     mean_density : float, optional
-        Constant mean density on the mask (alternative to ``tot_num_galaxies``).
+        Constant mean density on the mask (alternative amplitude for the
+        selection cube when ``tot_num_galaxies`` is omitted).
     weights_grid_1, weights_grid_2 : ndarray, optional
         Optional extra FFT grid weights (same role as estimator
         ``weights_1/2``). Leave ``None`` when ``weights_hi`` is already the
