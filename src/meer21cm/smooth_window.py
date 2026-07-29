@@ -49,7 +49,32 @@ The continuous kernel :math:`W_{L\ell'}(k,k')` may be:
 - **identity** — :math:`\delta_{L\ell'}\delta(k-k')` (no survey convolution;
   only discrete :math:`\mu`-selection on the FFT grid);
 - **smooth** — Hankel / Wigner response from measured window multipoles
-  :math:`W_L(k)` (selection field or randoms; pypower-style smooth window).
+  :math:`W_L(k)` (selection field or randoms; pypower-style smooth window):
+
+  .. math::
+
+      Q_L(s)
+      =
+      \frac{i^{L}}{2\pi^{2}}
+      \int_0^{\infty}\!\mathrm{d}q\,q^{2}\,
+      j_{L}(qs)\,W_L(q),
+
+  .. math::
+
+      W_{L\ell'}(k,k')
+      =
+      \frac{2}{\pi}
+      (-1)^{L/2}(-1)^{\ell'/2}
+      \int_0^{\infty}\!\mathrm{d}s\,s^{2}\,
+      j_{L}(ks)\,j_{\ell'}(k's)
+      \sum_{\mathcal{L}}
+      C_{L\ell'\mathcal{L}}\,
+      Q_{\mathcal{L}}(s),
+
+  with Wigner–Legendre couplings :math:`C_{L\ell'\mathcal{L}}` from
+  :func:`wigner3j_square` (``prefactor=True``). In code the
+  :math:`k'^2\mathrm{d}k'` volume element is included when building the
+  discrete matrix columns.
 
 Default 3D modelling via :func:`~meer21cm.power_ops.get_modelpk_conv` is
 unchanged. Local Yamamoto LOS will reuse the same shell map once
