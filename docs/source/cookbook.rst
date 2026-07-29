@@ -10,6 +10,7 @@ Multipole Recipes
     :maxdepth: 1
 
     cookbook/discrete_k_sampling
+    cookbook/multipole_sampling_k
 
 Theory Recipes
 --------------
