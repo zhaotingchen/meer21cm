@@ -369,10 +369,6 @@ def _resolve_window_k_edges(
         raise TypeError(
             "k1dbins_out (or legacy k1dbins) is required for estimator k_out bins"
         )
-    if k1dbins_window is None:
-        raise TypeError(
-            "k1dbins_window (or legacy k1dbins) is required to measure W_L(k)"
-        )
     return (
         np.asarray(k1dbins_window, dtype=float),
         np.asarray(k1dbins_out, dtype=float),
@@ -526,12 +522,16 @@ class SmoothWindowEstimator:
         ``k1dbins_window`` for measuring :math:`W_L`; if omitted, it falls
         back to the same edges as ``k1dbins_out`` (legacy behaviour).
         """
-        weights_default = getattr(ps, "weights_field_1", None)
-        if weights_default is None:
-            weights_default = getattr(ps, "counts_in_box", None)
-        if weights_default is None:
-            weights_default = getattr(ps, "weights_1", None)
-        weights_hi = kwargs.pop("weights_hi", weights_default)
+        # Resolve the HI selection lazily so that objects without survey
+        # pixel data (e.g. survey-free simulation boxes) never trigger the
+        # ``counts_in_box`` computation when ``weights_hi`` is given.
+        weights_hi = kwargs.pop("weights_hi", None)
+        if weights_hi is None:
+            weights_hi = getattr(ps, "weights_field_1", None)
+        if weights_hi is None:
+            weights_hi = getattr(ps, "counts_in_box", None)
+        if weights_hi is None:
+            weights_hi = getattr(ps, "weights_1", None)
         selection_mask = kwargs.pop(
             "selection_mask",
             None if weights_hi is None else (np.asarray(weights_hi) > 0),

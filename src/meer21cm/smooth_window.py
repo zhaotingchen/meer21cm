@@ -622,11 +622,7 @@ def build_discrete_shell_window_matrix(
                 acc = np.zeros(n_in, dtype=float)
                 for L in ells_L:
                     key = (int(L), int(ell_in))
-                    if key not in interps:
-                        continue
                     w_rows = np.asarray(interps[key](k_n), dtype=float)
-                    if w_rows.ndim == 1:
-                        w_rows = w_rows[None, :]
                     coeff = B_ell * L_on_bin[L]
                     acc += np.sum(coeff[:, None] * w_rows, axis=0)
                 matrix[

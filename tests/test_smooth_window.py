@@ -1,5 +1,7 @@
 """Tests for discrete-shell smooth window and multipole theory."""
 
+import types
+
 import numpy as np
 import pytest
 
@@ -8,6 +10,7 @@ from meer21cm.multipole_model import (
     SmoothWindowEstimator,
     WindowedMultipoleModel,
     accumulate_window_multipoles,
+    make_galaxy_poisson_mean_density,
     make_im_selection_field,
     run_smooth_window_realization,
 )
@@ -15,11 +18,37 @@ from meer21cm.power_ops import get_modelpk_conv
 from meer21cm.smooth_window import (
     DiscreteShellWindowMatrix,
     apply_discrete_shell_window_matrix,
+    build_config_space_window_coupling,
     build_discrete_shell_window_matrix,
+    continuous_window_response_blocks,
+    correlation_to_power_multipole,
+    interpolate_window_to_log_k,
+    _linear_interpolation_matrix,
     power_to_correlation_multipole,
     wigner3j_square,
 )
 from meer21cm.util import legendre_polynomial_with_factor
+
+
+def _shell_map(ndim=(8, 8, 8), box_len=(80.0, 80.0, 80.0), k1dbins=None):
+    if k1dbins is None:
+        k1dbins = np.linspace(0.1, 0.4, 5)
+    fps = FieldPowerSpectrum(
+        np.ones(ndim), box_len, los="global", _skip_specification=True
+    )
+    return fps.multipole_bin_index_map(k1dbins=k1dbins)
+
+
+def _windowed_model(ells=(0, 2)):
+    kmode = np.geomspace(0.05, 0.4, 30).reshape(5, 3, 2)
+    mumode = np.linspace(-1, 1, kmode.size).reshape(kmode.shape)
+    return WindowedMultipoleModel(
+        kmode=kmode,
+        mumode=mumode,
+        tracer_bias_1=1.0,
+        kaiser_rsd=False,
+        window_ells=ells,
+    )
 
 
 def test_wigner3j_and_fftlog_smoke():
@@ -600,3 +629,473 @@ def test_continuous_window_matrix_with_tapering():
         )
         assert np.median(rel) < 0.05, "ell=%d median rel=%s" % (ell, np.median(rel))
         assert np.max(rel) < 0.2, "ell=%d max rel=%s" % (ell, np.max(rel))
+
+
+def test_make_galaxy_poisson_mean_density_dndz_and_tot():
+    ndim = (6, 6, 8)
+    mask = np.ones(ndim)
+    z = np.linspace(0.5, 1.0, ndim[2])
+    dndz = np.exp(-((z - 0.7) ** 2) / 0.02)
+    dndz_box = np.broadcast_to(dndz[None, None, :], ndim).copy()
+    mean = make_galaxy_poisson_mean_density(
+        mask, dndz_box=dndz_box, tot_num_galaxies=1000.0
+    )
+    assert np.isclose(mean.sum(), 1000.0)
+    np.testing.assert_allclose(mean / mean.max(), dndz_box / dndz_box.max(), rtol=1e-12)
+
+
+def test_make_galaxy_poisson_mean_density_mean_density():
+    mask = np.zeros((6, 6, 6))
+    mask[1:-1, 1:-1, 1:-1] = 1.0
+    mean = make_galaxy_poisson_mean_density(mask, mean_density=2.5)
+    np.testing.assert_array_equal(mean, mask * 2.5)
+
+
+def test_make_galaxy_poisson_mean_density_zero_total():
+    with pytest.raises(ValueError, match="zero everywhere"):
+        make_galaxy_poisson_mean_density(np.zeros((4, 4, 4)))
+
+
+def test_accumulate_window_multipoles_empty_raises():
+    with pytest.raises(ValueError, match="No results"):
+        accumulate_window_multipoles([])
+
+
+def test_run_smooth_window_realization_requires_k1dbins():
+    with pytest.raises(TypeError, match="k1dbins_window"):
+        run_smooth_window_realization(
+            box_len=[100.0, 100.0, 100.0],
+            tracer="hi",
+            weights_hi=np.ones((8, 8, 8)),
+        )
+
+
+def test_cross_requires_weights_hi():
+    with pytest.raises(ValueError, match="weights_hi is required"):
+        run_smooth_window_realization(
+            box_len=[80.0, 80.0, 80.0],
+            k1dbins=np.linspace(0.1, 0.4, 5),
+            tracer="cross",
+            selection_mask=np.ones((8, 8, 8)),
+        )
+
+
+def test_gal_mask_defaults_from_weights_hi():
+    ndim = (8, 8, 8)
+    box_len = [80.0, 80.0, 80.0]
+    weights = np.ones(ndim)
+    weights[0, :, :] = 0.0
+    k1dbins = np.linspace(0.1, 0.4, 5)
+    with_mask = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="gal",
+        ells=(0,),
+        selection_mask=weights > 0,
+    )
+    from_hi = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="gal",
+        ells=(0,),
+        weights_hi=weights,
+    )
+    np.testing.assert_allclose(from_hi.P_ell[0], with_mask.P_ell[0])
+
+
+def test_gal_missing_selection_raises():
+    with pytest.raises(ValueError, match="selection_mask is required"):
+        run_smooth_window_realization(
+            box_len=[80.0, 80.0, 80.0],
+            k1dbins=np.linspace(0.1, 0.4, 5),
+            tracer="gal",
+        )
+
+
+def test_tot_num_galaxies_nonpositive_raises():
+    with pytest.raises(ValueError, match="tot_num_galaxies must be positive"):
+        run_smooth_window_realization(
+            box_len=[80.0, 80.0, 80.0],
+            k1dbins=np.linspace(0.1, 0.4, 5),
+            tracer="gal",
+            selection_mask=np.ones((8, 8, 8)),
+            tot_num_galaxies=0.0,
+        )
+
+
+def test_unknown_tracer_raises():
+    with pytest.raises(ValueError, match="Unknown tracer"):
+        run_smooth_window_realization(
+            box_len=[80.0, 80.0, 80.0],
+            k1dbins=np.linspace(0.1, 0.4, 5),
+            tracer="bogus",
+        )
+
+
+def test_gal_window_constant_grid_weight_invariance():
+    ndim = (8, 8, 8)
+    box_len = [80.0, 80.0, 80.0]
+    sel = np.ones(ndim)
+    sel[0, :, :] = 0.0
+    k1dbins = np.linspace(0.1, 0.4, 5)
+    base = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="gal",
+        ells=(0,),
+        selection_mask=sel,
+    )
+    grid = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="gal",
+        ells=(0,),
+        selection_mask=sel,
+        weights_grid_2=2.0 * np.ones(ndim),
+    )
+    np.testing.assert_allclose(grid.P_ell[0], base.P_ell[0])
+
+
+def test_uniform_hi_window_rescale_is_identity():
+    ndim = (8, 8, 8)
+    box_len = [80.0, 80.0, 80.0]
+    k1dbins = np.linspace(0.1, 0.4, 5)
+    res = run_smooth_window_realization(
+        box_len=box_len,
+        k1dbins=k1dbins,
+        tracer="hi",
+        ells=(0,),
+        weights_hi=np.ones(ndim),
+    )
+    fps = FieldPowerSpectrum(
+        np.ones(ndim), box_len, los="global", _skip_specification=True
+    )
+    raw = fps.measure_multipoles(k1dbins=k1dbins, ells=(0,))
+    np.testing.assert_allclose(res.P_ell[0], raw.P_ell[0])
+
+
+def test_zero_selection_hi_window_does_not_scale():
+    ndim = (8, 8, 8)
+    box_len = [80.0, 80.0, 80.0]
+    k1dbins = np.linspace(0.1, 0.4, 5)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        res = run_smooth_window_realization(
+            box_len=box_len,
+            k1dbins=k1dbins,
+            tracer="hi",
+            ells=(0,),
+            weights_hi=np.zeros(ndim),
+        )
+    assert np.all(np.isfinite(res.P_ell[0]))
+
+
+def test_smooth_window_estimator_k_out_shell_map_fallback():
+    est = SmoothWindowEstimator(
+        box_len=[100.0, 100.0, 100.0],
+        k1dbins=np.linspace(0.1, 0.4, 5),
+        tracer="hi",
+        weights_hi=np.ones((10, 10, 10)),
+    )
+    assert est.k_out is None
+    est.make_shell_map()
+    np.testing.assert_allclose(est.k_out, est.shell_map.k_eff, equal_nan=True)
+
+
+def test_smooth_window_estimator_from_power_spectrum_weights_1_fallback():
+    ps = types.SimpleNamespace(
+        box_len=np.array([100.0, 100.0, 100.0]),
+        k1dbins=np.linspace(0.1, 0.4, 5),
+        weights_1=np.ones((8, 8, 8)),
+    )
+    est = SmoothWindowEstimator.from_power_spectrum(ps, tracer="hi", ells=(0,))
+    assert est.weights_hi.shape == (8, 8, 8)
+    np.testing.assert_allclose(est.k1dbins_out, ps.k1dbins)
+
+
+class _CountsInBoxRaises:
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+    @property
+    def counts_in_box(self):
+        raise RuntimeError("counts_in_box must not be accessed")
+
+
+def test_from_power_spectrum_explicit_weights_hi_skips_counts_in_box():
+    ps = _CountsInBoxRaises(
+        box_len=np.array([100.0, 100.0, 100.0]),
+        k1dbins=np.linspace(0.1, 0.4, 5),
+    )
+    weights_hi = np.ones((8, 8, 8))
+    est = SmoothWindowEstimator.from_power_spectrum(
+        ps, tracer="hi", ells=(0,), weights_hi=weights_hi
+    )
+    assert est.weights_hi is weights_hi
+
+
+def test_from_power_spectrum_weights_field_1_preferred():
+    ps = types.SimpleNamespace(
+        box_len=np.array([100.0, 100.0, 100.0]),
+        k1dbins=np.linspace(0.1, 0.4, 5),
+        weights_field_1=np.ones((6, 6, 6)),
+        counts_in_box=np.ones((4, 4, 4)),
+        weights_1=np.ones((2, 2, 2)),
+    )
+    est = SmoothWindowEstimator.from_power_spectrum(ps, tracer="hi", ells=(0,))
+    assert est.weights_hi.shape == (6, 6, 6)
+
+
+def test_from_power_spectrum_counts_in_box_fallback():
+    ps = types.SimpleNamespace(
+        box_len=np.array([100.0, 100.0, 100.0]),
+        k1dbins=np.linspace(0.1, 0.4, 5),
+        counts_in_box=np.ones((4, 4, 4)),
+        weights_1=np.ones((2, 2, 2)),
+    )
+    est = SmoothWindowEstimator.from_power_spectrum(ps, tracer="hi", ells=(0,))
+    assert est.weights_hi.shape == (4, 4, 4)
+
+
+def test_make_shell_map_shape_inference_raises():
+    est = SmoothWindowEstimator(
+        box_len=[100.0, 100.0, 100.0],
+        k1dbins=np.linspace(0.1, 0.4, 5),
+    )
+    with pytest.raises(ValueError, match="Cannot infer box_ndim"):
+        est.make_shell_map()
+
+
+def test_build_window_matrix_smooth_without_accumulate_raises():
+    est = SmoothWindowEstimator(
+        box_len=[100.0, 100.0, 100.0],
+        k1dbins=np.linspace(0.1, 0.4, 5),
+        tracer="hi",
+        weights_hi=np.ones((8, 8, 8)),
+    )
+    with pytest.raises(RuntimeError, match="Accumulate"):
+        est.build_window_matrix(k_in=np.geomspace(0.1, 0.4, 10), continuous="smooth")
+
+
+def test_get_arg_list_for_seeds():
+    est = SmoothWindowEstimator(
+        box_len=[100.0, 100.0, 100.0],
+        k1dbins=np.linspace(0.1, 0.4, 5),
+        tracer="hi",
+        weights_hi=np.ones((8, 8, 8)),
+    )
+    arglist = est.get_arg_list_for_seeds([3, 7])
+    assert len(arglist) == 2
+    for kwargs, seed in arglist:
+        assert seed in (3, 7)
+        assert kwargs["tracer"] == "hi"
+    res = run_smooth_window_realization(**arglist[0][0], seed=arglist[0][1])
+    assert np.all(np.isfinite(res.P_ell[0]))
+
+
+def test_windowed_model_raw_matrix_branches():
+    model = _windowed_model()
+    raw = np.eye(4)
+    model.set_window_matrix(raw)
+    np.testing.assert_array_equal(model.window_matrix, raw)
+    assert model.k_out is None
+    assert model.k_in is None
+    assert model.k_in_window is None
+
+    k_in = np.geomspace(0.1, 0.3, 2)
+    out = model.get_model_multipoles(which="auto_1", k_in=k_in, ells=(0, 2), nmu=16)
+    assert out["window_applied"] is True
+    np.testing.assert_allclose(out["k"], k_in)
+    assert out["nmodes"] is None
+    assert out["P_ell"][0].shape == (2,)
+    assert out["P_ell"][2].shape == (2,)
+
+
+def test_windowed_model_init_with_raw_matrix():
+    raw = np.eye(4)
+    model = WindowedMultipoleModel(
+        kmode=np.geomspace(0.05, 0.4, 30).reshape(5, 3, 2),
+        mumode=np.linspace(-1, 1, 30).reshape(5, 3, 2),
+        tracer_bias_1=1.0,
+        kaiser_rsd=False,
+        window_ells=(0, 2),
+        window_matrix=raw,
+    )
+    np.testing.assert_array_equal(model.window_matrix, raw)
+
+
+def test_windowed_model_object_matrix_branches():
+    model = _windowed_model()
+    shell = _shell_map()
+    k_in = np.geomspace(0.1, 0.35, 8)
+    mat = build_discrete_shell_window_matrix(
+        shell, k_in=k_in, ells=(0, 2), continuous="identity", n_k_eval=32
+    )
+    model.set_window_matrix(mat)
+    assert model.window_ells == (0, 2)
+    np.testing.assert_array_equal(model.window_matrix, mat.matrix)
+    np.testing.assert_allclose(model.k_out, mat.k_out)
+    np.testing.assert_allclose(model.k_in, mat.k_in)
+    np.testing.assert_allclose(model.k_in_window, mat.k_in)
+
+    out = model.get_model_multipoles(which="auto_1", ells=(0, 2), nmu=16)
+    assert out["window_applied"] is True
+    np.testing.assert_allclose(out["k"], mat.k_out)
+    np.testing.assert_allclose(out["nmodes"], mat.nmodes)
+    assert set(out["P_ell"].keys()) == {0, 2}
+
+
+def test_windowed_model_build_window_matrix_from_shell():
+    model = _windowed_model()
+    shell = _shell_map()
+    k_window = np.geomspace(0.1, 0.3, 8)
+    W_ell = {0: np.ones(8), 2: np.zeros(8)}
+    mat = model.build_window_matrix_from_shell(
+        shell,
+        k_window,
+        W_ell,
+        k_in=np.geomspace(0.1, 0.35, 8),
+        continuous="identity",
+        n_k_eval=32,
+    )
+    assert isinstance(mat, DiscreteShellWindowMatrix)
+    np.testing.assert_allclose(model.k_out, mat.k_out)
+    assert model.window_ells == (0, 2)
+
+
+def test_windowed_model_get_theory_multipoles_default_ells():
+    model = _windowed_model()
+    raw = model.get_theory_multipoles_kmu(np.geomspace(0.1, 0.3, 8), nmu=16)
+    assert raw["ells"] == (0, 2)
+
+
+def test_get_model_multipoles_k_in_required():
+    model = _windowed_model()
+    with pytest.raises(ValueError, match="k_in is required"):
+        model.get_model_multipoles(which="auto_1")
+
+
+def test_smooth_window_estimator_k1dbins_out_required():
+    with pytest.raises(TypeError, match="k1dbins_out"):
+        SmoothWindowEstimator(
+            box_len=[100.0, 100.0, 100.0],
+            k1dbins_window=np.linspace(0.1, 0.4, 5),
+        )
+
+
+def test_power_to_correlation_short_grid_raises():
+    with pytest.raises(ValueError, match="fine log-spaced"):
+        power_to_correlation_multipole(np.linspace(0.1, 0.2, 4), np.ones(4), ell=0)
+
+
+def test_hankel_round_trip():
+    k = np.geomspace(1e-2, 1.0, 128)
+    pk = np.exp(-((k / 0.2) ** 2))
+    s, xi = power_to_correlation_multipole(k, pk, ell=0)
+    k2, pk2 = correlation_to_power_multipole(s, xi, ell=0)
+    pk_ref = np.interp(k2, k, pk)
+    mask = (k2 > 0.02) & (k2 < 0.8) & (np.abs(pk_ref) > 0)
+    rel = np.abs(pk2[mask] / pk_ref[mask] - 1.0)
+    assert np.median(rel) < 0.05
+
+
+def test_interpolate_window_to_log_k_degenerate():
+    k_meas = np.array([0.1, 0.2, 0.3])
+    k_log = np.geomspace(0.05, 0.5, 16)
+    all_nan = interpolate_window_to_log_k(
+        k_meas, np.array([np.nan, np.nan, np.nan]), k_log
+    )
+    np.testing.assert_array_equal(all_nan, np.zeros_like(k_log))
+    single = interpolate_window_to_log_k(k_meas, np.array([1.0, np.nan, np.nan]), k_log)
+    np.testing.assert_array_equal(single, np.zeros_like(k_log))
+
+
+def test_build_config_space_window_coupling_missing_L():
+    sep = np.linspace(1.0, 5.0, 8)
+    missing = build_config_space_window_coupling(sep, {0: np.ones(8)}, 2, 0)
+    np.testing.assert_array_equal(missing, np.zeros(8))
+    present = build_config_space_window_coupling(sep, {2: np.ones(8)}, 2, 0)
+    np.testing.assert_allclose(present, np.ones(8))
+
+
+def test_continuous_window_response_blocks_default_kgrid():
+    k_window = np.geomspace(0.05, 0.5, 12)
+    W_ell = {0: np.ones(12), 2: np.zeros(12), 4: np.zeros(12)}
+    blocks = continuous_window_response_blocks(
+        k_window,
+        W_ell,
+        k_eval=np.geomspace(0.05, 0.5, 8),
+        k_in=np.geomspace(0.05, 0.5, 10),
+        ells_out=(0,),
+        ells_in=(0,),
+        n_fftlog=64,
+    )
+    assert set(blocks.keys()) == {(0, 0)}
+    assert blocks[(0, 0)].shape == (8, 10)
+    assert np.all(np.isfinite(blocks[(0, 0)]))
+
+
+def test_linear_interpolation_matrix_edge_cases():
+    k_in = np.geomspace(0.1, 0.3, 5)
+    empty = _linear_interpolation_matrix(np.geomspace(0.1, 0.3, 4), np.array([]))
+    assert empty.shape == (4, 0)
+    mat = _linear_interpolation_matrix(np.array([0.1, np.nan, -0.5, 0.3]), k_in)
+    np.testing.assert_array_equal(mat[1], np.zeros(5))
+    np.testing.assert_array_equal(mat[2], np.zeros(5))
+    assert np.isclose(mat[0].sum(), 1.0)
+    assert np.isclose(mat[3].sum(), 1.0)
+
+
+def test_build_discrete_shell_window_matrix_errors():
+    shell = _shell_map()
+    with pytest.raises(TypeError, match="k_in is required"):
+        build_discrete_shell_window_matrix(shell)
+    with pytest.raises(ValueError, match="continuous must be"):
+        build_discrete_shell_window_matrix(
+            shell, k_in=np.geomspace(0.1, 0.3, 5), continuous="bogus"
+        )
+    with pytest.raises(ValueError, match="k_window and W_ell are required"):
+        build_discrete_shell_window_matrix(
+            shell, k_in=np.geomspace(0.1, 0.3, 5), continuous="smooth"
+        )
+    mat = build_discrete_shell_window_matrix(
+        shell,
+        k_in=np.geomspace(0.1, 0.3, 8),
+        ells=(0,),
+        ells_conv=(0, 2),
+        continuous="identity",
+        n_k_eval=32,
+    )
+    assert mat.matrix.shape == (4, 8)
+
+
+def test_discrete_shell_matrix_zero_weight_bin_skipped():
+    fps = FieldPowerSpectrum(
+        np.ones((8, 8, 8)), [80.0, 80.0, 80.0], los="global", _skip_specification=True
+    )
+    k1dbins = np.linspace(0.1, 0.4, 5)
+    k1dweights = np.ones_like(fps.k_mode)
+    shell_full = fps.multipole_bin_index_map(k1dbins=k1dbins)
+    k1dweights[shell_full.bin_index == 1] = 0.0
+    shell = fps.multipole_bin_index_map(k1dbins=k1dbins, k1dweights=k1dweights)
+    k_in = np.geomspace(0.1, 0.4, 8)
+    mat = build_discrete_shell_window_matrix(
+        shell, k_in=k_in, ells=(0,), continuous="identity", n_k_eval=32
+    )
+    n_out = len(k1dbins) - 1
+    rows = mat.matrix.reshape(n_out, len(k_in))
+    np.testing.assert_array_equal(rows[1], np.zeros(len(k_in)))
+    assert np.sum(rows[0]) > 0
+
+
+def test_apply_discrete_shell_window_matrix_vector_input():
+    shell = _shell_map()
+    k_in = np.geomspace(0.1, 0.35, 8)
+    ells = (0, 2)
+    mat = build_discrete_shell_window_matrix(
+        shell, k_in=k_in, ells=ells, continuous="identity", n_k_eval=32
+    )
+    vec = np.concatenate([np.ones(8), np.zeros(8)])
+    out = apply_discrete_shell_window_matrix(vec, mat.matrix, ells=ells)
+    n_out = len(shell.k1dbins) - 1
+    assert set(out.keys()) == {0, 2}
+    assert out[0].shape == out[2].shape == (n_out,)
