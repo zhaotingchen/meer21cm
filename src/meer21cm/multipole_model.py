@@ -58,6 +58,49 @@ logger = logging.getLogger(__name__)
 Tracer = Literal["hi", "gal", "cross"]
 
 
+def propose_window_measure_ells(
+    ells: Sequence[int], *, wide_angle: bool = False
+) -> tuple[int, ...]:
+    """
+    Multipole orders :math:`L` to measure for :math:`W_L(k)`.
+
+    Follows pypower's ``CatalogSmoothWindow`` rule: even window multipoles
+    up to :math:`2\\ell_{\\max}` for output multipoles ``ells``. With
+    ``wide_angle=True``, also include odd :math:`L` needed for resum.
+    """
+    ells_t = tuple(int(e) for e in ells)
+    even = tuple(e for e in ells_t if e % 2 == 0)
+    if wide_angle and even:
+        odds = propose_odd_wa_ells(even)
+        max_ell = max(list(ells_t) + list(odds))
+        extra_L = tuple(range(0, max_ell + 3))
+        return tuple(sorted(set(ells_t) | set(odds) | set(extra_L)))
+    max_ell = max(even) if even else max(ells_t)
+    return tuple(range(0, 2 * max_ell + 1, 2))
+
+
+def propose_k1dbins_window(
+    k1dbins_out: ArrayLike,
+    *,
+    k_min: float | None = None,
+    n: int = 1000,
+    low_factor: float = 0.1,
+    high_factor: float = 1.1,
+) -> NDArray[np.floating]:
+    """
+    Log-spaced bin edges for measuring :math:`W_L(k)`.
+
+    The lower edge is clipped to ``k_min`` when supplied (e.g. the box
+    fundamental mode) so empty low-``k`` shells are not Hankel-extrapolated.
+    """
+    edges_out = np.asarray(k1dbins_out, dtype=float)
+    k_lo = max(float(edges_out[0]) * low_factor, 1e-3)
+    if k_min is not None:
+        k_lo = max(k_lo, float(k_min))
+    k_hi = float(edges_out[-1]) * high_factor
+    return np.geomspace(k_lo, k_hi, int(n))
+
+
 @dataclass
 class AccumulatedWindow:
     """Ensemble-averaged window multipoles from :func:`accumulate_window_multipoles`."""
@@ -506,16 +549,9 @@ class SmoothWindowEstimator:
         self.wide_angle = bool(wide_angle)
         self.wa_d = None if wa_d is None else float(wa_d)
         self.wa_los = None if wa_los is None else str(wa_los).lower()
-        even = tuple(e for e in self.ells if e % 2 == 0)
-        if self.wide_angle and even:
-            odds = propose_odd_wa_ells(even)
-            max_ell = max(list(self.ells) + list(odds))
-            extra_L = tuple(range(0, max_ell + 3))
-            self._ells_measure = tuple(
-                sorted(set(self.ells) | set(odds) | set(extra_L))
-            )
-        else:
-            self._ells_measure = self.ells
+        self._ells_measure = propose_window_measure_ells(
+            self.ells, wide_angle=self.wide_angle
+        )
         self.tracer = str(tracer).lower()
         self.weights_hi = weights_hi
         self.selection_mask = selection_mask
@@ -584,6 +620,17 @@ class SmoothWindowEstimator:
             "k1dbins_out", k1dbins if k1dbins is not None else ps.k1dbins
         )
         k1dbins_window = kwargs.pop("k1dbins_window", None)
+        k_mode = getattr(ps, "k_mode", None)
+        k_fund = None
+        if k_mode is not None:
+            kpos = np.asarray(k_mode, dtype=float)
+            kpos = kpos[np.isfinite(kpos) & (kpos > 0)]
+            if kpos.size:
+                k_fund = float(np.min(kpos))
+        if k1dbins_window is not None and k_fund is not None:
+            kw = np.asarray(k1dbins_window, dtype=float).copy()
+            kw[0] = max(float(kw[0]), k_fund)
+            k1dbins_window = kw
         kwargs.setdefault("los", getattr(ps, "los", "global"))
         if "los_observer" not in kwargs:
             los_observer = getattr(ps, "los_observer", None)
@@ -666,8 +713,6 @@ class SmoothWindowEstimator:
         self.W_ell = acc.W_ell
         self.W_ell_std = acc.W_ell_std
         self.n_realizations = acc.n_realizations
-        if not self.wide_angle:
-            self.ells = tuple(acc.ells)
         return acc
 
     def make_shell_map(
@@ -804,6 +849,8 @@ class SmoothWindowEstimator:
         ells_in = ells_out
         ells_conv = kwargs.pop("ells_conv", None)
         even = tuple(e for e in ells_out if e % 2 == 0)
+        if ells_conv is None and continuous_s == "smooth":
+            ells_conv = tuple(sorted(set(ells_out) | set(ells_in)))
         if do_wa:
             if not even:
                 raise ValueError(

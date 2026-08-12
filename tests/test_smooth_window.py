@@ -12,12 +12,15 @@ from meer21cm.multipole_model import (
     accumulate_window_multipoles,
     make_galaxy_poisson_mean_density,
     make_im_selection_field,
+    propose_k1dbins_window,
+    propose_window_measure_ells,
     run_smooth_window_realization,
 )
 from meer21cm.power_ops import get_modelpk_conv
 from meer21cm.smooth_window import (
     DiscreteShellWindowMatrix,
     apply_discrete_shell_window_matrix,
+    interpolate_window_to_log_k,
     build_config_space_window_coupling,
     build_discrete_shell_window_matrix,
     continuous_window_response_blocks,
@@ -589,11 +592,8 @@ def test_continuous_window_matrix_with_tapering():
         )
         P_disc_mock[ell], keff_disc, _ = mock.get_1d_power(p3d_mock, multipole_ell=ell)
     # Measure W_L on fine k1dbins_window; ensure enough sampling in low-k
-    k1dbins_window = np.geomspace(
-        max(float(mock.k1dbins[0]) * 0.1, 1e-3),
-        float(mock.k1dbins[-1]) * 1.1,
-        1000,
-    )
+    k_fund = float(np.asarray(mock.k_mode)[np.asarray(mock.k_mode) > 0].min())
+    k1dbins_window = propose_k1dbins_window(mock.k1dbins, k_min=k_fund, n=1000)
     swe = SmoothWindowEstimator.from_power_spectrum(
         mock,
         tracer="hi",
@@ -1106,3 +1106,106 @@ def test_apply_discrete_shell_window_matrix_vector_input():
     n_out = len(shell.k1dbins) - 1
     assert set(out.keys()) == {0, 2}
     assert out[0].shape == out[2].shape == (n_out,)
+
+
+def test_interpolate_window_to_log_k_clamps_outside_range():
+    k_meas = np.array([0.02, 0.04, 0.08])
+    w0 = np.array([10.0, 5.0, 1.0])
+    k_log = np.geomspace(0.01, 0.1, 20)
+    out = interpolate_window_to_log_k(k_meas, w0, k_log)
+    assert out[k_log < k_meas[0]] == pytest.approx(10.0)
+    assert np.all(out[k_log > k_meas[-1]] == 0.0)
+
+
+def test_propose_window_measure_ells_matches_pypower_rule():
+    assert propose_window_measure_ells((0, 2, 4)) == (0, 2, 4, 6, 8)
+    assert propose_window_measure_ells((0,)) == (0,)
+
+
+def test_smooth_window_estimator_keeps_output_ells_after_accumulate():
+    ndim = (12, 12, 12)
+    weights = np.ones(ndim)
+    weights[:2, :, :] = 0.0
+    est = SmoothWindowEstimator(
+        box_len=np.full(3, 120.0),
+        k1dbins_window=np.geomspace(0.05, 0.35, 12),
+        k1dbins_out=np.linspace(0.08, 0.3, 5),
+        ells=(0, 2, 4),
+        tracer="hi",
+        weights_hi=weights,
+    )
+    assert est._ells_measure == (0, 2, 4, 6, 8)
+    est.accumulate([est.run_one(0)])
+    assert est.ells == (0, 2, 4)
+    assert set(est.W_ell.keys()) == {0, 2, 4, 6, 8}
+
+
+def test_continuous_window_matrix_taper_periodic_box():
+    """Tapered periodic box: smooth W should track get_modelpk_conv like survey test."""
+    import warnings
+
+    from meer21cm import MockSimulation
+
+    mock = MockSimulation(
+        density="gaussian",
+        kaiser_rsd=True,
+        rsd_from_field=True,
+        sigma_v_1=0.0,
+        tracer_bias_1=1.0,
+        mean_amp_1=1.0,
+        model_k_from_field=True,
+        seed=42,
+        los="global",
+    )
+    mock.box_len = np.array([400.0, 400.0, 400.0])
+    mock.box_ndim = np.array([64, 64, 64])
+    mock.k1dbins = np.linspace(0.04, 0.28, 8)
+    mock.field_1 = mock.mock_tracer_field_1
+    mock.weights_1 = np.ones_like(mock.field_1)
+    mock.apply_taper_to_field(1, axis=(0, 1, 2))
+    mock.weights_grid_1 = mock.weights_1
+    ells = (0, 2, 4)
+    p3d_model = mock.auto_power_tracer_1_model
+    P_disc_model = {
+        ell: mock.get_1d_power(p3d_model, multipole_ell=ell)[0] for ell in ells
+    }
+    k1dbins_window = propose_k1dbins_window(
+        mock.k1dbins,
+        k_min=float(np.asarray(mock.k_mode)[np.asarray(mock.k_mode) > 0].min()),
+        n=400,
+    )
+    swe = SmoothWindowEstimator.from_power_spectrum(
+        mock,
+        tracer="hi",
+        ells=ells,
+        weights_hi=mock.weights_1,
+        weights_grid_1=None,
+        k1dbins_window=k1dbins_window,
+        k1dbins_out=mock.k1dbins,
+    )
+    swe.accumulate([swe.run_one(0)])
+    k_in = np.geomspace(
+        max(float(mock.k1dbins[0]) * 0.5, 1e-3), float(mock.k1dbins[-1]) * 1.5, 160
+    )
+    shell = mock.multipole_bin_index_map(k1dbins=mock.k1dbins)
+    mat_smooth = swe.build_window_matrix(
+        k_in,
+        shell_map=shell,
+        continuous="smooth",
+        n_fftlog=256,
+        n_k_eval=128,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        cont = mock.get_theory_multipoles_kmu(k_in, ells=ells, nmu=64, which="auto_1")
+    P_win = mat_smooth.apply(cont["P_ell"])
+    for ell in (0, 2):
+        m = (
+            np.isfinite(P_win[ell])
+            & np.isfinite(P_disc_model[ell])
+            & (np.abs(P_disc_model[ell]) > 0)
+        )
+        rel = np.abs(P_win[ell][m] - P_disc_model[ell][m]) / np.abs(
+            P_disc_model[ell][m]
+        )
+        assert np.median(rel) < 0.12, "ell=%d median rel=%s" % (ell, np.median(rel))

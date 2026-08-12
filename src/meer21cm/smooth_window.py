@@ -244,6 +244,22 @@ def interpolate_window_to_log_k(
     return np.asarray(spline(k_log_np), dtype=float)
 
 
+def _filter_finite_window_multipoles(
+    k_window: ArrayLike,
+    W_ell: WindowEllMap,
+) -> tuple[NDArray[np.floating], WindowEllMap]:
+    """Drop empty / invalid ``k`` shells before Hankel transforms."""
+    k_np = np.asarray(k_window, dtype=float)
+    mask = np.isfinite(k_np) & (k_np > 0)
+    for wk in W_ell.values():
+        mask &= np.isfinite(np.asarray(wk, dtype=float))
+    if not np.any(mask):
+        raise ValueError("No finite window multipole samples")
+    k_f = k_np[mask]
+    W_f = {int(L): np.asarray(wk, dtype=float)[mask] for L, wk in W_ell.items()}
+    return k_f, W_f
+
+
 def build_config_space_window_coupling(
     sep: ArrayLike,
     window_s: Mapping[int, ArrayLike],
@@ -600,12 +616,7 @@ def build_discrete_shell_window_matrix(
     elif continuous_s == "identity":
         ells_L = tuple(sorted(set(ells_out_t) | set(ells_in_t)))
     else:
-        keys = [int(L) for L in (W_ell or {}).keys()]
-        ells_L = (
-            tuple(sorted(keys))
-            if keys
-            else tuple(sorted(set(ells_out_t) | set(ells_in_t)))
-        )
+        ells_L = tuple(sorted(set(ells_out_t) | set(ells_in_t)))
 
     k_in_np = np.asarray(k_in, dtype=float)
     k_out = np.asarray(shell_map.k_eff, dtype=float)
@@ -629,7 +640,8 @@ def build_discrete_shell_window_matrix(
     else:
         if k_window is None or W_ell is None:
             raise ValueError("k_window and W_ell are required for continuous='smooth'")
-        k_window_np = np.asarray(k_window, dtype=float)
+        k_window_np, W_ell_f = _filter_finite_window_multipoles(k_window, W_ell)
+        k_window_np = np.asarray(k_window_np, dtype=float)
         finite = np.isfinite(k_window_np) & (k_window_np > 0)
         if k_log_min is None:
             k_log_min = max(float(np.min(k_window_np[finite])) * 0.5, 1e-4)
@@ -641,8 +653,8 @@ def build_discrete_shell_window_matrix(
             n_k_eval,
         )
         blocks = continuous_window_response_blocks(
-            k_window,
-            W_ell,
+            k_window_np,
+            W_ell_f,
             k_eval=k_eval,
             k_in=k_in_np,
             ells_out=ells_L,
