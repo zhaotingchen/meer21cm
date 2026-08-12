@@ -24,8 +24,11 @@ local Yamamoto ``firstpoint`` / ``endpoint``). Default 3D modelling on
 Window multipoles are scaled by the same weight-squared renorm
 :func:`~meer21cm.power_ops.power_weights_renorm` used by the data
 estimator, so :math:`W_L` is :math:`O(1)` (:math:`Q_0(s\to 0)\sim 1`)
-while the estimator still divides by :math:`\sum w^2`. Matrix algebra
-lives in :mod:`meer21cm.smooth_window`.
+while the estimator still divides by :math:`\sum w^2`. Pass ``W_zero``
+(the :math:`k=0` selection power) into
+:meth:`SmoothWindowEstimator.build_window_matrix` to restore the pair-count
+term that measured :math:`W_L` bins omit. Matrix algebra lives in
+:mod:`meer21cm.smooth_window`.
 """
 
 from __future__ import annotations
@@ -50,6 +53,7 @@ from .smooth_window import (
     WindowEllMap,
     apply_discrete_shell_window_matrix,
     build_discrete_shell_window_matrix,
+    window_zero_mode_power,
 )
 from .wide_angle import propose_odd_wa_ells
 
@@ -714,6 +718,41 @@ class SmoothWindowEstimator:
         self.W_ell_std = acc.W_ell_std
         self.n_realizations = acc.n_realizations
         return acc
+
+    def zero_mode_window_power(self) -> float:
+        """
+        :math:`k=0` window power of the selection, same convention as :math:`W_L`.
+
+        Added as a constant :math:`Q_0^{\\mathrm{DC}}=W(0)/V` when building
+        the smooth matrix (the measured :math:`W_L` bins start at the
+        fundamental and never include this mode).
+        """
+        volume = float(np.prod(np.asarray(self.box_len, dtype=float)))
+        tracer = self.tracer
+        w1 = None
+        w2 = None
+        if tracer in ("hi", "cross"):
+            if self.weights_hi is None:
+                return 0.0
+            w1 = _window_effective_weights(self.weights_hi, self.weights_grid_1)
+        if tracer in ("gal", "cross"):
+            mask = self.selection_mask
+            if mask is None and self.weights_hi is not None:
+                mask = np.asarray(self.weights_hi) > 0
+            if mask is None:
+                return 0.0
+            gal_sel = make_galaxy_poisson_mean_density(
+                mask,
+                dndz_box=self.dndz_box,
+                mean_density=self.mean_density,
+                tot_num_galaxies=None,
+            )
+            w2 = _window_effective_weights(gal_sel, self.weights_grid_2)
+        if tracer == "hi":
+            return window_zero_mode_power(w1, volume)
+        if tracer == "gal":
+            return window_zero_mode_power(w2, volume)
+        return float(np.mean(w1) * np.mean(w2) * volume * power_weights_renorm(w1, w2))
 
     def make_shell_map(
         self,

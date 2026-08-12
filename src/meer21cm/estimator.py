@@ -433,9 +433,8 @@ class FieldPowerSpectrum(Specification):
         """
         if self.los == "midpoint":
             self._require_implemented_los("k_para")
-        if self.los in ("global", "firstpoint", "endpoint"):
-            return self.k_vec[-1]
-        raise ValueError(f"Unhandled los={self.los!r}")
+        self._validate_los(self.los)
+        return self.k_vec[-1]
 
     @property
     def k_mode(self) -> NDArray[np.floating]:

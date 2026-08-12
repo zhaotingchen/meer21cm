@@ -27,8 +27,10 @@ from meer21cm.smooth_window import (
     correlation_to_power_multipole,
     interpolate_window_to_log_k,
     _linear_interpolation_matrix,
+    discrete_window_power_to_correlation,
     power_to_correlation_multipole,
     wigner3j_square,
+    window_zero_mode_power,
 )
 from meer21cm.util import legendre_polynomial_with_factor
 
@@ -1024,6 +1026,40 @@ def test_build_config_space_window_coupling_missing_L():
     np.testing.assert_allclose(present, np.ones(8))
 
 
+def test_window_zero_mode_and_discrete_hankel_dc():
+    """Half-filled 0/1 mask: Q_0 DC is f, and adding W(0) lifts Q_0 by that constant."""
+    ndim = (16, 16, 16)
+    box_len = np.array([160.0, 160.0, 160.0])
+    volume = float(np.prod(box_len))
+    weights = np.ones(ndim)
+    weights[:, :, : ndim[2] // 2] = 0.0
+    w0 = window_zero_mode_power(weights, volume)
+    q_dc = w0 / volume
+    np.testing.assert_allclose(q_dc, 0.5, rtol=1e-12)
+
+    acc = accumulate_window_multipoles(
+        [
+            run_smooth_window_realization(
+                box_len=box_len,
+                k1dbins=np.linspace(0.05, 0.3, 8),
+                seed=0,
+                tracer="hi",
+                ells=(0, 2),
+                weights_hi=weights,
+            )
+        ]
+    )
+    sep = np.geomspace(1.0, 200.0, 32)
+    q_no = discrete_window_power_to_correlation(
+        acc.k, acc.W_ell, sep, acc.nmodes, volume, W_zero=0.0
+    )
+    q_yes = discrete_window_power_to_correlation(
+        acc.k, acc.W_ell, sep, acc.nmodes, volume, W_zero=w0
+    )
+    np.testing.assert_allclose(q_yes[0] - q_no[0], q_dc, rtol=1e-10, atol=1e-12)
+    assert float(np.abs(q_yes[0][0] - 1.0)) < float(np.abs(q_no[0][0] - 1.0))
+
+
 def test_continuous_window_response_blocks_default_kgrid():
     k_window = np.geomspace(0.05, 0.5, 12)
     W_ell = {0: np.ones(12), 2: np.zeros(12), 4: np.zeros(12)}
@@ -1039,6 +1075,31 @@ def test_continuous_window_response_blocks_default_kgrid():
     assert set(blocks.keys()) == {(0, 0)}
     assert blocks[(0, 0)].shape == (8, 10)
     assert np.all(np.isfinite(blocks[(0, 0)]))
+
+
+def test_continuous_window_zero_mode_is_identity_not_ringing():
+    k_window = np.geomspace(0.05, 0.5, 12)
+    W_ell = {0: np.ones(12), 2: np.zeros(12), 4: np.zeros(12)}
+    k_eval = np.geomspace(0.05, 0.5, 8)
+    k_in = np.geomspace(0.05, 0.5, 10)
+    kwargs = dict(
+        k_window=k_window,
+        W_ell=W_ell,
+        k_eval=k_eval,
+        k_in=k_in,
+        ells_out=(0,),
+        ells_in=(0,),
+        n_fftlog=64,
+    )
+    blocks = continuous_window_response_blocks(**kwargs)
+    blocks_dc = continuous_window_response_blocks(
+        **kwargs, box_volume=1.0e6, W_zero=5.0e5
+    )
+    delta = blocks_dc[(0, 0)] - blocks[(0, 0)]
+    assert np.all(np.isfinite(delta))
+    # Q_DC = 0.5 times the interpolation identity (k_eval vs k_in).
+    np.testing.assert_allclose(delta[0, 0], 0.5, rtol=1e-6)
+    assert float(np.max(np.abs(delta))) <= 0.5 + 1e-6
 
 
 def test_linear_interpolation_matrix_edge_cases():

@@ -217,12 +217,120 @@ def correlation_to_power_multipole(
     return k, pk
 
 
+def window_zero_mode_power(
+    selection: ArrayLike,
+    box_volume: float,
+    weights_grid: ArrayLike | None = None,
+) -> float:
+    r"""
+    :math:`k=0` window power of a selection cube, same convention as :math:`W_L`.
+
+    With a forward FFT, :math:`\tilde w(0)=\langle w\rangle`, so
+
+    .. math::
+
+        W(k=0)
+        =
+        \langle w\rangle^2\,
+        V\,
+        \frac{N}{\sum_i w_i^2}.
+
+    The corresponding configuration-space offset is
+    :math:`Q_0^{\mathrm{DC}}=W(0)/V`, the pair-count term that FFTLog of
+    :math:`k>0` shells cannot see (pypower ``power_zero_nonorm``).
+    """
+    w = np.asarray(selection, dtype=float)
+    if weights_grid is not None:
+        w = w * np.asarray(weights_grid, dtype=float)
+    n_grid = float(w.size)
+    sum_w2 = float(np.sum(w * w))
+    if sum_w2 <= 0.0:
+        return 0.0
+    mean = float(np.mean(w))
+    return mean**2 * float(box_volume) * (n_grid / sum_w2)
+
+
+def discrete_window_power_to_correlation(
+    k: ArrayLike,
+    W_ell: WindowEllMap,
+    sep: ArrayLike,
+    nmodes: ArrayLike,
+    box_volume: float,
+    W_zero: float = 0.0,
+) -> dict[int, NDArray[np.floating]]:
+    r"""
+    Configuration-space window multipoles by a discrete :math:`k`-bin sum.
+
+    Matches pypower ``power_to_correlation_window`` with
+    ``volume = (2\pi)^3 n_{\mathrm{modes}} / V``:
+
+    .. math::
+
+        Q_L(s)
+        =
+        (-1)^{L/2}
+        \sum_i
+        \frac{n_i}{V}\,
+        W_L(k_i)\,
+        j_L(k_i s)
+        +
+        \delta_{L0}\,W(0)/V.
+
+    ``W_zero`` is the :math:`k=0` monopole (see
+    :func:`window_zero_mode_power`); it is omitted from the :math:`k>0` sum.
+    """
+    k_np = np.asarray(k, dtype=float)
+    nmodes_np = np.asarray(nmodes, dtype=float)
+    sep_np = np.asarray(sep, dtype=float)
+    volume = float(box_volume)
+    if volume <= 0.0:
+        raise ValueError("box_volume must be positive")
+    if nmodes_np.shape != k_np.shape:
+        raise ValueError("nmodes must match k")
+    mask = np.isfinite(k_np) & (k_np > 0) & np.isfinite(nmodes_np) & (nmodes_np > 0)
+    k_use = k_np[mask]
+    n_use = nmodes_np[mask]
+    weight = n_use / volume
+    out: dict[int, NDArray[np.floating]] = {}
+    if k_use.size == 0:
+        q_dc = float(W_zero) / volume
+        for L in W_ell:
+            out[int(L)] = np.full_like(sep_np, q_dc if int(L) == 0 else 0.0)
+        return out
+    ks = k_use[:, None] * sep_np[None, :]
+    q_dc = float(W_zero) / volume
+    for L, wk in W_ell.items():
+        ell = int(L)
+        w_use = np.asarray(wk, dtype=float)[mask]
+        finite = np.isfinite(w_use)
+        if not np.any(finite):
+            out[ell] = np.full_like(sep_np, q_dc if ell == 0 else 0.0)
+            continue
+        phase = (-1) ** (ell // 2)
+        q = phase * np.sum(
+            (weight[finite] * w_use[finite])[:, None] * spherical_jn(ell, ks[finite]),
+            axis=0,
+        )
+        if ell == 0:
+            q = q + q_dc
+        out[ell] = np.asarray(q, dtype=float)
+    return out
+
+
 def interpolate_window_to_log_k(
     k_meas: ArrayLike,
     w_ell: ArrayLike,
     k_log: ArrayLike,
+    *,
+    fill_low: float | None = None,
 ) -> NDArray[np.floating]:
-    """Interpolate a measured window multipole onto a log-spaced ``k`` grid."""
+    """
+    Interpolate a measured window multipole onto a log-spaced ``k`` grid.
+
+    By default the low-``k`` side clamps to the first measured sample. Pass
+    ``fill_low=0`` when a separate :math:`k=0` term (``W_zero``) will supply
+    the pair-count, so the FFTLog plateau does not double-count it.
+    """
     k_meas_np = np.asarray(k_meas, dtype=float)
     w_ell_np = np.asarray(w_ell, dtype=float)
     k_log_np = np.asarray(k_log, dtype=float)
@@ -234,12 +342,13 @@ def interpolate_window_to_log_k(
     ww = w_ell_np[mask][order]
     uniq, indx = np.unique(kk, return_index=True)
     ww = ww[indx]
+    low = float(ww[0]) if fill_low is None else float(fill_low)
     spline = interpolate.interp1d(
         uniq,
         ww,
         kind="linear",
         bounds_error=False,
-        fill_value=(ww[0], 0.0),
+        fill_value=(low, 0.0),
     )
     return np.asarray(spline(k_log_np), dtype=float)
 
@@ -247,7 +356,8 @@ def interpolate_window_to_log_k(
 def _filter_finite_window_multipoles(
     k_window: ArrayLike,
     W_ell: WindowEllMap,
-) -> tuple[NDArray[np.floating], WindowEllMap]:
+    nmodes: ArrayLike | None = None,
+) -> tuple[NDArray[np.floating], WindowEllMap, NDArray[np.floating] | None]:
     """Drop empty / invalid ``k`` shells before Hankel transforms."""
     k_np = np.asarray(k_window, dtype=float)
     mask = np.isfinite(k_np) & (k_np > 0)
@@ -257,7 +367,8 @@ def _filter_finite_window_multipoles(
         raise ValueError("No finite window multipole samples")
     k_f = k_np[mask]
     W_f = {int(L): np.asarray(wk, dtype=float)[mask] for L, wk in W_ell.items()}
-    return k_f, W_f
+    nmodes_f = None if nmodes is None else np.asarray(nmodes, dtype=float)[mask]
+    return k_f, W_f, nmodes_f
 
 
 def build_config_space_window_coupling(
@@ -385,6 +496,9 @@ def continuous_window_response_blocks(
     k_log_min: float | None = None,
     k_log_max: float | None = None,
     q: float = 0.0,
+    nmodes: ArrayLike | None = None,
+    box_volume: float | None = None,
+    W_zero: float = 0.0,
 ) -> dict[tuple[int, int], NDArray[np.floating]]:
     r"""
     Continuous smooth-window response blocks :math:`W_{L\ell'}(k_{\mathrm{eval}}, k_{\mathrm{in}})`.
@@ -416,20 +530,37 @@ def continuous_window_response_blocks(
     needed_L.update(ells_out_t)
     needed_L.update(int(L) for L in W_ell.keys())
 
-    W_k: dict[int, NDArray[np.floating]] = {}
-    for L in sorted(needed_L):
-        if L in W_ell:
-            W_k[L] = interpolate_window_to_log_k(k_window_np, W_ell[L], k_log)
-        else:
-            W_k[L] = np.zeros_like(k_log)
-
+    use_discrete = nmodes is not None and box_volume is not None
     window_s: dict[int, NDArray[np.floating]] = {}
     sep_ref: NDArray[np.floating] | None = None
-    for L, wk in W_k.items():
-        sep, xi = power_to_correlation_multipole(k_log, wk, ell=L, q=q)
-        if sep_ref is None:
-            sep_ref = sep
-        window_s[L] = xi
+    if use_discrete:
+        # s-grid matching FFTLog ``xy=1`` so the Q→W(k,k') transform is unchanged.
+        sep_ref = 1.0 / k_log[::-1]
+        W_for_sum = {
+            int(L): np.asarray(W_ell[L], dtype=float) for L in needed_L if L in W_ell
+        }
+        window_s = discrete_window_power_to_correlation(
+            k_window_np,
+            W_for_sum,
+            sep_ref,
+            nmodes=nmodes,
+            box_volume=float(box_volume),
+            W_zero=0.0,
+        )
+        for L in needed_L:
+            window_s.setdefault(int(L), np.zeros_like(sep_ref))
+    else:
+        W_k: dict[int, NDArray[np.floating]] = {}
+        for L in sorted(needed_L):
+            if L in W_ell:
+                W_k[L] = interpolate_window_to_log_k(k_window_np, W_ell[L], k_log)
+            else:
+                W_k[L] = np.zeros_like(k_log)
+        for L, wk in W_k.items():
+            sep, xi = power_to_correlation_multipole(k_log, wk, ell=L, q=q)
+            if sep_ref is None:
+                sep_ref = sep
+            window_s[L] = xi
     assert sep_ref is not None
     sep = sep_ref
 
@@ -474,6 +605,22 @@ def continuous_window_response_blocks(
                     )
                     block[i0 + j, :] = interp(k_in_np) * dk_vol_in
             blocks[(int(ell_out), int(ell_in))] = block
+    # k=0 selection power is a constant in Q_0(s). Putting that constant
+    # through FFTLog rings; completeness of j_ℓ turns it into a multiple of
+    # the identity on each diagonal multipole block (Wigner L=0).
+    if box_volume is not None and float(W_zero) != 0.0:
+        q_dc = float(W_zero) / float(box_volume)
+        id_blocks = identity_window_response_blocks(
+            k_eval_np, k_in_np, ells_out_t, ells_in_t
+        )
+        for ell_out in ells_out_t:
+            for ell_in in ells_in_t:
+                Ls, coeffs = wigner3j_square(ell_out, ell_in, prefactor=True)
+                if 0 not in Ls:
+                    continue
+                c0 = float(coeffs[Ls.index(0)])
+                key = (int(ell_out), int(ell_in))
+                blocks[key] = blocks[key] + c0 * q_dc * id_blocks[key]
     return blocks
 
 
@@ -552,6 +699,9 @@ def build_discrete_shell_window_matrix(
     k_log_min: float | None = None,
     k_log_max: float | None = None,
     q: float = 0.0,
+    nmodes: ArrayLike | None = None,
+    box_volume: float | None = None,
+    W_zero: float = 0.0,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Build the discrete-shell multipole window matrix.
@@ -591,6 +741,15 @@ def build_discrete_shell_window_matrix(
         Ends of the intermediate log ``k`` grid (smooth only).
     q : float, default 0
         Extra FFTlog tilt (smooth only).
+    nmodes : array_like, optional
+        Modes per measured :math:`W_L` bin. With ``box_volume``, uses a
+        pypower-style discrete Hankel (including the :math:`k=0` term
+        ``W_zero``) instead of FFTLog of :math:`k>0` shells.
+    box_volume : float, optional
+        Survey-box volume :math:`V` for the discrete Hankel.
+    W_zero : float, default 0
+        :math:`k=0` monopole window power (see
+        :func:`window_zero_mode_power`).
 
     Returns
     -------
@@ -640,7 +799,9 @@ def build_discrete_shell_window_matrix(
     else:
         if k_window is None or W_ell is None:
             raise ValueError("k_window and W_ell are required for continuous='smooth'")
-        k_window_np, W_ell_f = _filter_finite_window_multipoles(k_window, W_ell)
+        k_window_np, W_ell_f, nmodes_f = _filter_finite_window_multipoles(
+            k_window, W_ell, nmodes=nmodes
+        )
         k_window_np = np.asarray(k_window_np, dtype=float)
         finite = np.isfinite(k_window_np) & (k_window_np > 0)
         if k_log_min is None:
@@ -663,6 +824,9 @@ def build_discrete_shell_window_matrix(
             k_log_min=k_log_min,
             k_log_max=k_log_max,
             q=q,
+            nmodes=nmodes_f,
+            box_volume=box_volume,
+            W_zero=W_zero,
         )
 
     interps: dict[tuple[int, int], interpolate.interp1d] = {}

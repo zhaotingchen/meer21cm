@@ -26,6 +26,10 @@ Enhancements
   voxel-averaged :math:`\mathcal{L}_\ell(\hat k\cdot\hat n)`
 * ``DiscreteShellWindowMatrix`` tracks ``ells_in`` / ``ells_out`` separately
 * ``los='midpoint'`` remains reserved (``NotImplementedError``)
+* smooth-window Hankel can include an optional :math:`k=0` pair-count term
+  (``W_zero``); HealPix validation uses the excess
+  :math:`\max(W(0)-W(k_{\mathrm{fund}}),0)` so FFTLog edge extrapolation is
+  not double-counted
 
 v0.9.0
 ------

@@ -57,9 +57,9 @@ def test_k_para_reserved_and_unhandled_los():
 
     fps = FieldPowerSpectrum(field, box_len, los="global", _skip_specification=True)
     fps.los = "bogus"  # bypass constructor validation
-    with pytest.raises(ValueError, match="Unhandled los"):
+    with pytest.raises(ValueError, match="Unknown los"):
         _ = fps.k_para
-    with pytest.raises(ValueError, match="Unhandled los"):
+    with pytest.raises(ValueError, match="Unknown los"):
         _ = fps.mu_mode
 
 
