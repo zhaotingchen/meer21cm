@@ -6,11 +6,12 @@ pre-gridded ``field_1`` and ``box_len``. Sky↔box gridding lives on
 :class:`meer21cm.grid.LightconeGriddingMixin` /
 :class:`meer21cm.power.PowerSpectrum`.
 
-Multipole binning (global plane-parallel by default; other LOS conventions
-reserved) is provided via :meth:`FieldPowerSpectrum.measure_multipoles`.
-Survey-window matrix construction for theory multipoles lives in
-:mod:`meer21cm.smooth_window` (discrete-shell matrix). Local Yamamoto
-(Hand et al.) LOS conventions are reserved on ``los`` for a future update.
+Multipole binning is provided via :meth:`FieldPowerSpectrum.measure_multipoles`:
+global plane-parallel (``los='global'``) or local Yamamoto (Hand et al.;
+``los='firstpoint'`` / ``'endpoint'``). Both paths form a 3D multipole cube
+(:meth:`multipole_power_3d`) then bin with :func:`~meer21cm.power_ops.bin_3d_to_1d`.
+``los='midpoint'`` remains reserved. Survey-window matrix construction for
+theory multipoles lives in :mod:`meer21cm.smooth_window` (discrete-shell matrix).
 """
 
 from __future__ import annotations
@@ -30,11 +31,19 @@ from .power_ops import (
     get_fourier_density,
     get_k_vector,
     get_power_spectrum,
+    get_renormed_field,
     get_vec_mode,
     get_x_vector,
     power_weights_renorm,
 )
-from .util import legendre_polynomial_with_factor, tagging
+from .spherical import (
+    get_real_Ylm,
+    mean_legendre_over_los,
+    sample_los_unit_vectors,
+    unit_khat_from_k_vec,
+    unit_los_from_observer,
+)
+from .util import legendre_polynomial_with_factor, real_dtype_from_array, tagging
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +53,8 @@ MultipoleWhich = Literal["auto_1", "auto_2", "cross"]
 _SUPPORTED_LOS: frozenset[str] = frozenset(
     {"global", "endpoint", "firstpoint", "midpoint"}
 )
-_IMPLEMENTED_LOS: frozenset[str] = frozenset({"global"})
+_IMPLEMENTED_LOS: frozenset[str] = frozenset({"global", "firstpoint", "endpoint"})
+_LOCAL_LOS: frozenset[str] = frozenset({"firstpoint", "endpoint"})
 
 
 @dataclass
@@ -54,8 +64,11 @@ class MultipoleShellMap:
 
     Shares the same bin edges and weighting convention as
     :meth:`FieldPowerSpectrum.measure_multipoles` so that
-    :mod:`meer21cm.smooth_window` can apply the identical shell projector
-    (global plane-parallel today; local LOS later via :attr:`los`).
+    :mod:`meer21cm.smooth_window` can apply the identical shell projector.
+    For local LOS, :attr:`mu` is :math:`\\hat k\\cdot\\hat n_{\\mathrm{ref}}`
+    at the box centre (diagnostic). The discrete-shell projector may instead
+    use voxel-averaged :attr:`legendre_plain` (``los_mu='local_average'``).
+    The Yamamoto estimator itself does not use per-mode :math:`\\mu`.
 
     Attributes
     ----------
@@ -65,7 +78,8 @@ class MultipoleShellMap:
     k : ndarray
         Per-mode :math:`|k|` (same shape as the FFT grid ``k_mode``).
     mu : ndarray
-        Per-mode :math:`\\mu` from :attr:`FieldPowerSpectrum.mu_mode`.
+        Per-mode :math:`\\mu` from :attr:`FieldPowerSpectrum.mu_mode`
+        (box-z or box-centre :math:`\\hat n`).
     weights : ndarray
         Per-mode binning weights (default ones; same role as ``k1dweights``).
     k1dbins : ndarray
@@ -76,6 +90,11 @@ class MultipoleShellMap:
         Number of modes with positive weight per bin.
     los : str
         Line-of-sight convention used for :attr:`mu`.
+    los_mu : str
+        ``'box_centre'`` or ``'local_average'`` (ignored for global).
+    legendre_plain : dict or None
+        Optional per-mode :math:`\\langle\\mathcal{L}_\\ell(\\hat k\\cdot
+        \\hat n)\\rangle` for local-average shells.
     """
 
     bin_index: NDArray[np.integer]
@@ -86,6 +105,8 @@ class MultipoleShellMap:
     k_eff: NDArray[np.floating]
     nmodes: NDArray[np.floating]
     los: LOSMode | str = "global"
+    los_mu: str = "box_centre"
+    legendre_plain: dict[int, NDArray[np.floating]] | None = None
 
 
 @dataclass
@@ -123,7 +144,7 @@ class FieldPowerSpectrum(Specification):
 
     Also supports Legendre multipole binning via
     :meth:`measure_multipoles`, with a selectable line-of-sight convention
-    (``los``; currently only ``'global'`` is implemented).
+    (``los``; ``'global'``, ``'firstpoint'``, and ``'endpoint'``).
 
     Parameters
     ----------
@@ -147,10 +168,14 @@ class FieldPowerSpectrum(Specification):
     unitless_2 : bool, default False
         Whether to divide the second tracer field by its mean.
     los : {'global', 'endpoint', 'firstpoint', 'midpoint'}, default 'global'
-        Line-of-sight convention for :attr:`k_para`, :attr:`mu_mode`, and
-        :meth:`measure_multipoles`. Only ``'global'`` (box :math:`z` = LOS)
-        is implemented; other values are reserved and raise
-        ``NotImplementedError`` when LOS-dependent attributes are used.
+        Line-of-sight convention for :attr:`mu_mode` and
+        :meth:`measure_multipoles`. ``'global'`` is box :math:`z` (plane
+        parallel). ``'firstpoint'`` / ``'endpoint'`` are local Yamamoto
+        (Hand et al. / pypower). ``'midpoint'`` is reserved.
+    los_observer : array_like, optional
+        Observer position in the same Cartesian frame as :attr:`x_vec`
+        (Mpc). Local LOS uses :math:`\\hat n(x)=(x+x_{\\mathrm{obs}})/|\\ldots|`.
+        Defaults to :attr:`box_origin` when present.
     _skip_specification : bool, default False
         If ``True``, do not call :class:`~meer21cm.dataanalysis.Specification`
         ``__init__`` (used by :class:`~meer21cm.power.PowerSpectrum` after the
@@ -172,6 +197,7 @@ class FieldPowerSpectrum(Specification):
         mean_center_2: bool = False,
         unitless_2: bool = False,
         los: LOSMode | str = "global",
+        los_observer: ArrayLike | None = None,
         _skip_specification: bool = False,
         **params: Any,
     ) -> None:
@@ -183,6 +209,17 @@ class FieldPowerSpectrum(Specification):
         # los must be set before box_len / box_ndim: PowerSpectrum setters may
         # sync model k-modes and read k_para / mu_mode.
         self.los: str = self._validate_los(los)
+        self._los_observer: NDArray[np.floating] | None = (
+            None if los_observer is None else np.asarray(los_observer, dtype=float)
+        )
+        self._los_xhat_cache: (
+            tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]
+            | None
+        ) = None
+        self._cached_khat: (
+            tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]
+            | None
+        ) = None
         self.field_1 = field_1
         self.field_2 = field_2
         self.weights_1: ArrayLike | None = weights_1
@@ -217,12 +254,61 @@ class FieldPowerSpectrum(Specification):
         return los_s
 
     def _require_implemented_los(self, what: str) -> None:
-        """Raise if ``self.los`` is reserved but not yet implemented."""
+        """Raise if ``self.los`` is unknown or reserved but not yet implemented."""
+        if self.los not in _SUPPORTED_LOS:
+            raise ValueError(f"Unhandled los={self.los!r}")
         if self.los not in _IMPLEMENTED_LOS:
             raise NotImplementedError(
                 f"{what} for los={self.los!r} is not implemented yet; "
                 f"currently supported: {sorted(_IMPLEMENTED_LOS)}"
             )
+
+    @property
+    def los_observer(self) -> NDArray[np.floating] | None:
+        """
+        Observer position (Mpc) for local LOS, or ``None``.
+
+        Explicit ``los_observer`` wins; otherwise :attr:`box_origin` is used
+        when present.
+        """
+        if self._los_observer is not None:
+            return np.asarray(self._los_observer, dtype=float)
+        origin = getattr(self, "box_origin", None)
+        if origin is not None:
+            return np.asarray(origin, dtype=float)
+        return None
+
+    @los_observer.setter
+    def los_observer(self, value: ArrayLike | None) -> None:
+        self._los_observer = None if value is None else np.asarray(value, dtype=float)
+        self._invalidate_los_xhat()
+
+    def _invalidate_los_xhat(self) -> None:
+        """Drop cached per-voxel :math:`\\hat n(x)`."""
+        self._los_xhat_cache = None
+
+    @property
+    def los_xhat(
+        self,
+    ) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
+        r"""
+        Cached per-voxel line-of-sight unit vector :math:`\hat n(x)`.
+
+        Components are 3D real-space grids matching :attr:`field_1`. Uses
+        :func:`~meer21cm.spherical.unit_los_from_observer` with
+        :attr:`los_observer` (default :attr:`box_origin` when present).
+        """
+        if self._los_xhat_cache is None:
+            self._los_xhat_cache = unit_los_from_observer(
+                self.x_vec, self._require_los_observer()
+            )
+        return self._los_xhat_cache
+
+    @property
+    def los_xhat_stacked(self) -> NDArray[np.floating]:
+        """Stacked :attr:`los_xhat` with shape ``(3,) + box_ndim``."""
+        xh, yh, zh = self.los_xhat
+        return np.stack([xh, yh, zh], axis=0)
 
     @property
     def box_len(self) -> NDArray[np.floating]:
@@ -232,6 +318,9 @@ class FieldPowerSpectrum(Specification):
     @box_len.setter
     def box_len(self, value: ArrayLike) -> None:
         self._box_len = value
+        self._invalidate_los_xhat()
+        if hasattr(self, "_cached_khat"):
+            self._cached_khat = None
         if "box_dep_attr" in dir(self):
             logger.debug(
                 f"cleaning cache of {self.box_dep_attr} due to resetting box_len"
@@ -256,6 +345,9 @@ class FieldPowerSpectrum(Specification):
     @box_ndim.setter
     def box_ndim(self, value: ArrayLike) -> None:
         self._box_ndim = value
+        self._invalidate_los_xhat()
+        if hasattr(self, "_cached_khat"):
+            self._cached_khat = None
         if "box_dep_attr" in dir(self):
             logger.debug(
                 f"cleaning cache of {self.box_dep_attr} due to resetting box_ndim"
@@ -335,13 +427,14 @@ class FieldPowerSpectrum(Specification):
         r"""
         Parallel wavenumber :math:`k_\parallel`.
 
-        For ``los='global'`` this is the last Cartesian k component (box
-        :math:`z`). Local LOS conventions will redefine this once implemented.
+        Always the last Cartesian k component (box :math:`z` on the rFFT
+        grid). Local Yamamoto LOS does not redefine this (cylindrical PS
+        still uses box :math:`z`).
         """
-        if self.los == "global":
-            return self.k_vec[-1]
-        if self.los in ("endpoint", "firstpoint", "midpoint"):
+        if self.los == "midpoint":
             self._require_implemented_los("k_para")
+        if self.los in ("global", "firstpoint", "endpoint"):
+            return self.k_vec[-1]
         raise ValueError(f"Unhandled los={self.los!r}")
 
     @property
@@ -360,16 +453,11 @@ class FieldPowerSpectrum(Specification):
 
             \mu = k_\parallel / |k|
 
-        clipped to ``[-1, 1]``. Local LOS estimators will replace this once
-        implemented.
+        clipped to ``[-1, 1]``. For local LOS this is the diagnostic
+        :math:`\hat k \cdot \hat n_{\mathrm{ref}}` at the box centre
+        (the Yamamoto estimator does not use this array).
         """
-        if self.los == "global":
-            with np.errstate(divide="ignore", invalid="ignore"):
-                mu = np.nan_to_num(self.k_para[None, None, :] / self.k_mode)
-            return np.clip(mu, -1.0, 1.0)
-        if self.los in ("endpoint", "firstpoint", "midpoint"):
-            self._require_implemented_los("mu_mode")
-        raise ValueError(f"Unhandled los={self.los!r}")
+        return self._mu_mode_for_los(self.los)
 
     @property
     def field_1(self) -> ArrayLike:
@@ -605,18 +693,247 @@ class FieldPowerSpectrum(Specification):
             * mean_renorm_2
         )
 
+    def _require_los_observer(self) -> NDArray[np.floating]:
+        """Observer position required for local LOS."""
+        obs = self.los_observer
+        if obs is None:
+            raise ValueError(
+                "los_observer (or box_origin) is required for local LOS "
+                f"(los={self.los!r})"
+            )
+        return np.asarray(obs, dtype=float)
+
+    def _los_nref(self) -> NDArray[np.floating]:
+        """Unit LOS at the box centre (cell-centre frame + observer)."""
+        obs = self._require_los_observer()
+        center = 0.5 * np.asarray(self.box_len, dtype=float)
+        vec = center + obs
+        nrm = float(np.linalg.norm(vec))
+        if nrm == 0.0:
+            return np.array([0.0, 0.0, 1.0], dtype=float)
+        return vec / nrm
+
+    def _mu_mode_for_los(self, los: LOSMode | str) -> NDArray[np.floating]:
+        """Fourier-grid :math:`\\mu` for a LOS convention (see :attr:`mu_mode`)."""
+        los_s = self._validate_los(los)
+        if los_s == "global":
+            with np.errstate(divide="ignore", invalid="ignore"):
+                mu = np.nan_to_num(self.k_para[None, None, :] / self.k_mode)
+            return np.clip(mu, -1.0, 1.0)
+        if los_s in _LOCAL_LOS:
+            nref = self._los_nref()
+            khx, khy, khz = self._khat()
+            mu = khx * nref[0] + khy * nref[1] + khz * nref[2]
+            return np.clip(mu, -1.0, 1.0)
+        if los_s == "midpoint":
+            self._require_implemented_los("mu_mode")
+        raise ValueError(f"Unhandled los={los_s!r}")
+
+    @staticmethod
+    def _resolve_los_mu(los: str, los_mu: str | None) -> str:
+        """
+        Default discrete-shell :math:`\\mu` projector for ``los``.
+
+        ``global`` → box-centre diagnostic (unused in the shell sum);
+        local Yamamoto → ``local_average`` unless overridden.
+        """
+        if los not in _LOCAL_LOS:
+            return "box_centre"
+        if los_mu is None:
+            return "local_average"
+        los_mu_s = str(los_mu).lower()
+        if los_mu_s not in ("box_centre", "local_average"):
+            raise ValueError(
+                "los_mu must be 'box_centre' or 'local_average', got %r" % los_mu
+            )
+        return los_mu_s
+
+    def _khat(
+        self,
+    ) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
+        """Cached :math:`\\hat k` on the rFFT lattice."""
+        if self._cached_khat is None:
+            self._cached_khat = unit_khat_from_k_vec(self.k_vec)
+        return self._cached_khat
+
+    def _isotropic_power3d(self, which: MultipoleWhich | str) -> NDArray[np.floating]:
+        """Unweighted 3D auto/cross power cube (``|F0|^2`` convention)."""
+        if which == "auto_1":
+            return self.auto_power_3d_1
+        if which == "auto_2":
+            power3d = self.auto_power_3d_2
+            if power3d is None:
+                raise ValueError("field_2 is None; cannot measure auto_2 multipoles")
+            return power3d
+        if which == "cross":
+            power3d = self.cross_power_3d
+            if power3d is None:
+                raise ValueError("field_2 is None; cannot measure cross multipoles")
+            return power3d
+        raise ValueError("which must be 'auto_1', 'auto_2', or 'cross'")
+
+    def _weighted_real_field(self, tracer: int) -> NDArray[np.floating]:
+        """Real-space ``δ × w`` matching :func:`~meer21cm.power_ops.get_fourier_density`."""
+        if tracer == 1:
+            field = np.asarray(self.field_1)
+            weights = self.weights_1
+            mean_center = self.mean_center_1
+            unitless = self.unitless_1
+        elif tracer == 2:
+            if self.field_2 is None:
+                raise ValueError("field_2 is None")
+            field = np.asarray(self.field_2)
+            weights = self.weights_2
+            mean_center = self.mean_center_2
+            unitless = self.unitless_2
+        else:
+            raise ValueError("tracer must be 1 or 2")
+        field_r = get_renormed_field(
+            field, weights=weights, mean_center=mean_center, unitless=unitless
+        )
+        real_dtype = real_dtype_from_array(field_r)
+        if weights is None:
+            w = np.ones_like(field_r, dtype=real_dtype)
+        else:
+            w = np.asarray(weights, dtype=real_dtype)
+        return np.asarray(field_r, dtype=real_dtype) * w
+
+    def _fourier_field_tracer(self, tracer: int) -> NDArray[np.complexfloating]:
+        if tracer == 1:
+            return self.fourier_field_1
+        if tracer == 2:
+            f2 = self.fourier_field_2
+            if f2 is None:
+                raise ValueError("field_2 is None")
+            return f2
+        raise ValueError("tracer must be 1 or 2")
+
+    def _renorm_for_which(
+        self, which: MultipoleWhich | str
+    ) -> float | NDArray[np.floating]:
+        if which == "auto_1":
+            return self.renorm_ps_1
+        if which == "auto_2":
+            return self.renorm_ps_2
+        if which == "cross":
+            return self.renorm_ps_cross
+        raise ValueError("which must be 'auto_1', 'auto_2', or 'cross'")
+
+    def _yamamoto_tracers(self, which: MultipoleWhich | str) -> tuple[int, int]:
+        """``(ylm_tracer, f0_tracer)`` for firstpoint; endpoint swaps."""
+        if which == "auto_1":
+            i_ylm, i_f0 = 1, 1
+        elif which == "auto_2":
+            if self.field_2 is None:
+                raise ValueError("field_2 is None; cannot measure auto_2 multipoles")
+            i_ylm, i_f0 = 2, 2
+        elif which == "cross":
+            if self.field_2 is None:
+                raise ValueError("field_2 is None; cannot measure cross multipoles")
+            i_ylm, i_f0 = 1, 2
+        else:
+            raise ValueError("which must be 'auto_1', 'auto_2', or 'cross'")
+        if self.los == "endpoint":
+            i_ylm, i_f0 = i_f0, i_ylm
+        return i_ylm, i_f0
+
+    def _yamamoto_multipole_power_3d(
+        self, ell: int, which: MultipoleWhich | str
+    ) -> NDArray[np.floating]:
+        r"""
+        3D Yamamoto multipole cube :math:`P_\ell(\mathbf{k})`.
+
+        .. math::
+
+            A_\ell(\mathbf{k}) = \sum_m Y_{\ell m}(\hat k)\,
+            \mathrm{FFT}[\delta_w(\mathbf{x})\,Y_{\ell m}(\hat n(x))]
+
+        then :math:`P_\ell^{3D} = 4\pi\,(A_\ell F_0^*)\,V\,R` with the real
+        part for even :math:`\ell` and the imaginary part for odd
+        :math:`\ell` (hermitian-antisymmetric; pypower / Hand et al.).
+        :math:`\ell=0` is :math:`|F_0|^2 V R` (or the cross analogue).
+        Endpoint applies Ylm to the second tracer (pypower swap).
+        """
+        ell = int(ell)
+        i_ylm, i_f0 = self._yamamoto_tracers(which)
+        f0 = self._fourier_field_tracer(i_f0)
+        box_volume = float(np.prod(np.asarray(self.box_len, dtype=float)))
+        renorm = self._renorm_for_which(which)
+        if ell == 0:
+            f_ylm = self._fourier_field_tracer(i_ylm)
+            return np.real(f_ylm * np.conj(f0)) * box_volume * renorm
+
+        xhat = self.los_xhat
+        khat = self._khat()
+        delta_w = self._weighted_real_field(i_ylm)
+        a_ell = np.zeros(f0.shape, dtype=np.result_type(f0.dtype, np.complex128))
+        for m in range(-ell, ell + 1):
+            ylm = get_real_Ylm(ell, m)
+            f_lm = np.fft.rfftn(delta_w * ylm(*xhat), norm="forward")
+            a_ell = a_ell + ylm(*khat) * f_lm
+        prod = a_ell * np.conj(f0)
+        # Odd multipoles are hermitian-antisymmetric → imaginary 3D cube.
+        part = np.imag(prod) if (ell % 2) else np.real(prod)
+        # pypower endpoint: swap tracers then conj the (complex) power, which
+        # flips the odd (imaginary) multipoles. Auto swap is a no-op, so the
+        # sign flip is what makes firstpoint odd = -endpoint odd.
+        if self.los == "endpoint" and (ell % 2):
+            part = -part
+        return (4.0 * np.pi) * part * box_volume * renorm
+
+    def multipole_power_3d(
+        self,
+        ell: int,
+        which: MultipoleWhich | str = "auto_1",
+    ) -> NDArray[np.floating]:
+        r"""
+        3D multipole power cube before 1D :math:`|k|` binning.
+
+        * ``los='global'``: isotropic 3D power times
+          :math:`(2\ell+1)\mathcal{L}_\ell(\mu)` with :math:`\mu=k_z/|k|`.
+        * ``los='firstpoint'`` / ``'endpoint'``: Yamamoto
+          :math:`F_\ell F_0` cube (Hand et al. / pypower).
+
+        Parameters
+        ----------
+        ell : int
+            Multipole order.
+        which : {'auto_1', 'auto_2', 'cross'}, default 'auto_1'
+            Which tracer combination.
+
+        Returns
+        -------
+        power3d : ndarray
+            Same shape as :attr:`k_mode` (rFFT lattice).
+        """
+        self._require_implemented_los("multipole_power_3d")
+        ell = int(ell)
+        if self.los == "global":
+            power3d = self._isotropic_power3d(which)
+            factor = np.poly1d(legendre_polynomial_with_factor(ell))(self.mu_mode)
+            return power3d * factor
+        if self.los in _LOCAL_LOS:
+            return self._yamamoto_multipole_power_3d(ell, which)
+        raise ValueError(f"Unhandled los={self.los!r}")
+
     def multipole_bin_index_map(
         self,
         k1dbins: ArrayLike | None = None,
         k1dweights: ArrayLike | None = None,
+        los: LOSMode | str | None = None,
+        los_mu: str | None = None,
+        n_los_samples: int = 1024,
+        los_weights: ArrayLike | None = None,
+        ells: Sequence[int] | None = None,
+        los_rng: np.random.Generator | int | None = None,
     ) -> MultipoleShellMap:
         r"""
         Map each Fourier mode to a 1D :math:`|k|` multipole bin.
 
         Uses the same edges, :attr:`k_mode`, :attr:`mu_mode`, and weighting
         convention as :meth:`measure_multipoles`. Intended for the opt-in
-        discrete-shell window matrix (:mod:`meer21cm.discrete_window`) and for
-        future local-LOS estimators that share the same radial binning.
+        discrete-shell window matrix (:mod:`meer21cm.smooth_window`).
+        Yamamoto :meth:`measure_multipoles` does not use this map.
 
         Parameters
         ----------
@@ -624,6 +941,23 @@ class FieldPowerSpectrum(Specification):
             1D ``k`` bin edges. Defaults to ``self.k1dbins`` when set.
         k1dweights : array_like, optional
             Per-mode weights (same role as in :meth:`measure_multipoles`).
+        los : {'global', 'firstpoint', 'endpoint'}, optional
+            LOS for the shell projector. Defaults to :attr:`los` on this
+            object (e.g. inherited from a :class:`~meer21cm.power.PowerSpectrum`
+            / mock instance).
+        los_mu : {'box_centre', 'local_average'}, optional
+            Local-LOS discrete-\(\mu\) projector. Default ``local_average``
+            for ``firstpoint`` / ``endpoint``; ignored for ``global``.
+        n_los_samples : int, default 1024
+            Max voxels for ``los_mu='local_average'``.
+        los_weights : array_like, optional
+            Voxel weights for sampling \(\hat n(x)\). Defaults to
+            :attr:`weights_1` (or ones).
+        ells : sequence of int, optional
+            Multipoles stored in :attr:`MultipoleShellMap.legendre_plain`.
+            Default ``(0, 1, 2, 3, 4, 6, 8)`` for local average.
+        los_rng : numpy.random.Generator or int, optional
+            RNG for voxel sampling.
 
         Returns
         -------
@@ -637,6 +971,7 @@ class FieldPowerSpectrum(Specification):
             If ``k1dbins`` is missing.
         """
         self._require_implemented_los("multipole_bin_index_map")
+        los_eff = self._validate_los(los) if los is not None else self.los
         if k1dbins is None:
             k1dbins = getattr(self, "k1dbins", None)
         if k1dbins is None:
@@ -646,7 +981,7 @@ class FieldPowerSpectrum(Specification):
             raise ValueError("k1dbins must be a 1D array of bin edges (length >= 2)")
 
         k_mode = np.asarray(self.k_mode, dtype=float)
-        mu = np.asarray(self.mu_mode, dtype=float)
+        mu = np.asarray(self._mu_mode_for_los(los_eff), dtype=float)
         if k1dweights is None:
             k1dweights = getattr(self, "k1dweights", None)
         if k1dweights is None:
@@ -662,7 +997,6 @@ class FieldPowerSpectrum(Specification):
         n_bins = k1dbins_np.size - 1
         bin_index = np.full(k_mode.shape, -1, dtype=np.intp)
         k_flat = k_mode.ravel()
-        w_flat = weights.ravel()
         idx_flat = np.full(k_flat.shape, -1, dtype=np.intp)
         for i in range(n_bins):
             mask = (k_flat >= k1dbins_np[i]) & (k_flat < k1dbins_np[i + 1])
@@ -679,6 +1013,33 @@ class FieldPowerSpectrum(Specification):
             if w_sum > 0:
                 k_eff[i] = np.sum(k_mode * w_bin) / w_sum
 
+        los_mu_s = self._resolve_los_mu(los_eff, los_mu)
+        legendre_plain: dict[int, NDArray[np.floating]] | None = None
+        if los_eff in _LOCAL_LOS:
+            if los_mu_s == "local_average":
+                ells_t = (
+                    tuple(int(e) for e in ells)
+                    if ells is not None
+                    else (0, 1, 2, 3, 4, 6, 8)
+                )
+                if los_weights is None:
+                    if self.weights_1 is not None:
+                        los_weights = self.weights_1
+                    else:
+                        los_weights = np.ones(
+                            np.asarray(self.field_1).shape, dtype=float
+                        )
+                n_hats, w_hat = sample_los_unit_vectors(
+                    self.x_vec,
+                    self._require_los_observer(),
+                    los_weights=los_weights,
+                    n_los_samples=int(n_los_samples),
+                    rng=los_rng,
+                )
+                legendre_plain = mean_legendre_over_los(
+                    self._khat(), n_hats, ells_t, sample_weights=w_hat
+                )
+
         return MultipoleShellMap(
             bin_index=bin_index,
             k=k_mode,
@@ -687,7 +1048,9 @@ class FieldPowerSpectrum(Specification):
             k1dbins=k1dbins_np,
             k_eff=k_eff,
             nmodes=nmodes,
-            los=self.los,
+            los=los_eff,
+            los_mu=los_mu_s if los_eff in _LOCAL_LOS else "box_centre",
+            legendre_plain=legendre_plain,
         )
 
     def measure_multipoles(
@@ -698,18 +1061,19 @@ class FieldPowerSpectrum(Specification):
         k1dweights: ArrayLike | None = None,
     ) -> MultipoleMeasurement:
         r"""
-        Bin Legendre-weighted multipoles from the 3D field power.
+        Bin 3D multipole power onto 1D :math:`|k|` shells.
 
-        Uses :attr:`auto_power_3d_1`, :attr:`auto_power_3d_2`, or
-        :attr:`cross_power_3d` together with :attr:`mu_mode` (LOS-dependent).
-        Results are stored on this instance as :attr:`P_ell`,
-        :attr:`multipole_k`, :attr:`multipole_nmodes`, and
-        :attr:`multipole_ells`, and returned as a :class:`MultipoleMeasurement`.
+        Builds :meth:`multipole_power_3d` for each ``ell`` (global
+        :math:`(2\ell+1)\mathcal{L}_\ell(\mu)` or Yamamoto :math:`F_\ell F_0`)
+        then applies :func:`~meer21cm.power_ops.bin_3d_to_1d`. Results are
+        stored as :attr:`P_ell`, :attr:`multipole_k`, :attr:`multipole_nmodes`,
+        and :attr:`multipole_ells`, and returned as a
+        :class:`MultipoleMeasurement`.
 
         Parameters
         ----------
         which : {'auto_1', 'auto_2', 'cross'}, default 'auto_1'
-            Which 3D power cube to multipole-bin.
+            Which tracer combination.
         k1dbins : array_like
             1D ``k`` bin edges. Required unless ``self.k1dbins`` is already set
             (e.g. on a :class:`~meer21cm.power.PowerSpectrum` instance).
@@ -727,65 +1091,49 @@ class FieldPowerSpectrum(Specification):
         Raises
         ------
         NotImplementedError
-            If ``los`` is not yet implemented.
+            If ``los`` is not yet implemented (``midpoint``).
         ValueError
-            If ``which`` is unknown or ``k1dbins`` is missing.
+            If ``which`` is unknown, ``k1dbins`` is missing, or local LOS
+            has no ``los_observer`` / ``box_origin``.
         """
-        if self.los == "global":
-            if which == "auto_1":
-                power3d = self.auto_power_3d_1
-            elif which == "auto_2":
-                power3d = self.auto_power_3d_2
-                if power3d is None:
-                    raise ValueError(
-                        "field_2 is None; cannot measure auto_2 multipoles"
-                    )
-            elif which == "cross":
-                power3d = self.cross_power_3d
-                if power3d is None:
-                    raise ValueError("field_2 is None; cannot measure cross multipoles")
-            else:
-                raise ValueError("which must be 'auto_1', 'auto_2', or 'cross'")
+        self._require_implemented_los("measure_multipoles")
+        if which not in ("auto_1", "auto_2", "cross"):
+            raise ValueError("which must be 'auto_1', 'auto_2', or 'cross'")
+        if which in ("auto_2", "cross") and self.field_2 is None:
+            raise ValueError(f"field_2 is None; cannot measure {which} multipoles")
 
-            if k1dbins is None:
-                k1dbins = getattr(self, "k1dbins", None)
-            if k1dbins is None:
-                raise ValueError("k1dbins is required for measure_multipoles")
-            k1dbins_np = np.asarray(k1dbins, dtype=float)
-            ells_t = tuple(int(e) for e in ells)
+        if k1dbins is None:
+            k1dbins = getattr(self, "k1dbins", None)
+        if k1dbins is None:
+            raise ValueError("k1dbins is required for measure_multipoles")
+        k1dbins_np = np.asarray(k1dbins, dtype=float)
+        ells_t = tuple(int(e) for e in ells)
 
-            if k1dweights is None:
-                k1dweights = getattr(self, "k1dweights", None)
-            if k1dweights is None:
-                k1dweights = np.ones_like(self.k_mode)
+        if k1dweights is None:
+            k1dweights = getattr(self, "k1dweights", None)
+        if k1dweights is None:
+            k1dweights = np.ones_like(self.k_mode)
 
-            mu = self.mu_mode
-            k_mode = self.k_mode
-            P_ell: dict[int, NDArray[np.floating]] = {}
-            k_eff: NDArray[np.floating] | None = None
-            nmodes: NDArray[np.floating] | None = None
-            for ell in ells_t:
-                factor = np.poly1d(legendre_polynomial_with_factor(ell))(mu)
-                p1d, keff, nm = bin_3d_to_1d(
-                    power3d * factor, k_mode, k1dbins_np, weights=k1dweights
-                )
-                P_ell[ell] = p1d
-                k_eff, nmodes = keff, nm
+        k_mode = self.k_mode
+        P_ell: dict[int, NDArray[np.floating]] = {}
+        k_eff: NDArray[np.floating] | None = None
+        nmodes: NDArray[np.floating] | None = None
+        for ell in ells_t:
+            p3d = self.multipole_power_3d(ell, which=which)
+            p1d, keff, nm = bin_3d_to_1d(p3d, k_mode, k1dbins_np, weights=k1dweights)
+            P_ell[ell] = p1d
+            k_eff, nmodes = keff, nm
 
-            assert k_eff is not None and nmodes is not None
-            self.P_ell = P_ell
-            self.multipole_k = k_eff
-            self.multipole_nmodes = nmodes
-            self.multipole_ells = ells_t
-            return MultipoleMeasurement(
-                k=k_eff,
-                nmodes=nmodes,
-                ells=ells_t,
-                P_ell=P_ell,
-                which=which,
-                los=self.los,
-            )
-
-        if self.los in ("endpoint", "firstpoint", "midpoint"):
-            self._require_implemented_los("measure_multipoles")
-        raise ValueError(f"Unhandled los={self.los!r}")
+        assert k_eff is not None and nmodes is not None
+        self.P_ell = P_ell
+        self.multipole_k = k_eff
+        self.multipole_nmodes = nmodes
+        self.multipole_ells = ells_t
+        return MultipoleMeasurement(
+            k=k_eff,
+            nmodes=nmodes,
+            ells=ells_t,
+            P_ell=P_ell,
+            which=which,
+            los=self.los,
+        )

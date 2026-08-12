@@ -375,6 +375,13 @@ class MockSimulation(PowerSpectrum):
         )
         self.clean_cache(self.rsd_dep_attr)
 
+    def _parallel_plane_los_xhat_stacked(self, real_dtype):
+        """Global box :math:`\\hat z` for Kaiser RSD when ``parallel_plane``."""
+        ndim = tuple(int(n) for n in np.asarray(self.box_ndim))
+        z = np.ones(ndim, dtype=real_dtype)
+        zero = np.zeros(ndim, dtype=real_dtype)
+        return np.stack([zero, zero, z], axis=0)
+
     @property
     def rsd_from_field(self):
         """
@@ -657,15 +664,9 @@ class MockSimulation(PowerSpectrum):
         slicer = get_nd_slicer()
         real_dtype = real_dtype_from_array(u_r)
         if self.parallel_plane:
-            box_coord_l = np.zeros((3,) + tuple(self.box_ndim), dtype=real_dtype)
-            box_coord_l[-1] = np.asarray(1.0, dtype=real_dtype)
+            box_coord_l = self._parallel_plane_los_xhat_stacked(real_dtype)
         else:
-            box_coord = np.meshgrid(*self.x_vec, indexing="ij")
-            box_coord = np.array(box_coord, dtype=real_dtype) + np.asarray(
-                self.box_origin[:, None, None, None], dtype=real_dtype
-            )
-            box_coord_l = box_coord / np.sqrt((box_coord**2).sum(axis=0))[None]
-        self._box_coord_l = box_coord_l
+            box_coord_l = np.asarray(self.los_xhat_stacked, dtype=real_dtype)
         u_in_xhat = (u_r * box_coord_l).sum(axis=0)
         y_k = np.array(
             [np.fft.rfftn(u_in_xhat * box_coord_l[i], norm="forward") for i in range(3)]
@@ -943,7 +944,7 @@ class MockSimulation(PowerSpectrum):
             tracer_positions = np.asarray(tracer_positions, dtype=self.real_dtype)
         # for some reason I can not get this to work
         # if self.rsd_from_field and self.kaiser_rsd:
-        #    box_coord_l = self._box_coord_l
+        #    box_coord_l = self.los_xhat_stacked
         #    distance_shift = (
         #        -self.f_growth *
         #        box_coord_l *

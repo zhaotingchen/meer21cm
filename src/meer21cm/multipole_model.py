@@ -17,8 +17,8 @@ Galaxy windows use the same selection-weight cube (mask × optional
 :math:`\mathrm{d}N/\mathrm{d}z`); ``tot_num_galaxies`` only sets a Poisson
 sampling density used to *estimate* that selection (then amplitude is
 restored). Field multipoles use
-:class:`~meer21cm.estimator.FieldPowerSpectrum` with ``los='global'``
-today; local Yamamoto LOS is reserved for later. Default 3D modelling on
+:class:`~meer21cm.estimator.FieldPowerSpectrum` (``los='global'`` or
+local Yamamoto ``firstpoint`` / ``endpoint``). Default 3D modelling on
 :class:`~meer21cm.power.PowerSpectrum` is unchanged.
 
 Window multipoles are scaled by the same weight-squared renorm
@@ -51,6 +51,7 @@ from .smooth_window import (
     apply_discrete_shell_window_matrix,
     build_discrete_shell_window_matrix,
 )
+from .wide_angle import propose_odd_wa_ells
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +176,7 @@ def run_smooth_window_realization(
     tracer: Tracer | str = "hi",
     ells: Sequence[int] = (0, 2, 4),
     los: str = "global",
+    los_observer: ArrayLike | None = None,
     weights_hi: ArrayLike | None = None,
     selection_mask: ArrayLike | None = None,
     dndz_box: ArrayLike | None = None,
@@ -268,6 +270,7 @@ def run_smooth_window_realization(
             mean_center_1=mean_center_1,
             unitless_1=unitless_1,
             los=los,
+            los_observer=los_observer,
             _skip_specification=True,
         )
         meas = fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
@@ -285,6 +288,7 @@ def run_smooth_window_realization(
             mean_center_1=mean_center_2,
             unitless_1=unitless_2,
             los=los,
+            los_observer=los_observer,
             _skip_specification=True,
         )
         meas = fps.measure_multipoles(which="auto_1", k1dbins=k1dbins, ells=ells_t)
@@ -304,6 +308,7 @@ def run_smooth_window_realization(
             unitless_1=unitless_1,
             unitless_2=unitless_2,
             los=los,
+            los_observer=los_observer,
             _skip_specification=True,
         )
         meas = fps.measure_multipoles(which="cross", k1dbins=k1dbins, ells=ells_t)
@@ -423,6 +428,9 @@ class SmoothWindowEstimator:
     los : {'global', 'endpoint', 'firstpoint', 'midpoint'}, default 'global'
         Line-of-sight convention for
         :class:`~meer21cm.estimator.FieldPowerSpectrum`.
+    los_observer : array_like, optional
+        Observer position for local Yamamoto LOS (Mpc). ``from_power_spectrum``
+        defaults this to ``ps.box_origin``.
     tracer : {'hi', 'gal', 'cross'}
         HI selection auto, galaxy randoms auto, or HI×gal cross window.
     weights_hi : ndarray, optional
@@ -442,6 +450,13 @@ class SmoothWindowEstimator:
         Optional extra FFT grid weights (same role as estimator
         ``weights_1/2``). Leave ``None`` when ``weights_hi`` is already the
         full multiplicative selection (avoid double-counting).
+    wide_angle : bool, default False
+        If True, measure extra odd :math:`W_L` and resum wa_order=1 into
+        the discrete-shell matrix (even theory input only).
+    wa_d : float, optional
+        Comoving distance to the effective redshift (Mpc) for wide-angle.
+    wa_los : {'firstpoint', 'endpoint'}, optional
+        Wide-angle LOS convention. Defaults to :attr:`los` when local.
     """
 
     def __init__(
@@ -450,6 +465,7 @@ class SmoothWindowEstimator:
         k1dbins=None,
         ells=(0, 2, 4),
         los="global",
+        los_observer=None,
         tracer="hi",
         weights_hi=None,
         selection_mask=None,
@@ -464,6 +480,13 @@ class SmoothWindowEstimator:
         unitless_2=False,
         k1dbins_window=None,
         k1dbins_out=None,
+        los_mu=None,
+        n_los_samples=1024,
+        los_weights=None,
+        los_rng=None,
+        wide_angle=False,
+        wa_d=None,
+        wa_los=None,
     ):
         self.box_len = np.asarray(box_len, dtype=float)
         self.k1dbins_window, self.k1dbins_out = _resolve_window_k_edges(
@@ -473,6 +496,26 @@ class SmoothWindowEstimator:
         self.k1dbins = self.k1dbins_out
         self.ells = tuple(int(e) for e in ells)
         self.los = str(los).lower()
+        self.los_observer = (
+            None if los_observer is None else np.asarray(los_observer, dtype=float)
+        )
+        self.los_mu = None if los_mu is None else str(los_mu).lower()
+        self.n_los_samples = int(n_los_samples)
+        self.los_weights = los_weights
+        self.los_rng = los_rng
+        self.wide_angle = bool(wide_angle)
+        self.wa_d = None if wa_d is None else float(wa_d)
+        self.wa_los = None if wa_los is None else str(wa_los).lower()
+        even = tuple(e for e in self.ells if e % 2 == 0)
+        if self.wide_angle and even:
+            odds = propose_odd_wa_ells(even)
+            max_ell = max(list(self.ells) + list(odds))
+            extra_L = tuple(range(0, max_ell + 3))
+            self._ells_measure = tuple(
+                sorted(set(self.ells) | set(odds) | set(extra_L))
+            )
+        else:
+            self._ells_measure = self.ells
         self.tracer = str(tracer).lower()
         self.weights_hi = weights_hi
         self.selection_mask = selection_mask
@@ -541,6 +584,27 @@ class SmoothWindowEstimator:
             "k1dbins_out", k1dbins if k1dbins is not None else ps.k1dbins
         )
         k1dbins_window = kwargs.pop("k1dbins_window", None)
+        kwargs.setdefault("los", getattr(ps, "los", "global"))
+        if "los_observer" not in kwargs:
+            los_observer = getattr(ps, "los_observer", None)
+            if los_observer is None:
+                los_observer = getattr(ps, "box_origin", None)
+            kwargs["los_observer"] = los_observer
+        if "los_weights" not in kwargs:
+            tracer_s = str(tracer).lower()
+            w_hi = None if weights_hi is None else np.asarray(weights_hi, dtype=float)
+            if tracer_s == "cross" and w_hi is not None and selection_mask is not None:
+                kwargs["los_weights"] = w_hi * np.asarray(selection_mask, dtype=float)
+            elif w_hi is not None:
+                kwargs["los_weights"] = w_hi
+        if kwargs.get("wide_angle") and "wa_d" not in kwargs:
+            origin = np.asarray(getattr(ps, "box_origin", 0.0), dtype=float).reshape(-1)
+            if origin.size == 1:
+                origin = np.full(3, float(origin.flat[0]))
+            elif origin.size != 3:
+                origin = np.pad(origin, (0, max(0, 3 - origin.size)))[:3]
+            box_len_ps = np.asarray(ps.box_len, dtype=float).reshape(-1)
+            kwargs["wa_d"] = float(np.linalg.norm(origin + 0.5 * box_len_ps))
         return cls(
             box_len=ps.box_len,
             k1dbins=k1dbins,
@@ -564,8 +628,9 @@ class SmoothWindowEstimator:
             box_len=self.box_len,
             k1dbins_window=self.k1dbins_window,
             tracer=self.tracer,
-            ells=self.ells,
+            ells=self._ells_measure,
             los=self.los,
+            los_observer=self.los_observer,
             weights_hi=self.weights_hi,
             selection_mask=self.selection_mask,
             dndz_box=self.dndz_box,
@@ -601,15 +666,26 @@ class SmoothWindowEstimator:
         self.W_ell = acc.W_ell
         self.W_ell_std = acc.W_ell_std
         self.n_realizations = acc.n_realizations
-        self.ells = tuple(acc.ells)
+        if not self.wide_angle:
+            self.ells = tuple(acc.ells)
         return acc
 
-    def make_shell_map(self, k1dweights=None) -> MultipoleShellMap:
+    def make_shell_map(
+        self,
+        k1dweights=None,
+        los_mu=None,
+        n_los_samples=None,
+        ells=None,
+        los_weights=None,
+        los_rng=None,
+    ) -> MultipoleShellMap:
         """
         Build a :class:`~meer21cm.estimator.MultipoleShellMap` for ``k_out``.
 
         Uses :attr:`k1dbins_out` (legacy estimator edges), not the fine
-        :attr:`k1dbins_window` used to measure :math:`W_L`.
+        :attr:`k1dbins_window` used to measure :math:`W_L`. Local LOS
+        defaults to voxel-averaged :math:`\\mathcal{L}_\\ell(\\hat k\\cdot
+        \\hat n)` (``los_mu='local_average'``).
         """
         shape = None
         for candidate in (
@@ -617,6 +693,7 @@ class SmoothWindowEstimator:
             self.selection_mask,
             self.weights_grid_1,
             self.weights_grid_2,
+            self.los_weights,
         ):
             if candidate is not None:
                 shape = np.asarray(candidate).shape
@@ -631,10 +708,36 @@ class SmoothWindowEstimator:
             field,
             self.box_len,
             los=self.los,
+            los_observer=self.los_observer,
             _skip_specification=True,
         )
+        if los_weights is None:
+            los_weights = self.los_weights
+            if los_weights is None:
+                if self.tracer == "cross" and self.weights_hi is not None:
+                    w2 = self.selection_mask
+                    if w2 is None:
+                        w2 = np.asarray(self.weights_hi) > 0
+                    los_weights = np.asarray(self.weights_hi, dtype=float) * np.asarray(
+                        w2, dtype=float
+                    )
+                elif self.weights_hi is not None:
+                    los_weights = self.weights_hi
+        ells_shell = tuple(int(e) for e in (self.ells if ells is None else ells))
+        extra = set(ells_shell) | {0, 1, 2, 3, 4, 6, 8}
+        if ells_shell:
+            extra.update(range(0, max(ells_shell) + 3))
         self.shell_map = fps.multipole_bin_index_map(
-            k1dbins=self.k1dbins_out, k1dweights=k1dweights
+            k1dbins=self.k1dbins_out,
+            k1dweights=k1dweights,
+            los=self.los,
+            los_mu=self.los_mu if los_mu is None else los_mu,
+            n_los_samples=(
+                self.n_los_samples if n_los_samples is None else n_los_samples
+            ),
+            los_weights=los_weights,
+            ells=tuple(sorted(extra)),
+            los_rng=self.los_rng if los_rng is None else los_rng,
         )
         return self.shell_map
 
@@ -644,6 +747,9 @@ class SmoothWindowEstimator:
         shell_map: MultipoleShellMap | None = None,
         n_fftlog=512,
         continuous="smooth",
+        wide_angle=None,
+        wa_d=None,
+        wa_los=None,
         **kwargs,
     ) -> DiscreteShellWindowMatrix:
         """
@@ -661,27 +767,83 @@ class SmoothWindowEstimator:
             ``'identity'`` needs no accumulated ``W_ell`` (discrete ``μ``
             selection only). ``'smooth'`` requires :meth:`accumulate` first
             (uses measured :attr:`k_window` / :attr:`W_ell`).
+        wide_angle : bool, optional
+            If True, include wa_order=1 odd theory columns then resum so
+            :meth:`~meer21cm.smooth_window.DiscreteShellWindowMatrix.apply`
+            takes even Kaiser :math:`P_\\ell` only.
+        wa_d : float, optional
+            Comoving distance to the effective redshift (Mpc). Defaults to
+            :attr:`wa_d` stored on this estimator.
+        wa_los : {'firstpoint', 'endpoint'}, optional
+            Wide-angle LOS. Defaults to :attr:`wa_los` or the estimator
+            :attr:`los`.
+        los_mu, n_los_samples, los_weights :
+            Forwarded to :meth:`make_shell_map` when ``shell_map`` is omitted.
         """
         continuous_s = str(continuous).lower()
         if continuous_s == "smooth" and (self.W_ell is None or self.k is None):
             raise RuntimeError(
                 "Accumulate window multipoles before building a smooth matrix"
             )
+        los_mu = kwargs.pop("los_mu", None)
+        n_los_samples = kwargs.pop("n_los_samples", None)
+        los_weights = kwargs.pop("los_weights", None)
+        los_rng = kwargs.pop("los_rng", None)
         if shell_map is None:
             shell_map = self.shell_map
         if shell_map is None:
-            shell_map = self.make_shell_map()
+            shell_map = self.make_shell_map(
+                los_mu=los_mu,
+                n_los_samples=n_los_samples,
+                los_weights=los_weights,
+                los_rng=los_rng,
+            )
         self.k_in = np.asarray(k_in, dtype=float)
+        do_wa = self.wide_angle if wide_angle is None else bool(wide_angle)
+        ells_out = self.ells
+        ells_in = ells_out
+        ells_conv = kwargs.pop("ells_conv", None)
+        even = tuple(e for e in ells_out if e % 2 == 0)
+        if do_wa:
+            if not even:
+                raise ValueError(
+                    "wide_angle requires at least one even output multipole"
+                )
+            odds = propose_odd_wa_ells(even)
+            ells_in = tuple(sorted(set(even) | set(odds)))
+            if ells_conv is None:
+                if continuous_s == "smooth" and self.W_ell is not None:
+                    ells_conv = tuple(sorted(int(L) for L in self.W_ell.keys()))
+                else:
+                    max_ell = max(list(ells_out) + list(ells_in))
+                    extra_odd = tuple(range(1, max_ell + 3, 2))
+                    ells_conv = tuple(
+                        sorted(set(ells_out) | set(ells_in) | set(extra_odd))
+                    )
+            d_wa = self.wa_d if wa_d is None else float(wa_d)
+            if d_wa is None:
+                raise ValueError("wa_d is required when wide_angle=True")
+            los_wa = wa_los if wa_los is not None else self.wa_los
+            if los_wa is None:
+                los_wa = (
+                    self.los if self.los in ("firstpoint", "endpoint") else "firstpoint"
+                )
         self.window_matrix = build_discrete_shell_window_matrix(
             shell_map,
             None if continuous_s == "identity" else self.k_window,
             None if continuous_s == "identity" else self.W_ell,
             k_in=self.k_in,
-            ells=self.ells,
+            ells=ells_out,
+            ells_in=ells_in,
+            ells_conv=ells_conv,
             continuous=continuous_s,
             n_fftlog=n_fftlog,
             **kwargs,
         )
+        if do_wa:
+            self.window_matrix.resum_input_odd_wide_angle(
+                los=los_wa, d=d_wa, ells_even=even
+            )
         return self.window_matrix
 
 
@@ -751,7 +913,7 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
         if isinstance(window_matrix, DiscreteShellWindowMatrix):
             self._window_matrix_obj = window_matrix
             self._window_matrix_raw = None
-            self.window_ells = tuple(window_matrix.ells)
+            self.window_ells = tuple(window_matrix.ells_out)
         else:
             self._window_matrix_obj = None
             self._window_matrix_raw = np.asarray(window_matrix, dtype=float)
@@ -763,19 +925,45 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
         W_ell: WindowEllMap,
         k_in: ArrayLike,
         ells: Sequence[int] | None = None,
+        wide_angle: bool = False,
+        wa_d: float | None = None,
+        wa_los: str | None = None,
         **kwargs: Any,
     ) -> DiscreteShellWindowMatrix:
         """Build and attach a :class:`DiscreteShellWindowMatrix`."""
         if ells is None:
             ells = self.window_ells
+        ells_out = tuple(int(e) for e in ells)
+        ells_in = kwargs.pop("ells_in", None)
+        ells_conv = kwargs.pop("ells_conv", None)
+        even = tuple(e for e in ells_out if e % 2 == 0)
+        if wide_angle:
+            if not even:
+                raise ValueError(
+                    "wide_angle requires at least one even output multipole"
+                )
+            odds = propose_odd_wa_ells(even)
+            ells_in = tuple(sorted(set(even) | set(odds)))
+            if ells_conv is None:
+                max_ell = max(list(ells_out) + list(ells_in))
+                extra_odd = tuple(range(1, max_ell + 3, 2))
+                ells_conv = tuple(sorted(set(ells_out) | set(ells_in) | set(extra_odd)))
+            if wa_d is None:
+                raise ValueError("wa_d is required when wide_angle=True")
+            if wa_los is None:
+                wa_los = "firstpoint"
         result = build_discrete_shell_window_matrix(
             shell_map,
             k_window,
             W_ell,
             k_in=k_in,
-            ells=ells,
+            ells=ells_out,
+            ells_in=ells_in,
+            ells_conv=ells_conv,
             **kwargs,
         )
+        if wide_angle:
+            result.resum_input_odd_wide_angle(los=wa_los, d=float(wa_d), ells_even=even)
         self.set_window_matrix(result)
         return result
 
@@ -829,25 +1017,32 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
                 "k_in is required when no DiscreteShellWindowMatrix is attached"
             )
 
-        raw = self.get_theory_multipoles_kmu(k_in, ells=ells, nmu=nmu, which=which)
+        ells_theory = ells
+        if apply_window and self._window_matrix_obj is not None:
+            ells_theory = self._window_matrix_obj.ells_in
+        raw = self.get_theory_multipoles_kmu(
+            k_in, ells=ells_theory, nmu=nmu, which=which
+        )
         if apply_window and self.window_matrix is not None:
             if self._window_matrix_obj is not None:
                 convolved = self._window_matrix_obj.apply(raw["P_ell"])
                 k_out = self._window_matrix_obj.k_out
                 nmodes = self._window_matrix_obj.nmodes
+                ells_out = self._window_matrix_obj.ells_out
             else:
                 convolved = apply_discrete_shell_window_matrix(
                     raw["P_ell"], self.window_matrix, ells=ells
                 )
                 k_out = None
                 nmodes = None
+                ells_out = tuple(int(e) for e in ells)
             return {
                 "k": k_out if k_out is not None else raw["k"],
                 "k_in": raw["k"],
                 "nmodes": nmodes,
                 "P_ell": convolved,
                 "P_ell_unconvolved": raw["P_ell"],
-                "ells": raw["ells"],
+                "ells": ells_out,
                 "window_applied": True,
             }
         return {

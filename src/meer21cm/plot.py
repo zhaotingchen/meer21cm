@@ -648,7 +648,8 @@ def plot_discrete_shell_window_row(
 
     For fixed output multipole ``ell_out`` and estimator bin ``k_out_index``,
     shows :math:`W_{\\ell_{\\mathrm{out}}\\ell'}(k_{\\mathrm{out}}, k_{\\mathrm{in}})`
-    in one panel per theory multipole ``ell'`` in ``mat.ells``.
+    in one panel per theory multipole ``ell'`` in ``mat.ells_in`` (falls
+    back to ``mat.ells``).
 
     Parameters
     ----------
@@ -666,38 +667,39 @@ def plot_discrete_shell_window_row(
     Returns
     -------
     fig, axes
-        Matplotlib figure and axes array (length ``len(mat.ells)``).
+        Matplotlib figure and axes array (length ``len(mat.ells_in)``).
     """
-    ells = tuple(int(e) for e in mat.ells)
+    ells_out = tuple(int(e) for e in mat.ells)
+    ells_in = tuple(int(e) for e in (getattr(mat, "ells_in", None) or mat.ells))
     if ell_out is None:
-        ell_out = ells[0]
+        ell_out = ells_out[0]
     else:
         ell_out = int(ell_out)
-    if ell_out not in ells:
-        raise ValueError(f"ell_out={ell_out} not in mat.ells={ells}")
+    if ell_out not in ells_out:
+        raise ValueError(f"ell_out={ell_out} not in mat.ells={ells_out}")
     n_out = len(mat.k_out)
     n_in = len(mat.k_in)
     if not (0 <= int(k_out_index) < n_out):
         raise IndexError(f"k_out_index={k_out_index} out of range for n_out={n_out}")
-    i_out = ells.index(ell_out)
+    i_out = ells_out.index(ell_out)
     row = np.asarray(mat.matrix[i_out * n_out + int(k_out_index)], dtype=float)
     k_out = float(mat.k_out[int(k_out_index)])
 
     fig, axes = plt.subplots(
         1,
-        len(ells),
+        len(ells_in),
         figsize=figsize,
         sharey=sharey,
         gridspec_kw={"wspace": 0},
     )
-    if len(ells) == 1:
+    if len(ells_in) == 1:
         axes = np.asarray([axes])
 
-    for i, (ax, ell_in) in enumerate(zip(axes, ells)):
+    for i, (ax, ell_in) in enumerate(zip(axes, ells_in)):
         ax.plot(mat.k_in, row[i * n_in : (i + 1) * n_in])
         ax.axvline(k_out, color="k", ls="--")
         ax.set_title(rf"$W_{{{ell_out}, {ell_in}}}(k_\mathrm{{out}},k_\mathrm{{in}})$")
-        if i == len(ells) // 2:
+        if i == len(ells_in) // 2:
             ax.set_xlabel(r"$k_\mathrm{in}$")
     fig.suptitle(rf"$k_\mathrm{{out}}={k_out:g}$", y=1.05)
     return fig, axes
@@ -737,9 +739,11 @@ def plot_discrete_shell_window_matrix(
     fig, axes
         Matplotlib figure and 2D axes array of shape ``(n_ell, n_ell)``.
     """
-    ells = tuple(int(e) for e in mat.ells)
-    num_ell = len(ells)
-    if num_ell < 1:
+    ells_out = tuple(int(e) for e in mat.ells)
+    ells_in = tuple(int(e) for e in (getattr(mat, "ells_in", None) or mat.ells))
+    num_ell_out = len(ells_out)
+    num_ell_in = len(ells_in)
+    if num_ell_out < 1 or num_ell_in < 1:
         raise ValueError("mat.ells must contain at least one multipole")
     k_in = np.asarray(mat.k_in, dtype=float)
     k_out = np.asarray(mat.k_out, dtype=float)
@@ -750,31 +754,38 @@ def plot_discrete_shell_window_matrix(
     num_k_in = len(k_in)
     num_k_out = len(k_out)
     matrix = np.asarray(mat.matrix, dtype=float)
-    expected = (num_ell * num_k_out, num_ell * num_k_in)
+    expected = (num_ell_out * num_k_out, num_ell_in * num_k_in)
     if matrix.shape != expected:
         raise ValueError(
             f"mat.matrix shape {matrix.shape} != expected {expected} "
-            f"for ells={ells}, n_out={num_k_out}, n_in={num_k_in}"
+            f"for ells_out={ells_out}, ells_in={ells_in}, "
+            f"n_out={num_k_out}, n_in={num_k_in}"
         )
 
     k_in_edges = center_to_edges(k_in)
     k_out_edges = center_to_edges(k_out)
     if figsize is None:
-        figsize = (num_ell * 3, num_ell * 3)
+        figsize = (num_ell_in * 3, num_ell_out * 3)
     fig, axes = plt.subplots(
-        num_ell,
-        num_ell,
+        num_ell_out,
+        num_ell_in,
         figsize=figsize,
         gridspec_kw={"hspace": 0.01, "wspace": 0.01},
     )
-    if num_ell == 1:
+    if num_ell_out == 1 and num_ell_in == 1:
         axes = np.array([[axes]])
+    elif num_ell_out == 1 or num_ell_in == 1:
+        axes = np.atleast_2d(axes)
+        if num_ell_out == 1:
+            axes = axes.reshape(1, -1)
+        else:
+            axes = axes.reshape(-1, 1)
     else:
         axes = np.asarray(axes)
 
-    for i in range(num_ell):
-        for j in range(num_ell):
-            if i != num_ell - 1:
+    for i in range(num_ell_out):
+        for j in range(num_ell_in):
+            if i != num_ell_out - 1:
                 axes[i, j].set_xticklabels([])
             else:
                 axes[i, j].set_xlabel(r"$k_\mathrm{out}$")
@@ -783,11 +794,11 @@ def plot_discrete_shell_window_matrix(
             else:
                 axes[i, j].set_ylabel(r"$k_\mathrm{in}$")
 
-    for i, ell_out in enumerate(ells):
-        for j, ell_in in enumerate(ells):
+    for i, ell_out in enumerate(ells_out):
+        for j, ell_in in enumerate(ells_in):
             i_indx = i * num_k_out
             j_indx = j * num_k_in
-            ax = axes[num_ell - i - 1, j]
+            ax = axes[num_ell_out - i - 1, j]
             ax.pcolormesh(
                 k_out_edges,
                 k_in_edges,

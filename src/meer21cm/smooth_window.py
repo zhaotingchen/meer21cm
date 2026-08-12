@@ -101,6 +101,7 @@ from scipy.special import eval_legendre, spherical_jn
 from .estimator import MultipoleShellMap
 from .fftlog import CorrelationToPower, PowerToCorrelation
 from .util import legendre_polynomial_with_factor
+from .wide_angle import power_spectrum_odd_wide_angle_matrix
 
 WindowEllMap = Mapping[int, ArrayLike]
 
@@ -278,7 +279,7 @@ class DiscreteShellWindowMatrix:
 
     Attributes
     ----------
-    matrix : ndarray, shape ``(n_ell * n_out, n_ell * n_in)``
+    matrix : ndarray, shape ``(n_ell_out * n_out, n_ell_in * n_in)``
         Acts on concatenated ``[P_ell[0](k_in), P_ell[1](k_in), ...]``.
     k_in : ndarray
         Theory wavenumber nodes.
@@ -287,7 +288,11 @@ class DiscreteShellWindowMatrix:
     nmodes : ndarray
         Modes per output bin (from the shell map).
     ells : tuple of int
-        Multipole block order.
+        Output multipole block order (alias of :attr:`ells_out`).
+    ells_in : tuple of int, optional
+        Theory input multipoles. Defaults to :attr:`ells`.
+    ells_out : tuple of int, optional
+        Observed output multipoles. Defaults to :attr:`ells`.
     """
 
     matrix: NDArray[np.floating]
@@ -295,12 +300,62 @@ class DiscreteShellWindowMatrix:
     k_out: NDArray[np.floating]
     nmodes: NDArray[np.floating]
     ells: tuple[int, ...]
+    ells_in: tuple[int, ...] | None = None
+    ells_out: tuple[int, ...] | None = None
+
+    def __post_init__(self) -> None:
+        self.ells = tuple(int(e) for e in self.ells)
+        self.ells_out = (
+            tuple(int(e) for e in self.ells)
+            if self.ells_out is None
+            else tuple(int(e) for e in self.ells_out)
+        )
+        self.ells = self.ells_out
+        self.ells_in = (
+            tuple(self.ells_out)
+            if self.ells_in is None
+            else tuple(int(e) for e in self.ells_in)
+        )
 
     def apply(
         self, p_ell_in: Mapping[int, ArrayLike] | ArrayLike
     ) -> dict[int, NDArray[np.floating]]:
         """Apply this matrix; see :func:`apply_discrete_shell_window_matrix`."""
-        return apply_discrete_shell_window_matrix(p_ell_in, self.matrix, ells=self.ells)
+        return apply_discrete_shell_window_matrix(
+            p_ell_in,
+            self.matrix,
+            ells=self.ells_out,
+            ells_in=self.ells_in,
+        )
+
+    def resum_input_odd_wide_angle(
+        self,
+        los: str = "firstpoint",
+        d: float = 1.0,
+        ells_even: Sequence[int] | None = None,
+    ) -> DiscreteShellWindowMatrix:
+        r"""
+        Left-multiply by the wa_order=1 matrix so theory input is even only.
+
+        :math:`W \leftarrow W\,M_{\mathrm{WA}}` with :math:`M_{\mathrm{WA}}`
+        mapping ``ells_even`` → current :attr:`ells_in` (even + odd).
+        """
+        if ells_even is None:
+            ells_even_t = tuple(e for e in self.ells_in if e % 2 == 0)
+        else:
+            ells_even_t = tuple(int(e) for e in ells_even)
+        if not ells_even_t:
+            raise ValueError("ells_even is empty; cannot resum odd wide-angle")
+        m_wa = power_spectrum_odd_wide_angle_matrix(
+            self.k_in,
+            ells_in=ells_even_t,
+            ells_out=self.ells_in,
+            d=d,
+            los=los,
+        )
+        self.matrix = np.asarray(self.matrix, dtype=float) @ m_wa
+        self.ells_in = ells_even_t
+        return self
 
 
 def continuous_window_response_blocks(
@@ -473,6 +528,7 @@ def build_discrete_shell_window_matrix(
     W_ell: WindowEllMap | None = None,
     k_in: ArrayLike | None = None,
     ells: Sequence[int] = (0, 2, 4),
+    ells_in: Sequence[int] | None = None,
     ells_conv: Sequence[int] | None = None,
     continuous: str = "smooth",
     n_fftlog: int = 512,
@@ -496,7 +552,9 @@ def build_discrete_shell_window_matrix(
     k_in : array_like
         Fine theory :math:`k` nodes.
     ells : sequence of int, default (0, 2, 4)
-        Multipoles in the matrix block layout (estimator / theory).
+        Observed / output multipoles (matrix rows).
+    ells_in : sequence of int, optional
+        Theory input multipoles (matrix columns). Defaults to ``ells``.
     ells_conv : sequence of int, optional
         Continuous convolved multipoles :math:`L` used in
         :math:`P(\mathbf{k})=\sum_L P_L(|k|)\mathcal{L}_L(\mu)`.
@@ -521,7 +579,7 @@ def build_discrete_shell_window_matrix(
     Returns
     -------
     result : DiscreteShellWindowMatrix
-        Dense matrix of shape ``(len(ells) * n_out, len(ells) * n_in)``.
+        Dense matrix of shape ``(len(ells) * n_out, len(ells_in) * n_in)``.
     """
     if k_in is None:
         raise TypeError("k_in is required")
@@ -531,20 +589,30 @@ def build_discrete_shell_window_matrix(
             "continuous must be 'smooth' or 'identity', got %r" % continuous
         )
 
-    ells_t = tuple(int(e) for e in ells)
+    ells_out_t = tuple(int(e) for e in ells)
+    ells_in_t = (
+        tuple(int(e) for e in ells_out_t)
+        if ells_in is None
+        else tuple(int(e) for e in ells_in)
+    )
     if ells_conv is not None:
         ells_L = tuple(int(e) for e in ells_conv)
     elif continuous_s == "identity":
-        ells_L = ells_t
+        ells_L = tuple(sorted(set(ells_out_t) | set(ells_in_t)))
     else:
         keys = [int(L) for L in (W_ell or {}).keys()]
-        ells_L = tuple(sorted(keys)) if keys else ells_t
+        ells_L = (
+            tuple(sorted(keys))
+            if keys
+            else tuple(sorted(set(ells_out_t) | set(ells_in_t)))
+        )
 
     k_in_np = np.asarray(k_in, dtype=float)
     k_out = np.asarray(shell_map.k_eff, dtype=float)
     n_out = len(k_out)
     n_in = len(k_in_np)
-    n_ell = len(ells_t)
+    n_ell_out = len(ells_out_t)
+    n_ell_in = len(ells_in_t)
 
     k_mode = np.asarray(shell_map.k, dtype=float)
     k_min_modes = float(np.min(k_mode[np.isfinite(k_mode) & (k_mode > 0)]))
@@ -556,7 +624,7 @@ def build_discrete_shell_window_matrix(
             k_eval=k_eval,
             k_in=k_in_np,
             ells_out=ells_L,
-            ells_in=ells_t,
+            ells_in=ells_in_t,
         )
     else:
         if k_window is None or W_ell is None:
@@ -578,7 +646,7 @@ def build_discrete_shell_window_matrix(
             k_eval=k_eval,
             k_in=k_in_np,
             ells_out=ells_L,
-            ells_in=ells_t,
+            ells_in=ells_in_t,
             n_fftlog=n_fftlog,
             k_log_min=k_log_min,
             k_log_max=k_log_max,
@@ -599,13 +667,26 @@ def build_discrete_shell_window_matrix(
     bin_index = np.asarray(shell_map.bin_index)
     mu = np.asarray(shell_map.mu, dtype=float)
     weights = np.asarray(shell_map.weights, dtype=float)
+    stored_L = getattr(shell_map, "legendre_plain", None) or {}
 
-    matrix = np.zeros((n_ell * n_out, n_ell * n_in), dtype=float)
+    matrix = np.zeros((n_ell_out * n_out, n_ell_in * n_in), dtype=float)
 
-    L_plain = {L: _legendre_plain(L, mu) for L in ells_L}
-    ell_factor = {ell: _legendre_with_factor(ell, mu) for ell in ells_t}
+    L_plain: dict[int, NDArray[np.floating]] = {}
+    ell_factor: dict[int, NDArray[np.floating]] = {}
+    for L in ells_L:
+        if int(L) in stored_L:
+            L_plain[int(L)] = np.asarray(stored_L[int(L)], dtype=float)
+        else:
+            L_plain[int(L)] = _legendre_plain(L, mu)
+    for ell in ells_out_t:
+        if int(ell) in stored_L:
+            ell_factor[int(ell)] = (2 * int(ell) + 1) * np.asarray(
+                stored_L[int(ell)], dtype=float
+            )
+        else:
+            ell_factor[int(ell)] = _legendre_with_factor(ell, mu)
 
-    for i_out, ell_out in enumerate(ells_t):
+    for i_out, ell_out in enumerate(ells_out_t):
         for i_bin in range(n_out):
             in_bin = bin_index == i_bin
             w_bin = weights * in_bin
@@ -618,7 +699,7 @@ def build_discrete_shell_window_matrix(
             L_on_bin = {L: L_plain[L][in_bin] for L in ells_L}
 
             row_index = i_out * n_out + i_bin
-            for i_in, ell_in in enumerate(ells_t):
+            for i_in, ell_in in enumerate(ells_in_t):
                 acc = np.zeros(n_in, dtype=float)
                 for L in ells_L:
                     key = (int(L), int(ell_in))
@@ -635,7 +716,9 @@ def build_discrete_shell_window_matrix(
         k_in=k_in_np,
         k_out=k_out,
         nmodes=np.asarray(shell_map.nmodes, dtype=float),
-        ells=ells_t,
+        ells=ells_out_t,
+        ells_in=ells_in_t,
+        ells_out=ells_out_t,
     )
 
 
@@ -643,6 +726,7 @@ def apply_discrete_shell_window_matrix(
     p_ell_in: Mapping[int, ArrayLike] | ArrayLike,
     window_matrix: ArrayLike,
     ells: Sequence[int] = (0, 2, 4),
+    ells_in: Sequence[int] | None = None,
 ) -> dict[int, NDArray[np.floating]]:
     """
     Apply a discrete-shell window matrix to concatenated or dict multipole theory.
@@ -650,23 +734,32 @@ def apply_discrete_shell_window_matrix(
     Parameters
     ----------
     p_ell_in : mapping or array_like
-        ``{ell: P_ell(k_in)}`` or a 1D vector of length ``len(ells) * n_in``.
+        ``{ell: P_ell(k_in)}`` or a 1D vector of length ``len(ells_in) * n_in``.
     window_matrix : array_like
         Dense matrix from :func:`build_discrete_shell_window_matrix`.
     ells : sequence of int, default (0, 2, 4)
-        Multipole order matching the matrix block layout.
+        Output multipoles (matrix row blocks).
+    ells_in : sequence of int, optional
+        Theory input multipoles (matrix column blocks). Defaults to ``ells``.
 
     Returns
     -------
     p_ell_out : dict
         ``{ell: P_ell(k_out)}``.
     """
-    ells_t = tuple(int(e) for e in ells)
+    ells_out_t = tuple(int(e) for e in ells)
+    ells_in_t = (
+        tuple(int(e) for e in ells_out_t)
+        if ells_in is None
+        else tuple(int(e) for e in ells_in)
+    )
     if isinstance(p_ell_in, Mapping):
-        vec = np.concatenate([np.asarray(p_ell_in[ell], dtype=float) for ell in ells_t])
+        vec = np.concatenate(
+            [np.asarray(p_ell_in[ell], dtype=float) for ell in ells_in_t]
+        )
     else:
         vec = np.asarray(p_ell_in, dtype=float)
     window_matrix_np = np.asarray(window_matrix, dtype=float)
     out = window_matrix_np @ vec
-    n_out = window_matrix_np.shape[0] // len(ells_t)
-    return {ell: out[i * n_out : (i + 1) * n_out] for i, ell in enumerate(ells_t)}
+    n_out = window_matrix_np.shape[0] // len(ells_out_t)
+    return {ell: out[i * n_out : (i + 1) * n_out] for i, ell in enumerate(ells_out_t)}

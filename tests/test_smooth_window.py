@@ -457,18 +457,25 @@ def test_gal_window_matches_hi_for_same_selection():
 def test_field_power_spectrum_los_global_and_reserved():
     field = np.ones((8, 8, 8))
     box_len = np.array([80.0, 80.0, 80.0])
+    k1dbins = np.linspace(0.1, 0.4, 4)
     fps = FieldPowerSpectrum(field, box_len, los="global")
     assert fps.los == "global"
-    fps.measure_multipoles(ells=(0,), k1dbins=np.linspace(0.1, 0.4, 4))
+    fps.measure_multipoles(ells=(0,), k1dbins=k1dbins)
     with pytest.raises(ValueError, match="Unknown los"):
         FieldPowerSpectrum(field, box_len, los="diagonal")
-    for reserved in ("endpoint", "firstpoint", "midpoint"):
-        fps_r = FieldPowerSpectrum(field, box_len, los=reserved)
-        assert fps_r.los == reserved
-        with pytest.raises(NotImplementedError):
-            fps_r.measure_multipoles(k1dbins=np.linspace(0.1, 0.4, 4), ells=(0,))
-        with pytest.raises(NotImplementedError):
-            fps_r.multipole_bin_index_map(k1dbins=np.linspace(0.1, 0.4, 4))
+    for local in ("endpoint", "firstpoint"):
+        fps_r = FieldPowerSpectrum(
+            field, box_len, los=local, los_observer=(0.0, 0.0, 1.0e4)
+        )
+        assert fps_r.los == local
+        fps_r.measure_multipoles(k1dbins=k1dbins, ells=(0,))
+        fps_r.multipole_bin_index_map(k1dbins=k1dbins)
+    fps_m = FieldPowerSpectrum(field, box_len, los="midpoint")
+    assert fps_m.los == "midpoint"
+    with pytest.raises(NotImplementedError):
+        fps_m.measure_multipoles(k1dbins=k1dbins, ells=(0,))
+    with pytest.raises(NotImplementedError):
+        fps_m.multipole_bin_index_map(k1dbins=k1dbins)
 
 
 def test_discrete_mu_sampling_with_identity_window():

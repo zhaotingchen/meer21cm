@@ -204,8 +204,12 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
         The padding for the flat sky box.
     los : {'global', 'endpoint', 'firstpoint', 'midpoint'}, default 'global'
         Line-of-sight convention for field multipoles (see
-        :class:`~meer21cm.estimator.FieldPowerSpectrum`). Only ``'global'``
-        is implemented.
+        :class:`~meer21cm.estimator.FieldPowerSpectrum`). ``'global'``,
+        ``'firstpoint'``, and ``'endpoint'`` are implemented; ``'midpoint'``
+        is reserved.
+    los_observer : array_like, optional
+        Observer position for local Yamamoto LOS (Mpc). Defaults to
+        :attr:`box_origin` after the enclosing box is built.
     **params: dict
         Additional parameters to be passed to the base class :class:`meer21cm.cosmology.CosmologyCalculator`.
     """
@@ -255,6 +259,7 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
         flat_sky_padding=[0, 0, 0],
         k1dweights=None,
         los="global",
+        los_observer=None,
         **params,
     ):
         if seed is None:
@@ -305,6 +310,7 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
             mean_center_2=mean_center_2,
             unitless_2=unitless_2,
             los=los,
+            los_observer=los_observer,
             _skip_specification=True,
         )
         if model_k_from_field:

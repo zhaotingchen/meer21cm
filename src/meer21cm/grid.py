@@ -830,6 +830,8 @@ class LightconeGriddingMixin:
     @box_origin.setter
     def box_origin(self, value):
         self._box_origin = np.array(value)
+        if hasattr(self, "_invalidate_los_xhat"):
+            self._invalidate_los_xhat()
 
     @property
     def rot_mat_sky_to_box(self):

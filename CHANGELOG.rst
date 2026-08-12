@@ -4,6 +4,29 @@ Releases
 dev
 ------
 
+Features
+++++++++
+* implement local Yamamoto multipoles on ``FieldPowerSpectrum`` (``los='firstpoint'`` /
+  ``'endpoint'``): 3D :math:`F_\ell F_0` cube then the same 1D ``|k|`` binning as global PP
+* add ``multipole_power_3d``, ``los_observer`` (defaults to ``box_origin``), and real
+  :math:`Y_{\ell m}` helpers in ``spherical.py`` (pypower / Hand et al. convention)
+* odd Yamamoto poles use :math:`\mathrm{Im}(A_\ell F_0^*)` (even stay real); auto
+  firstpoint :math:`\approx` minus endpoint on odd :math:`\ell`
+* voxel-averaged local-:math:`\mu` shell projector (``los_mu='local_average'``, default
+  for local LOS) on ``MultipoleShellMap`` / discrete-shell :math:`W`
+* wa_order=1 odd wide-angle matrix (``wide_angle.py``) joined via
+  ``DiscreteShellWindowMatrix.resum_input_odd_wide_angle``
+* forward ``los_observer`` through ``PowerSpectrum`` and ``SmoothWindowEstimator``
+* validate no-RSD Gaussian lightcone + far-observer box under ``misc/yamamoto/no_rsd``
+
+Enhancements
+++++++++++++
+* ``k_para`` stays box-:math:`z` for local LOS; ``mu_mode`` is box-centre
+  :math:`\hat k\cdot\hat n` (diagnostic); discrete-shell :math:`B_\ell` can use
+  voxel-averaged :math:`\mathcal{L}_\ell(\hat k\cdot\hat n)`
+* ``DiscreteShellWindowMatrix`` tracks ``ells_in`` / ``ells_out`` separately
+* ``los='midpoint'`` remains reserved (``NotImplementedError``)
+
 v0.9.0
 ------
 Features
