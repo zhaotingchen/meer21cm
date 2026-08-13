@@ -10,7 +10,8 @@ Opt-in alternative to 3D :func:`~meer21cm.power_ops.get_modelpk_conv`:
    continuous theory :math:`P_{\ell'}(k_{\mathrm{in}})` onto coarse
    estimator bins :math:`P_\ell(k_{\mathrm{out}})` (legacy ``k1dbins`` /
    ``k1dbins_out``).
-3. Evaluate convolved multipoles with :class:`WindowedMultipoleModel`.
+3. Evaluate convolved multipoles with :class:`WindowedMultipoleModel`
+   or the one-shot :func:`predict_windowed_multipoles`.
 
 HI windows use the selection that multiplies the data cube (not white noise).
 Galaxy windows use the same selection-weight cube (mask × optional
@@ -57,6 +58,8 @@ from .smooth_window import (
 )
 from .wide_angle import propose_odd_wa_ells
 
+import warnings
+
 logger = logging.getLogger(__name__)
 
 Tracer = Literal["hi", "gal", "cross"]
@@ -83,6 +86,29 @@ def propose_window_measure_ells(
     return tuple(range(0, 2 * max_ell + 1, 2))
 
 
+def propose_k_in(
+    k1dbins: ArrayLike,
+    *,
+    n: int = 80,
+    low_factor: float = 0.5,
+    high_factor: float = 1.5,
+) -> NDArray[np.floating]:
+    """
+    Fine theory :math:`k_{\\mathrm{in}}` spanning estimator bin edges.
+
+    Shared convention used by validation scripts and
+    :func:`predict_windowed_multipoles`.
+    """
+    edges = np.asarray(k1dbins, dtype=float)
+    if edges.size < 2:
+        raise ValueError("k1dbins must have at least two edges")
+    return np.geomspace(
+        max(float(edges[0]) * float(low_factor), 1e-3),
+        float(edges[-1]) * float(high_factor),
+        int(n),
+    )
+
+
 def propose_k1dbins_window(
     k1dbins_out: ArrayLike,
     *,
@@ -103,6 +129,266 @@ def propose_k1dbins_window(
         k_lo = max(k_lo, float(k_min))
     k_hi = float(edges_out[-1]) * high_factor
     return np.geomspace(k_lo, k_hi, int(n))
+
+
+def _excess_zero_mode_window_power(swe: "SmoothWindowEstimator") -> float:
+    """
+    Pair-count excess :math:`\\max(W(0)-W(k_{\\mathrm{fund}}), 0)`.
+
+    Measured :math:`W_L` bins start at the box fundamental; FFTLog edge
+    extrapolation already carries some of the low-``k`` peak. Passing the
+    full :meth:`~SmoothWindowEstimator.zero_mode_window_power` as ``W_zero``
+    therefore double-counts for sharp footprints — only the excess spike is
+    missing from the Hankel transform.
+    """
+    w0 = float(swe.zero_mode_window_power())
+    w_first = 0.0
+    if swe.W_ell is not None and 0 in swe.W_ell and swe.k is not None:
+        k_w = np.asarray(swe.k, dtype=float)
+        w0k = np.asarray(swe.W_ell[0], dtype=float)
+        finite = np.isfinite(k_w) & np.isfinite(w0k) & (k_w > 0)
+        if np.any(finite):
+            w_first = float(w0k[finite][0])
+    return max(w0 - w_first, 0.0)
+
+
+def predict_windowed_multipoles(
+    ps,
+    *,
+    continuous: Literal["identity", "smooth"] = "smooth",
+    k_in: ArrayLike | None = None,
+    ells: Sequence[int] = (0, 2, 4),
+    which: str = "auto_1",
+    nmu: int = 64,
+    los: str | None = None,
+    los_observer: ArrayLike | None = None,
+    k1dbins: ArrayLike | None = None,
+    k1dbins_window: ArrayLike | None = None,
+    n_window_bins: int = 1000,
+    n_los_samples: int = 1024,
+    k1dweights: ArrayLike | None = None,
+    los_weights: ArrayLike | None = None,
+    weights_hi: ArrayLike | None = None,
+    tracer: Tracer = "hi",
+    n_fftlog: int = 512,
+    n_k_eval: int = 128,
+    W_zero: float | Literal["excess"] | None = None,
+    box_volume: float | None = None,
+    theory_scale: ArrayLike | None = None,
+    n_k_in: int = 80,
+    wide_angle: bool | None = None,
+    wa_d: float | None = None,
+    wa_los: str | None = None,
+) -> dict[str, Any]:
+    """
+    One-shot continuous :math:`P_\\ell(k_{\\mathrm{in}})` × discrete-shell
+    window → estimator multipoles.
+
+    Unifies the identity / smooth prediction glue used by the Yamamoto
+    validation scripts: build (or skip) a
+    :class:`SmoothWindowEstimator`, form the shell map, build
+    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix`, evaluate
+    continuous theory via
+    :meth:`~meer21cm.model.ModelPowerSpectrum.get_theory_multipoles_kmu`,
+    and apply the matrix.
+
+    Parameters
+    ----------
+    ps :
+        :class:`~meer21cm.power.PowerSpectrum`-like object with
+        ``k1dbins``, ``multipole_bin_index_map``, and
+        ``get_theory_multipoles_kmu``.
+    continuous : {'identity', 'smooth'}, default 'smooth'
+        Discrete-shell continuous layer. ``'identity'`` needs no measured
+        :math:`W_L`; ``'smooth'`` accumulates one HI selection realisation.
+    k_in : array_like, optional
+        Fine theory nodes. Defaults to :func:`propose_k_in` on ``k1dbins``.
+    W_zero : float or {'excess'}, optional
+        Forwarded to
+        :meth:`SmoothWindowEstimator.build_window_matrix`. ``'excess'``
+        uses :func:`_excess_zero_mode_window_power` (pair-count spike minus
+        the first measured :math:`W_0` bin). Ignored for ``continuous=
+        'identity'``.
+    theory_scale : array_like, optional
+        Multiplicative kernel on continuous :math:`P_\\ell(k_{\\mathrm{in}})`
+        before the window (same length as ``k_in``). Use this for
+        analysis-specific resolution factors; map-making convolutions are
+        not modelled here.
+    box_volume, n_fftlog, n_k_eval, wide_angle, wa_d, wa_los :
+        Forwarded to the matrix builder.
+
+    Returns
+    -------
+    dict
+        ``k`` (``k_out``), ``P_ell``, ``k_in``, ``P_ell_unconvolved``,
+        ``ells``, ``window_matrix``, ``W_zero`` (resolved float or
+        ``None``), and ``continuous`` (the raw
+        :meth:`~meer21cm.model.ModelPowerSpectrum.get_theory_multipoles_kmu`
+        dict).
+    """
+    continuous_s = str(continuous).lower()
+    if continuous_s not in ("identity", "smooth"):
+        raise ValueError("continuous must be 'identity' or 'smooth'")
+
+    ells_t = tuple(int(e) for e in ells)
+    k1dbins_out = np.asarray(ps.k1dbins if k1dbins is None else k1dbins, dtype=float)
+    if k_in is None:
+        k_in_arr = propose_k_in(k1dbins_out, n=n_k_in)
+    else:
+        k_in_arr = np.asarray(k_in, dtype=float)
+
+    los_use = getattr(ps, "los", "global") if los is None else str(los)
+    obs_saved = getattr(ps, "los_observer", None)
+    los_saved = getattr(ps, "los", None)
+    if los_observer is not None:
+        ps.los_observer = np.asarray(los_observer, dtype=float)
+    ps.los = los_use
+
+    if los_weights is None:
+        los_weights = getattr(ps, "weights_1", None)
+
+    try:
+        mat: DiscreteShellWindowMatrix
+        w_zero_resolved: float | None = None
+        if continuous_s == "identity":
+            shell = ps.multipole_bin_index_map(
+                k1dbins=k1dbins_out,
+                k1dweights=k1dweights,
+                los=los_use,
+                n_los_samples=n_los_samples,
+                los_weights=los_weights,
+            )
+            ells_out = ells_t
+            ells_in = ells_t
+            do_wa = bool(wide_angle)
+            even = tuple(e for e in ells_out if e % 2 == 0)
+            if do_wa:
+                if not even:
+                    raise ValueError(
+                        "wide_angle requires at least one even output multipole"
+                    )
+                odds = propose_odd_wa_ells(even)
+                ells_in = tuple(sorted(set(even) | set(odds)))
+            mat = build_discrete_shell_window_matrix(
+                shell,
+                k_in=k_in_arr,
+                ells=ells_out,
+                ells_in=ells_in,
+                continuous="identity",
+                n_k_eval=n_k_eval,
+            )
+            if do_wa:
+                d_wa = wa_d
+                if d_wa is None:
+                    raise ValueError("wa_d is required when wide_angle=True")
+                los_wa = (
+                    wa_los
+                    if wa_los is not None
+                    else (
+                        los_use
+                        if los_use in ("firstpoint", "endpoint")
+                        else "firstpoint"
+                    )
+                )
+                mat.resum_input_odd_wide_angle(
+                    los=los_wa, d=float(d_wa), ells_even=even
+                )
+        else:
+            k_mode = getattr(ps, "k_mode", None)
+            k_fund = None
+            if k_mode is not None:
+                kpos = np.asarray(k_mode, dtype=float)
+                kpos = kpos[np.isfinite(kpos) & (kpos > 0)]
+                if kpos.size:
+                    k_fund = float(np.min(kpos))
+            if k1dbins_window is None:
+                k1dbins_window = propose_k1dbins_window(
+                    k1dbins_out, k_min=k_fund, n=n_window_bins
+                )
+            w_hi = weights_hi
+            if w_hi is None:
+                w_hi = getattr(ps, "weights_1", None)
+            swe = SmoothWindowEstimator.from_power_spectrum(
+                ps,
+                tracer=tracer,
+                ells=ells_t,
+                weights_hi=w_hi,
+                weights_grid_1=None,
+                k1dbins_window=k1dbins_window,
+                k1dbins_out=k1dbins_out,
+                los=los_use,
+                los_observer=getattr(ps, "los_observer", None),
+                wide_angle=bool(wide_angle) if wide_angle is not None else False,
+                wa_d=wa_d,
+                wa_los=wa_los,
+            )
+            swe.accumulate([swe.run_one(0)])
+            shell = ps.multipole_bin_index_map(
+                k1dbins=k1dbins_out,
+                k1dweights=k1dweights,
+                los=los_use,
+                n_los_samples=n_los_samples,
+                los_weights=los_weights,
+            )
+            if W_zero is None:
+                w_zero_resolved = None
+            elif isinstance(W_zero, str) and str(W_zero).lower() == "excess":
+                w_zero_resolved = _excess_zero_mode_window_power(swe)
+            else:
+                w_zero_resolved = float(W_zero)
+            build_kw: dict[str, Any] = dict(
+                shell_map=shell,
+                continuous="smooth",
+                n_fftlog=n_fftlog,
+                n_k_eval=n_k_eval,
+            )
+            if w_zero_resolved is not None:
+                build_kw["W_zero"] = w_zero_resolved
+            if box_volume is not None:
+                build_kw["box_volume"] = float(box_volume)
+            elif w_zero_resolved is not None:
+                build_kw["box_volume"] = float(
+                    np.prod(np.asarray(ps.box_len, dtype=float))
+                )
+            if wide_angle is not None:
+                build_kw["wide_angle"] = bool(wide_angle)
+            if wa_d is not None:
+                build_kw["wa_d"] = wa_d
+            if wa_los is not None:
+                build_kw["wa_los"] = wa_los
+            mat = swe.build_window_matrix(k_in_arr, **build_kw)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            cont = ps.get_theory_multipoles_kmu(
+                k_in_arr, ells=ells_t, nmu=nmu, which=which
+            )
+        P_in = {ell: np.asarray(cont["P_ell"][ell], dtype=float) for ell in ells_t}
+        if theory_scale is not None:
+            scale = np.asarray(theory_scale, dtype=float)
+            if scale.shape != k_in_arr.shape:
+                raise ValueError(
+                    "theory_scale must have the same shape as k_in "
+                    f"(got {scale.shape}, expected {k_in_arr.shape})"
+                )
+            P_in = {ell: P_in[ell] * scale for ell in ells_t}
+        P_win = mat.apply(P_in)
+    finally:
+        if los_saved is not None:
+            ps.los = los_saved
+        if los_observer is not None:
+            ps.los_observer = obs_saved
+
+    return {
+        "k": np.asarray(mat.k_out, dtype=float),
+        "P_ell": P_win,
+        "k_in": k_in_arr,
+        "P_ell_unconvolved": cont["P_ell"],
+        "ells": ells_t,
+        "window_matrix": mat,
+        "W_zero": w_zero_resolved,
+        "continuous": cont,
+    }
 
 
 @dataclass

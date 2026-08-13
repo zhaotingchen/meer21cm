@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 
 from meer21cm import MockSimulation
-from meer21cm.multipole_model import SmoothWindowEstimator, propose_k1dbins_window
-from meer21cm.smooth_window import build_discrete_shell_window_matrix
+from meer21cm.multipole_model import predict_windowed_multipoles, propose_k_in
 from meer21cm.util import redshift_to_freq
 
 ELLS = (0, 2, 4)
@@ -68,11 +65,7 @@ def _median_rel_diff(a, b) -> float:
 
 
 def _default_k_in(mock) -> np.ndarray:
-    return np.geomspace(
-        max(float(mock.k1dbins[0]) * 0.5, 1e-3),
-        float(mock.k1dbins[-1]) * 1.5,
-        K_IN_N,
-    )
+    return propose_k_in(mock.k1dbins, n=K_IN_N)
 
 
 def _k1dbins_from_box(mock, n_bins: int = 8) -> np.ndarray:
@@ -156,58 +149,35 @@ def _measure_endpoint(mock: MockSimulation, los_observer):
 
 
 def _identity_window_prediction(mock: MockSimulation, *, los_observer):
-    k_in = _default_k_in(mock)
-    shell = mock.multipole_bin_index_map(
-        k1dbins=mock.k1dbins,
+    out = predict_windowed_multipoles(
+        mock,
+        continuous="identity",
+        k_in=_default_k_in(mock),
+        ells=ELLS,
+        nmu=NMU,
         los="endpoint",
+        los_observer=los_observer,
         n_los_samples=N_LOS_SAMPLES,
-        los_weights=mock.weights_1,
+        n_k_eval=N_K_EVAL,
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        cont = mock.get_theory_multipoles_kmu(k_in, ells=ELLS, nmu=NMU, which="auto_1")
-    mat = build_discrete_shell_window_matrix(
-        shell, k_in=k_in, ells=ELLS, continuous="identity", n_k_eval=N_K_EVAL
-    )
-    return mat.apply(cont["P_ell"])
+    return out["P_ell"]
 
 
 def _smooth_window_prediction(mock: MockSimulation, *, los_observer):
-    k_in = _default_k_in(mock)
-    k1dbins = np.asarray(mock.k1dbins, dtype=float)
-    k_fund = float(np.asarray(mock.k_mode)[np.asarray(mock.k_mode) > 0].min())
-    k1dbins_window = propose_k1dbins_window(k1dbins, k_min=k_fund, n=N_WINDOW_BINS)
-    mock.los = "endpoint"
-    mock.los_observer = np.asarray(los_observer, dtype=float)
-    swe = SmoothWindowEstimator.from_power_spectrum(
+    out = predict_windowed_multipoles(
         mock,
-        tracer="hi",
-        ells=ELLS,
-        weights_hi=mock.weights_1,
-        weights_grid_1=None,
-        k1dbins_window=k1dbins_window,
-        k1dbins_out=k1dbins,
-        los="endpoint",
-        los_observer=mock.los_observer,
-    )
-    swe.accumulate([swe.run_one(0)])
-    shell = mock.multipole_bin_index_map(
-        k1dbins=k1dbins,
-        los="endpoint",
-        n_los_samples=N_LOS_SAMPLES,
-        los_weights=mock.weights_1,
-    )
-    mat = swe.build_window_matrix(
-        k_in,
-        shell_map=shell,
         continuous="smooth",
+        k_in=_default_k_in(mock),
+        ells=ELLS,
+        nmu=NMU,
+        los="endpoint",
+        los_observer=los_observer,
+        n_los_samples=N_LOS_SAMPLES,
+        n_window_bins=N_WINDOW_BINS,
         n_fftlog=N_FFTLOG,
         n_k_eval=N_K_EVAL,
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        cont = mock.get_theory_multipoles_kmu(k_in, ells=ELLS, nmu=NMU, which="auto_1")
-    return mat.apply(cont["P_ell"])
+    return out["P_ell"]
 
 
 def _median_over_seeds(seed_rels: list[dict[int, float]]) -> dict[int, float]:

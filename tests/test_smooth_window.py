@@ -12,6 +12,8 @@ from meer21cm.multipole_model import (
     accumulate_window_multipoles,
     make_galaxy_poisson_mean_density,
     make_im_selection_field,
+    predict_windowed_multipoles,
+    propose_k_in,
     propose_k1dbins_window,
     propose_window_measure_ells,
     run_smooth_window_realization,
@@ -210,6 +212,76 @@ def test_windowed_multipole_model_continuous_mu():
     )
     assert out["window_applied"] is False
     np.testing.assert_allclose(out["P_ell"][0], raw["P_ell"][0])
+
+
+def test_predict_windowed_multipoles_identity_and_smooth():
+    """One-shot helper returns finite identity / smooth windowed multipoles."""
+    from meer21cm import MockSimulation
+
+    mock = MockSimulation(
+        density="gaussian",
+        kaiser_rsd=False,
+        seed=0,
+        model_k_from_field=True,
+        mean_amp_1=1.0,
+    )
+    mock.box_len = np.asarray([200.0, 200.0, 200.0], dtype=float)
+    mock.box_ndim = np.asarray([32, 32, 32], dtype=int)
+    mock.propagate_field_k_to_model()
+    mock.k1dbins = np.linspace(0.05, 0.25, 6)
+    mock.field_1 = mock.mock_tracer_field_1
+    mock.weights_1 = np.ones_like(mock.field_1, dtype=float)
+
+    k_in = propose_k_in(mock.k1dbins, n=40)
+    ident = predict_windowed_multipoles(
+        mock,
+        continuous="identity",
+        k_in=k_in,
+        ells=(0, 2),
+        nmu=16,
+        n_k_eval=32,
+        n_los_samples=64,
+    )
+    assert set(ident) >= {
+        "k",
+        "P_ell",
+        "k_in",
+        "P_ell_unconvolved",
+        "ells",
+        "window_matrix",
+    }
+    assert ident["P_ell"][0].shape == (len(mock.k1dbins) - 1,)
+    assert np.all(np.isfinite(ident["P_ell"][0]))
+
+    scale = np.full_like(k_in, 1.1)
+    scaled = predict_windowed_multipoles(
+        mock,
+        continuous="identity",
+        k_in=k_in,
+        ells=(0, 2),
+        nmu=16,
+        n_k_eval=32,
+        n_los_samples=64,
+        theory_scale=scale,
+    )
+    np.testing.assert_allclose(scaled["P_ell"][0], 1.1 * ident["P_ell"][0])
+    np.testing.assert_allclose(scaled["P_ell"][2], 1.1 * ident["P_ell"][2])
+
+    mock.apply_taper_to_field(1, axis=(0, 1, 2))
+    mock.weights_grid_1 = mock.weights_1
+    smooth = predict_windowed_multipoles(
+        mock,
+        continuous="smooth",
+        k_in=k_in,
+        ells=(0, 2),
+        nmu=16,
+        n_window_bins=128,
+        n_fftlog=64,
+        n_k_eval=32,
+        n_los_samples=64,
+    )
+    assert np.all(np.isfinite(smooth["P_ell"][0]))
+    assert smooth["W_zero"] is None
 
 
 def test_anisotropic_operator_order_vs_conv3d():
