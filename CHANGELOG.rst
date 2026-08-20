@@ -12,8 +12,10 @@ Features
   :math:`Y_{\ell m}` helpers in ``spherical.py`` (pypower / Hand et al. convention)
 * odd Yamamoto poles use :math:`\mathrm{Im}(A_\ell F_0^*)` (even stay real); auto
   firstpoint :math:`\approx` minus endpoint on odd :math:`\ell`
-* voxel-averaged local-:math:`\mu` shell projector (``los_mu='local_average'``, default
-  for local LOS) on ``MultipoleShellMap`` / discrete-shell :math:`W`
+* voxel-averaged local-:math:`\mu` shell projector removed from the
+  windowed-multipole matrix: discrete-shell :math:`W` is the Yamamoto
+  :math:`|k|` average of :math:`W_{\ell\ell'}` (identity = k-rebin only).
+  Global PP modelling stays on 3D ``get_modelpk_conv`` then ``get_1d_power``
 * wa_order=1 odd wide-angle matrix (``wide_angle.py``) joined via
   ``DiscreteShellWindowMatrix.resum_input_odd_wide_angle``
 * forward ``los_observer`` through ``PowerSpectrum`` and ``SmoothWindowEstimator``
@@ -22,8 +24,8 @@ Features
 Enhancements
 ++++++++++++
 * ``k_para`` stays box-:math:`z` for local LOS; ``mu_mode`` is box-centre
-  :math:`\hat k\cdot\hat n` (diagnostic); discrete-shell :math:`B_\ell` can use
-  voxel-averaged :math:`\mathcal{L}_\ell(\hat k\cdot\hat n)`
+  :math:`\hat k\cdot\hat n` (diagnostic); discrete-shell :math:`W` does not
+  multiply by :math:`\mathcal{L}_\ell(\mu)`
 * ``DiscreteShellWindowMatrix`` tracks ``ells_in`` / ``ells_out`` separately
 * ``los='midpoint'`` remains reserved (``NotImplementedError``)
 * smooth-window Hankel can include an optional :math:`k=0` pair-count term

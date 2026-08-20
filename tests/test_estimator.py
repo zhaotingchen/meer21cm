@@ -219,50 +219,6 @@ def test_yamamoto_far_observer_matches_global():
         assert odd_max < 1e-3 * even_scale, f"ell={ell} odd/even {odd_max / even_scale}"
 
 
-def test_local_average_shell_matches_box_centre_far_observer():
-    """Far n̂≈ẑ: local_average L_ell ≈ L_ell(μ_z) ≈ box-centre."""
-    from meer21cm.smooth_window import build_discrete_shell_window_matrix
-    from meer21cm.util import legendre_polynomial_with_factor
-
-    ndim = (12, 12, 12)
-    box_len = np.array([80.0, 80.0, 80.0])
-    field = _smooth_gaussian_field(ndim, box_len, seed=5)
-    k1dbins = np.linspace(0.12, 0.35, 5)
-    R = 1.0e5 * float(np.max(box_len))
-    obs = (-0.5 * box_len[0], -0.5 * box_len[1], R)
-    fps = FieldPowerSpectrum(
-        field, box_len, los="endpoint", los_observer=obs, _skip_specification=True
-    )
-    shell_c = fps.multipole_bin_index_map(
-        k1dbins=k1dbins, los="endpoint", los_mu="box_centre"
-    )
-    shell_a = fps.multipole_bin_index_map(
-        k1dbins=k1dbins,
-        los="endpoint",
-        los_mu="local_average",
-        n_los_samples=64,
-        ells=(0, 2, 4),
-    )
-    assert shell_a.legendre_plain is not None
-    mu = np.asarray(shell_c.mu)
-    for ell in (0, 2, 4):
-        L_mu = np.poly1d(legendre_polynomial_with_factor(ell))(mu) / (2 * ell + 1)
-        rel = _median_rel_diff(shell_a.legendre_plain[ell], L_mu)
-        assert rel < 1e-3, f"ell={ell} local_average vs box-z rel {rel}"
-
-    fps_g = FieldPowerSpectrum(field, box_len, los="global", _skip_specification=True)
-    shell_g = fps_g.multipole_bin_index_map(k1dbins=k1dbins, los="global")
-    k_in = np.geomspace(0.08, 0.45, 32)
-    mat_a = build_discrete_shell_window_matrix(
-        shell_a, k_in=k_in, ells=(0, 2, 4), continuous="identity", n_k_eval=64
-    )
-    mat_g = build_discrete_shell_window_matrix(
-        shell_g, k_in=k_in, ells=(0, 2, 4), continuous="identity", n_k_eval=64
-    )
-    rel_m = _median_rel_diff(mat_a.matrix, mat_g.matrix)
-    assert rel_m < 1e-3, f"identity W local_average vs global rel {rel_m}"
-
-
 def test_no_rsd_discrete_mu_yamamoto_matches_global():
     """Isotropic Gaussian field: P2/P4 from discrete μ only; far Yamamoto ≈ global."""
     ndim = (24, 24, 24)

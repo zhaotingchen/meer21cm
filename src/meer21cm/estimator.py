@@ -38,8 +38,6 @@ from .power_ops import (
 )
 from .spherical import (
     get_real_Ylm,
-    mean_legendre_over_los,
-    sample_los_unit_vectors,
     unit_khat_from_k_vec,
     unit_los_from_observer,
 )
@@ -59,16 +57,17 @@ _LOCAL_LOS: frozenset[str] = frozenset({"firstpoint", "endpoint"})
 
 @dataclass
 class MultipoleShellMap:
-    """
+    r"""
     Discrete Fourier-mode → 1D-|k| bin assignment for multipole estimation.
 
-    Shares the same bin edges and weighting convention as
+    Uses the same bin edges and weighting convention as
     :meth:`FieldPowerSpectrum.measure_multipoles` so that
-    :mod:`meer21cm.smooth_window` can apply the identical shell projector.
-    For local LOS, :attr:`mu` is :math:`\\hat k\\cdot\\hat n_{\\mathrm{ref}}`
-    at the box centre (diagnostic). The discrete-shell projector may instead
-    use voxel-averaged :attr:`legendre_plain` (``los_mu='local_average'``).
-    The Yamamoto estimator itself does not use per-mode :math:`\\mu`.
+    :mod:`meer21cm.smooth_window` can apply the identical shell average.
+    For ``los='global'``, :attr:`mu` is :math:`k_z/|k|` and is used as
+    the discrete-:math:`\mu` projector. For local LOS, :attr:`mu` is
+    :math:`\hat k\cdot\hat n_{\mathrm{ref}}` at the box centre
+    (diagnostic); the Yamamoto discrete-shell sum averages in
+    :math:`|k|` only.
 
     Attributes
     ----------
@@ -78,8 +77,8 @@ class MultipoleShellMap:
     k : ndarray
         Per-mode :math:`|k|` (same shape as the FFT grid ``k_mode``).
     mu : ndarray
-        Per-mode :math:`\\mu` from :attr:`FieldPowerSpectrum.mu_mode`
-        (box-z or box-centre :math:`\\hat n`).
+        Per-mode :math:`\mu` from :attr:`FieldPowerSpectrum.mu_mode`
+        (box-z or box-centre :math:`\hat n`).
     weights : ndarray
         Per-mode binning weights (default ones; same role as ``k1dweights``).
     k1dbins : ndarray
@@ -90,11 +89,6 @@ class MultipoleShellMap:
         Number of modes with positive weight per bin.
     los : str
         Line-of-sight convention used for :attr:`mu`.
-    los_mu : str
-        ``'box_centre'`` or ``'local_average'`` (ignored for global).
-    legendre_plain : dict or None
-        Optional per-mode :math:`\\langle\\mathcal{L}_\\ell(\\hat k\\cdot
-        \\hat n)\\rangle` for local-average shells.
     """
 
     bin_index: NDArray[np.integer]
@@ -105,8 +99,6 @@ class MultipoleShellMap:
     k_eff: NDArray[np.floating]
     nmodes: NDArray[np.floating]
     los: LOSMode | str = "global"
-    los_mu: str = "box_centre"
-    legendre_plain: dict[int, NDArray[np.floating]] | None = None
 
 
 @dataclass
@@ -728,25 +720,6 @@ class FieldPowerSpectrum(Specification):
             self._require_implemented_los("mu_mode")
         raise ValueError(f"Unhandled los={los_s!r}")
 
-    @staticmethod
-    def _resolve_los_mu(los: str, los_mu: str | None) -> str:
-        """
-        Default discrete-shell :math:`\\mu` projector for ``los``.
-
-        ``global`` → box-centre diagnostic (unused in the shell sum);
-        local Yamamoto → ``local_average`` unless overridden.
-        """
-        if los not in _LOCAL_LOS:
-            return "box_centre"
-        if los_mu is None:
-            return "local_average"
-        los_mu_s = str(los_mu).lower()
-        if los_mu_s not in ("box_centre", "local_average"):
-            raise ValueError(
-                "los_mu must be 'box_centre' or 'local_average', got %r" % los_mu
-            )
-        return los_mu_s
-
     def _khat(
         self,
     ) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
@@ -920,18 +893,14 @@ class FieldPowerSpectrum(Specification):
         k1dbins: ArrayLike | None = None,
         k1dweights: ArrayLike | None = None,
         los: LOSMode | str | None = None,
-        los_mu: str | None = None,
-        n_los_samples: int = 1024,
-        los_weights: ArrayLike | None = None,
-        ells: Sequence[int] | None = None,
-        los_rng: np.random.Generator | int | None = None,
     ) -> MultipoleShellMap:
         r"""
         Map each Fourier mode to a 1D :math:`|k|` multipole bin.
 
-        Uses the same edges, :attr:`k_mode`, :attr:`mu_mode`, and weighting
-        convention as :meth:`measure_multipoles`. Intended for the opt-in
-        discrete-shell window matrix (:mod:`meer21cm.smooth_window`).
+        Uses the same edges, :attr:`k_mode`, and weighting convention as
+        :meth:`measure_multipoles`. Intended for the opt-in discrete-shell
+        window matrix (:mod:`meer21cm.smooth_window`), which averages the
+        continuous :math:`W_{\ell\ell'}` kernel over those shells.
         Yamamoto :meth:`measure_multipoles` does not use this map.
 
         Parameters
@@ -941,22 +910,8 @@ class FieldPowerSpectrum(Specification):
         k1dweights : array_like, optional
             Per-mode weights (same role as in :meth:`measure_multipoles`).
         los : {'global', 'firstpoint', 'endpoint'}, optional
-            LOS for the shell projector. Defaults to :attr:`los` on this
-            object (e.g. inherited from a :class:`~meer21cm.power.PowerSpectrum`
-            / mock instance).
-        los_mu : {'box_centre', 'local_average'}, optional
-            Local-LOS discrete-\(\mu\) projector. Default ``local_average``
-            for ``firstpoint`` / ``endpoint``; ignored for ``global``.
-        n_los_samples : int, default 1024
-            Max voxels for ``los_mu='local_average'``.
-        los_weights : array_like, optional
-            Voxel weights for sampling \(\hat n(x)\). Defaults to
-            :attr:`weights_1` (or ones).
-        ells : sequence of int, optional
-            Multipoles stored in :attr:`MultipoleShellMap.legendre_plain`.
-            Default ``(0, 1, 2, 3, 4, 6, 8)`` for local average.
-        los_rng : numpy.random.Generator or int, optional
-            RNG for voxel sampling.
+            LOS stored on the shell map (diagnostic :attr:`mu` only).
+            Defaults to :attr:`los` on this object.
 
         Returns
         -------
@@ -1012,33 +967,6 @@ class FieldPowerSpectrum(Specification):
             if w_sum > 0:
                 k_eff[i] = np.sum(k_mode * w_bin) / w_sum
 
-        los_mu_s = self._resolve_los_mu(los_eff, los_mu)
-        legendre_plain: dict[int, NDArray[np.floating]] | None = None
-        if los_eff in _LOCAL_LOS:
-            if los_mu_s == "local_average":
-                ells_t = (
-                    tuple(int(e) for e in ells)
-                    if ells is not None
-                    else (0, 1, 2, 3, 4, 6, 8)
-                )
-                if los_weights is None:
-                    if self.weights_1 is not None:
-                        los_weights = self.weights_1
-                    else:
-                        los_weights = np.ones(
-                            np.asarray(self.field_1).shape, dtype=float
-                        )
-                n_hats, w_hat = sample_los_unit_vectors(
-                    self.x_vec,
-                    self._require_los_observer(),
-                    los_weights=los_weights,
-                    n_los_samples=int(n_los_samples),
-                    rng=los_rng,
-                )
-                legendre_plain = mean_legendre_over_los(
-                    self._khat(), n_hats, ells_t, sample_weights=w_hat
-                )
-
         return MultipoleShellMap(
             bin_index=bin_index,
             k=k_mode,
@@ -1048,8 +976,6 @@ class FieldPowerSpectrum(Specification):
             k_eff=k_eff,
             nmodes=nmodes,
             los=los_eff,
-            los_mu=los_mu_s if los_eff in _LOCAL_LOS else "box_centre",
-            legendre_plain=legendre_plain,
         )
 
     def measure_multipoles(

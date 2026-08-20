@@ -5,8 +5,6 @@ from scipy.special import eval_legendre
 
 from meer21cm.spherical import (
     get_real_Ylm,
-    mean_legendre_over_los,
-    sample_los_unit_vectors,
     unit_khat_from_k_vec,
     unit_los_from_observer,
     unit_vectors_from_components,
@@ -66,29 +64,3 @@ def test_unit_los_and_khat():
     assert khx.shape == (2, 2, 2)
     # k=0 mode
     assert khx[0, 0, 0] == 0.0
-
-
-def test_mean_legendre_over_two_nhat():
-    """Voxel average of L_ell(k·n) matches the brute-force mean of two n-hats."""
-    k_vec = (
-        np.array([0.0, 0.3]),
-        np.array([0.0, 0.0]),
-        np.array([0.0, 0.4]),
-    )
-    kh = unit_khat_from_k_vec(k_vec)
-    n1 = np.array([0.0, 0.0, 1.0])
-    n2 = np.array([1.0, 0.0, 0.0])
-    hats = np.stack([n1, n2], axis=0)
-    got = mean_legendre_over_los(kh, hats, ells=(0, 2, 4))
-    kh_stack = np.stack(kh, axis=-1)
-    for ell in (0, 2, 4):
-        mu1 = np.clip(kh_stack @ n1, -1.0, 1.0)
-        mu2 = np.clip(kh_stack @ n2, -1.0, 1.0)
-        expected = 0.5 * (eval_legendre(ell, mu1) + eval_legendre(ell, mu2))
-        np.testing.assert_allclose(got[ell], expected)
-
-    x_vec = (np.array([0.5, 1.5]), np.array([0.5]), np.array([0.5]))
-    hats_s, w_s = sample_los_unit_vectors(x_vec, (0.0, 0.0, 100.0), n_los_samples=16)
-    assert hats_s.shape[1] == 3
-    assert w_s.shape[0] == hats_s.shape[0]
-    np.testing.assert_allclose(np.linalg.norm(hats_s, axis=1), 1.0)

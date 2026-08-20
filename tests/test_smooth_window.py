@@ -240,7 +240,6 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         ells=(0, 2),
         nmu=16,
         n_k_eval=32,
-        n_los_samples=64,
     )
     assert set(ident) >= {
         "k",
@@ -261,11 +260,23 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         ells=(0, 2),
         nmu=16,
         n_k_eval=32,
-        n_los_samples=64,
         theory_scale=scale,
     )
     np.testing.assert_allclose(scaled["P_ell"][0], 1.1 * ident["P_ell"][0])
     np.testing.assert_allclose(scaled["P_ell"][2], 1.1 * ident["P_ell"][2])
+
+    mode = np.full(np.asarray(mock.k_mode).shape, 1.1, dtype=float)
+    mode_scaled = predict_windowed_multipoles(
+        mock,
+        continuous="identity",
+        k_in=k_in,
+        ells=(0, 2),
+        nmu=16,
+        n_k_eval=32,
+        mode_scale=mode,
+    )
+    np.testing.assert_allclose(mode_scaled["P_ell"][0], 1.1 * ident["P_ell"][0])
+    np.testing.assert_allclose(mode_scaled["P_ell"][2], 1.1 * ident["P_ell"][2])
 
     mock.apply_taper_to_field(1, axis=(0, 1, 2))
     mock.weights_grid_1 = mock.weights_1
@@ -278,7 +289,6 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         n_window_bins=128,
         n_fftlog=64,
         n_k_eval=32,
-        n_los_samples=64,
     )
     assert np.all(np.isfinite(smooth["P_ell"][0]))
     assert smooth["W_zero"] is None
@@ -388,6 +398,54 @@ def test_cross_worker_runs_smoke():
     assert np.all(np.isfinite(res.P_ell[0]))
 
 
+def test_identity_window_is_block_diagonal_k_rebin():
+    """
+    Identity W is |k|-shell rebin only: no discrete-μ mixing between
+    multipoles. P_0-only theory yields P_2^out ≈ 0; P_0^out matches the
+    shell average of interpolated P_0(|k_n|).
+    """
+    from meer21cm.power_ops import bin_3d_to_1d
+    from meer21cm.smooth_window import _linear_interpolation_matrix
+    from scipy.interpolate import interp1d
+
+    nx = ny = nz = 16
+    box_len = np.array([160.0, 160.0, 160.0])
+    k1dbins = np.linspace(0.08, 0.32, 6)
+    fps = FieldPowerSpectrum(
+        np.ones((nx, ny, nz)),
+        box_len,
+        los="endpoint",
+        los_observer=(0.0, 0.0, 1.0e5),
+        _skip_specification=True,
+    )
+    shell = fps.multipole_bin_index_map(k1dbins=k1dbins)
+    k_in = np.geomspace(0.05, 0.4, 48)
+    n_k_eval = 96
+    mat = build_discrete_shell_window_matrix(
+        shell, k_in=k_in, ells=(0, 2), continuous="identity", n_k_eval=n_k_eval
+    )
+    n_out = len(k1dbins) - 1
+    n_in = len(k_in)
+    W = mat.matrix.reshape(2, n_out, 2, n_in)
+    assert float(np.max(np.abs(W[0, :, 1, :]))) < 1e-12
+    assert float(np.max(np.abs(W[1, :, 0, :]))) < 1e-12
+
+    P_in = {0: np.exp(-((k_in / 0.15) ** 2)), 2: np.zeros_like(k_in)}
+    P_out = mat.apply(P_in)
+    assert float(np.max(np.abs(P_out[2]))) < 1e-12
+
+    kpos = shell.k[np.isfinite(shell.k) & (shell.k > 0)]
+    k_eval = np.geomspace(0.5 * float(kpos.min()), 1.5 * float(kpos.max()), n_k_eval)
+    p_eval = _linear_interpolation_matrix(k_eval, k_in) @ P_in[0]
+    p0_of_k = interp1d(
+        k_eval, p_eval, kind="linear", bounds_error=False, fill_value=0.0
+    )(shell.k)
+    expected, _, _ = bin_3d_to_1d(p0_of_k, shell.k, k1dbins, weights=shell.weights)
+    m = np.isfinite(expected) & np.isfinite(P_out[0])
+    assert m.any()
+    np.testing.assert_allclose(P_out[0][m], expected[m], rtol=1e-10, atol=1e-12)
+
+
 def test_identity_continuous_matches_anisotropic_shell():
     """
     continuous='identity' + discrete shells should reproduce Legendre binning
@@ -395,7 +453,6 @@ def test_identity_continuous_matches_anisotropic_shell():
     """
     from scipy.special import eval_legendre
     from meer21cm.power_ops import get_k_vector, get_vec_mode, bin_3d_to_1d
-    from meer21cm.util import legendre_polynomial_with_factor
 
     nx = ny = nz = 20
     box_len = np.array([200.0, 200.0, 200.0])
@@ -426,7 +483,6 @@ def test_identity_continuous_matches_anisotropic_shell():
     P_in = {}
     for ell in ells:
         L = eval_legendre(int(ell), mu_nodes)
-        # P(k,μ) = exp(-(k/0.15)^2) * (1 + 0.4 μ^2)
         pkmu = np.exp(-((k_in[:, None] / 0.15) ** 2)) * (
             1.0 + 0.4 * mu_nodes[None, :] ** 2
         )
@@ -450,6 +506,71 @@ def test_identity_continuous_matches_anisotropic_shell():
     if m2.sum() > 0:
         rel2 = np.abs(P_win[2][m2] - P_disc[2][m2]) / np.abs(P_disc[2][m2])
         assert np.median(rel2) < 0.15
+
+
+def test_discrete_mu_sampling_with_identity_window():
+    """
+    Uniform weights, no beam/sampling/MAS: identity continuous W + discrete
+    shell sum recovers discrete-μ multipoles of the 3D model.
+    """
+    import warnings
+
+    from meer21cm import MockSimulation
+    from meer21cm.util import redshift_to_freq
+
+    nu_arr = np.linspace(redshift_to_freq(0.8), redshift_to_freq(0.6), 100)
+    mock = MockSimulation(
+        seed=42,
+        ra_range=(0, 20),
+        dec_range=(-20, 20),
+        nu=nu_arr,
+        hp_nside=64,
+        mean_amp_1=1.0,
+        density="gaussian",
+        include_beam=[False, False],
+        include_sky_sampling=[False, False],
+        compensate=[False, False],
+        sigma_v_1=200,
+    )
+    mock.k1dbins = np.linspace(0.01, 0.25, 11)
+    mock.field_1 = mock.mock_tracer_field_1
+
+    p1d_mock, _, _ = mock.get_1d_power(mock.auto_power_3d_1)
+    p1d_model, _, _ = mock.get_1d_power(mock.auto_power_tracer_1_model)
+    m = np.isfinite(p1d_mock) & np.isfinite(p1d_model) & (np.abs(p1d_model) > 0)
+    rel_mm = np.abs(p1d_mock[m] - p1d_model[m]) / np.abs(p1d_model[m])
+    assert np.median(rel_mm) < 0.05
+    assert np.max(rel_mm) < 0.1
+
+    ells = (0, 2, 4)
+    shell = mock.multipole_bin_index_map(k1dbins=mock.k1dbins)
+    k_in = np.geomspace(
+        max(float(mock.k1dbins[0]) * 0.5, 1e-3),
+        float(mock.k1dbins[-1]) * 1.5,
+        60,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        cont = mock.get_theory_multipoles_kmu(k_in, ells=ells, nmu=64, which="auto_1")
+    mat = build_discrete_shell_window_matrix(
+        shell, k_in=k_in, ells=ells, continuous="identity", n_k_eval=128
+    )
+    P_win = mat.apply(cont["P_ell"])
+
+    for ell in ells:
+        p_model_ell, _, _ = mock.get_1d_power(
+            mock.auto_power_tracer_1_model, multipole_ell=ell
+        )
+        m_ell = (
+            np.isfinite(P_win[ell])
+            & np.isfinite(p_model_ell)
+            & (np.abs(p_model_ell) > 0)
+        )
+        rel = np.abs(P_win[ell][m_ell] - p_model_ell[m_ell]) / np.abs(
+            p_model_ell[m_ell]
+        )
+        assert np.median(rel) < 0.01, "ell=%d median rel=%s" % (ell, np.median(rel))
+        assert np.max(rel) < 0.05, "ell=%d max rel=%s" % (ell, np.max(rel))
 
 
 def test_identity_does_not_need_W_ell():
@@ -555,80 +676,12 @@ def test_field_power_spectrum_los_global_and_reserved():
         fps_m.multipole_bin_index_map(k1dbins=k1dbins)
 
 
-def test_discrete_mu_sampling_with_identity_window():
-    """
-    Uniform weights, no beam/sampling/MAS: identity continuous W + discrete
-    shell sum recovers discrete-μ multipoles of the 3D model.
-    """
-    import warnings
-
-    from meer21cm import MockSimulation
-    from meer21cm.util import redshift_to_freq
-
-    nu_arr = np.linspace(redshift_to_freq(0.8), redshift_to_freq(0.6), 100)
-    mock = MockSimulation(
-        ra_range=(0, 20),
-        dec_range=(-20, 20),
-        nu=nu_arr,
-        hp_nside=64,
-        mean_amp_1=1.0,
-        density="gaussian",
-        include_beam=[False, False],
-        include_sky_sampling=[False, False],
-        compensate=[False, False],
-        sigma_v_1=200,
-    )
-    mock.k1dbins = np.linspace(0.01, 0.25, 11)
-    mock.field_1 = mock.mock_tracer_field_1
-
-    # mock (3D→1D) vs model (3D→1D) monopole
-    p1d_mock, _, _ = mock.get_1d_power(mock.auto_power_3d_1)
-    p1d_model, _, _ = mock.get_1d_power(mock.auto_power_tracer_1_model)
-    m = np.isfinite(p1d_mock) & np.isfinite(p1d_model) & (np.abs(p1d_model) > 0)
-    rel_mm = np.abs(p1d_mock[m] - p1d_model[m]) / np.abs(p1d_model[m])
-    # model is close to mock
-    assert np.median(rel_mm) < 0.05
-    assert np.max(rel_mm) < 0.1
-
-    ells = (0, 2, 4)
-    shell = mock.multipole_bin_index_map(k1dbins=mock.k1dbins)
-    k_in = np.geomspace(
-        max(float(mock.k1dbins[0]) * 0.5, 1e-3),
-        float(mock.k1dbins[-1]) * 1.5,
-        60,
-    )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        cont = mock.get_theory_multipoles_kmu(k_in, ells=ells, nmu=64, which="auto_1")
-    mat = build_discrete_shell_window_matrix(
-        shell, k_in=k_in, ells=ells, continuous="identity", n_k_eval=128
-    )
-    P_win = mat.apply(cont["P_ell"])
-
-    for ell in ells:
-        p_model_ell, _, _ = mock.get_1d_power(
-            mock.auto_power_tracer_1_model, multipole_ell=ell
-        )
-        m_ell = (
-            np.isfinite(P_win[ell])
-            & np.isfinite(p_model_ell)
-            & (np.abs(p_model_ell) > 0)
-        )
-        rel = np.abs(P_win[ell][m_ell] - p_model_ell[m_ell]) / np.abs(
-            p_model_ell[m_ell]
-        )
-        # mock naive 3d to 1d model is close to continuous model with window
-        assert np.median(rel) < 0.01, "ell=%d median rel=%s" % (ell, np.median(rel))
-        assert np.max(rel) < 0.05, "ell=%d max rel=%s" % (ell, np.max(rel))
-
-
 def test_continuous_window_matrix_with_tapering():
     import warnings
 
     from meer21cm import MockSimulation
     from meer21cm.util import redshift_to_freq
 
-    # build simple simulation
     z_min, z_max = 0.6, 0.8
     nu_arr = np.linspace(redshift_to_freq(z_max), redshift_to_freq(z_min), 100)
     mock = MockSimulation(
@@ -648,24 +701,17 @@ def test_continuous_window_matrix_with_tapering():
     mock.field_1 = mock.mock_tracer_field_1
     mock.weights_1 = np.ones_like(mock.field_1)
     mock.apply_taper_to_field(1, axis=(0, 1, 2))
-    # 3D model convolution uses weights_grid_1 (Field FFT uses weights_1)
     mock.weights_grid_1 = mock.weights_1
-    # get the 3D to 1D exact averaging
     ells = (0, 2, 4)
     k1dbins = mock.k1dbins
     shell = mock.multipole_bin_index_map(k1dbins=k1dbins)
 
-    # Discrete shells: mock FFT vs weight-convolved 3D model
     p3d_model = mock.auto_power_tracer_1_model
-    p3d_mock = mock.auto_power_3d_1
     P_disc_model = {}
-    P_disc_mock = {}
     for ell in ells:
         P_disc_model[ell], keff_disc, _ = mock.get_1d_power(
             p3d_model, multipole_ell=ell
         )
-        P_disc_mock[ell], keff_disc, _ = mock.get_1d_power(p3d_mock, multipole_ell=ell)
-    # Measure W_L on fine k1dbins_window; ensure enough sampling in low-k
     k_fund = float(np.asarray(mock.k_mode)[np.asarray(mock.k_mode) > 0].min())
     k1dbins_window = propose_k1dbins_window(mock.k1dbins, k_min=k_fund, n=1000)
     swe = SmoothWindowEstimator.from_power_spectrum(
@@ -673,7 +719,7 @@ def test_continuous_window_matrix_with_tapering():
         tracer="hi",
         ells=ells,
         weights_hi=mock.weights_1,
-        weights_grid_1=None,  # avoid double-counting: weights_hi is already the full taper
+        weights_grid_1=None,
         k1dbins_window=k1dbins_window,
         k1dbins_out=mock.k1dbins,
     )
@@ -682,7 +728,6 @@ def test_continuous_window_matrix_with_tapering():
         max(float(k1dbins[0]) * 0.5, 1e-3), float(k1dbins[-1]) * 1.5, 160
     )
 
-    # Smooth continuous kernel + discrete shells
     mat_smooth = swe.build_window_matrix(
         k_in,
         shell_map=shell,
@@ -698,7 +743,6 @@ def test_continuous_window_matrix_with_tapering():
         )
 
     P_win_smooth = mat_smooth.apply(cont_fine["P_ell"])
-    # ell=4 is noisy
     for ell in (0, 2):
         m_ell = (
             np.isfinite(P_win_smooth[ell])
@@ -1201,7 +1245,6 @@ def test_build_discrete_shell_window_matrix_errors():
         shell,
         k_in=np.geomspace(0.1, 0.3, 8),
         ells=(0,),
-        ells_conv=(0, 2),
         continuous="identity",
         n_k_eval=32,
     )

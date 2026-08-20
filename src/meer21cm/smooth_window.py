@@ -3,19 +3,43 @@ Discrete-shell survey-window matrix for theory multipoles.
 
 Builds a dense matrix that maps continuous theory multipoles
 :math:`P_{\ell'}(k_{\mathrm{in}})` to estimator bin multipoles
-:math:`P_\ell(k_{\mathrm{out}})`. Each output row averages over discrete
-FFT modes in a :math:`k`-shell using the same projector as
-:meth:`~meer21cm.estimator.FieldPowerSpectrum.measure_multipoles`:
+:math:`P_\ell(k_{\mathrm{out}})`. The continuous kernel
+:math:`W_{L\ell'}(k,k')` (identity or smooth) is evaluated on each FFT
+mode and then sampled the same way as the data estimator.
+
+**Global plane-parallel** (``los='global'``; same projector as
+:meth:`~meer21cm.power.PowerSpectrum.get_1d_power`): reconstruct
+:math:`P(k,\mu)=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)` from the theory
+multipoles (after any survey :math:`W_{L\ell'}`) and bin with
+:math:`(2\ell+1)\mathcal{L}_\ell(\mu)` on the Cartesian grid
 
 .. math::
 
     W_{\ell i,\,\ell' j}
     =
     \sum_{\mathbf{k}_n\in S_i}
-    B_{\ell,i}(\mathbf{k}_n)
-    \sum_{L}
+    \frac{w_n}{U_i}\,
+    t(\mathbf{k}_n)\,
+    (2\ell+1)\,\mathcal{L}_\ell(\mu_n)
+    \sum_L
     \mathcal{L}_L(\mu_n)\,
     W_{L\ell'}\bigl(|\mathbf{k}_n|,\,k'_j\bigr).
+
+With ``continuous='identity'`` this is exactly discrete-:math:`\mu`
+3D→1D of the continuous :math:`P_{\ell'}`.
+
+**Yamamoto** (``los='firstpoint'`` / ``'endpoint'``): the estimator
+already forms :math:`P_\ell(\mathbf{k})`, so the outer sum is an
+isotropic :math:`|k|`-shell average (no extra Legendre projector)
+
+.. math::
+
+    W_{\ell i,\,\ell' j}
+    =
+    \sum_{\mathbf{k}_n\in S_i}
+    \frac{w_n}{U_i}\,
+    t(\mathbf{k}_n)\,
+    W_{\ell\ell'}\bigl(|\mathbf{k}_n|,\,k'_j\bigr).
 
 Notation
 --------
@@ -25,29 +49,19 @@ Notation
 - :math:`S_i` — discrete Fourier modes with
   :math:`|\mathbf{k}_n|` in bin :math:`i` (shell membership from
   :attr:`~meer21cm.estimator.MultipoleShellMap.bin_index`).
-- :math:`\mu_n` — LOS cosine of mode :math:`\mathbf{k}_n`
-  (:attr:`~meer21cm.estimator.MultipoleShellMap.mu`).
-- :math:`B_{\ell,i}(\mathbf{k}_n)` — multipole binning weight matching
-  :meth:`~meer21cm.estimator.FieldPowerSpectrum.measure_multipoles`:
-
-  .. math::
-
-      B_{\ell,i}(\mathbf{k}_n)
-      =
-      \frac{w_n}{U_i}\,
-      (2\ell+1)\,\mathcal{L}_\ell(\mu_n),
-
-  where :math:`w_n` is the per-mode weight and
+- :math:`w_n` — per-mode binning weight;
   :math:`U_i=\sum_{\mathbf{k}_m\in S_i} w_m` normalises the shell average.
-- :math:`L` — continuous multipoles used to rebuild anisotropic power at a
-  fixed :math:`|\mathbf{k}|`,
-  :math:`P(\mathbf{k})=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)`.
+- :math:`t(\mathbf{k}_n)` — optional same-:math:`k` transfer (``mode_scale``;
+  MAS / gridding compensation). Does **not** enter :math:`U_i`.
+- :math:`\mu_n` — LOS cosine of mode :math:`\mathbf{k}_n`
+  (:attr:`~meer21cm.estimator.MultipoleShellMap.mu`); used only for
+  ``los='global'``.
 - :math:`W_{L\ell'}(k,k')` — continuous response kernel (see below).
 
 The continuous kernel :math:`W_{L\ell'}(k,k')` may be:
 
 - **identity** — :math:`\delta_{L\ell'}\delta(k-k')` (no survey convolution;
-  only discrete :math:`\mu`-selection on the FFT grid);
+  discrete-shell sampling of continuous :math:`P_{\ell'}` only);
 - **smooth** — Hankel / Wigner response from measured window multipoles
   :math:`W_L(k)` (selection field or randoms; pypower-style smooth window):
 
@@ -61,24 +75,26 @@ The continuous kernel :math:`W_{L\ell'}(k,k')` may be:
 
   .. math::
 
-      W_{L\ell'}(k,k')
+      W_{\ell\ell'}(k,k')
       =
       \frac{2}{\pi}
-      (-1)^{L/2}(-1)^{\ell'/2}
+      (-1)^{\ell/2}(-1)^{\ell'/2}
       \int_0^{\infty}\!\mathrm{d}s\,s^{2}\,
-      j_{L}(ks)\,j_{\ell'}(k's)
+      j_{\ell}(ks)\,j_{\ell'}(k's)
       \sum_{\mathcal{L}}
-      C_{L\ell'\mathcal{L}}\,
+      C_{\ell\ell'\mathcal{L}}\,
       Q_{\mathcal{L}}(s),
 
-  with Wigner–Legendre couplings :math:`C_{L\ell'\mathcal{L}}` from
+  with Wigner–Legendre couplings :math:`C_{\ell\ell'\mathcal{L}}` from
   :func:`wigner3j_square` (``prefactor=True``). In code the
   :math:`k'^2\mathrm{d}k'` volume element is included when building the
   discrete matrix columns.
 
-Default 3D modelling via :func:`~meer21cm.power_ops.get_modelpk_conv` is
-unchanged. Local Yamamoto LOS will reuse the same shell map once
-implemented on the estimator.
+Continuous theory multipoles still come from the Gauss–Legendre
+:math:`\mu` integral
+(:meth:`~meer21cm.model.ModelPowerSpectrum.get_theory_multipoles_kmu`).
+The discrete FFT sampling of those multipoles is this matrix, not a
+second :math:`\mu` integral.
 
 References
 ----------
@@ -157,16 +173,6 @@ def wigner3j_square(
     return qvals[::-1], coeffs[::-1]
 
 
-def _weights_trapz(x: ArrayLike) -> NDArray[np.floating]:
-    """Trapezoidal quadrature weights for integrating :math:`f(x)\\,\\mathrm{d}x`."""
-    x_np = np.asarray(x, dtype=float)
-    w = np.empty_like(x_np)
-    w[0] = (x_np[1] - x_np[0]) / 2.0
-    w[-1] = (x_np[-1] - x_np[-2]) / 2.0
-    w[1:-1] = (x_np[2:] - x_np[:-2]) / 2.0
-    return w
-
-
 def _legendre_plain(ell: int, mu: ArrayLike) -> NDArray[np.floating]:
     """Plain :math:`\\mathcal{L}_\\ell(\\mu)` (no :math:`2\\ell+1` factor)."""
     return np.asarray(eval_legendre(int(ell), np.asarray(mu, dtype=float)), dtype=float)
@@ -180,6 +186,16 @@ def _legendre_with_factor(ell: int, mu: ArrayLike) -> NDArray[np.floating]:
         ),
         dtype=float,
     )
+
+
+def _weights_trapz(x: ArrayLike) -> NDArray[np.floating]:
+    """Trapezoidal quadrature weights for integrating :math:`f(x)\\,\\mathrm{d}x`."""
+    x_np = np.asarray(x, dtype=float)
+    w = np.empty_like(x_np)
+    w[0] = (x_np[1] - x_np[0]) / 2.0
+    w[-1] = (x_np[-1] - x_np[-2]) / 2.0
+    w[1:-1] = (x_np[2:] - x_np[:-2]) / 2.0
+    return w
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +418,10 @@ class DiscreteShellWindowMatrix:
     Dense multipole window matrix plus bin metadata.
 
     Maps concatenated theory multipoles on ``k_in`` to estimator bins
-    ``k_out`` (see :func:`build_discrete_shell_window_matrix`).
+    ``k_out`` (see :func:`build_discrete_shell_window_matrix`). Identity
+    continuous :math:`W` has no survey convolution: global LOS still
+    applies discrete-:math:`\\mu` mixing; local LOS is block-diagonal
+    :math:`|k|` rebin.
 
     Attributes
     ----------
@@ -666,7 +685,7 @@ def identity_window_response_blocks(
     ells_in: Sequence[int],
 ) -> dict[tuple[int, int], NDArray[np.floating]]:
     r"""
-    Identity continuous blocks :math:`W_{L\ell'}=\delta_{L\ell'}\delta(k-k')`.
+    Identity continuous blocks :math:`W_{\ell\ell'}=\delta_{\ell\ell'}\delta(k-k')`.
 
     Implemented as linear interpolation from ``k_in`` onto ``k_eval`` on the
     diagonal multipole blocks (no :math:`k^2\mathrm{d}k` weight — the stencil
@@ -692,7 +711,6 @@ def build_discrete_shell_window_matrix(
     k_in: ArrayLike | None = None,
     ells: Sequence[int] = (0, 2, 4),
     ells_in: Sequence[int] | None = None,
-    ells_conv: Sequence[int] | None = None,
     continuous: str = "smooth",
     n_fftlog: int = 512,
     n_k_eval: int = 256,
@@ -702,6 +720,7 @@ def build_discrete_shell_window_matrix(
     nmodes: ArrayLike | None = None,
     box_volume: float | None = None,
     W_zero: float = 0.0,
+    mode_scale: ArrayLike | None = None,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Build the discrete-shell multipole window matrix.
@@ -721,22 +740,19 @@ def build_discrete_shell_window_matrix(
         Observed / output multipoles (matrix rows).
     ells_in : sequence of int, optional
         Theory input multipoles (matrix columns). Defaults to ``ells``.
-    ells_conv : sequence of int, optional
-        Continuous convolved multipoles :math:`L` used in
-        :math:`P(\mathbf{k})=\sum_L P_L(|k|)\mathcal{L}_L(\mu)`.
-        Defaults to ``ells`` for ``continuous='identity'``, else sorted keys
-        of ``W_ell`` (or ``ells`` if empty).
     continuous : {'smooth', 'identity'}, default 'smooth'
         Continuous :math:`W_{L\ell'}` kernel. ``'identity'`` uses
-        :math:`\delta_{L\ell'}\delta(k-k')` so the discrete shell sum alone
-        encodes FFT :math:`\mu`-selection (uniform / no survey window).
-        ``'smooth'`` builds the Hankel / Wigner kernel from ``W_ell``
-        (pypower-style smooth window).
+        :math:`\delta_{L\ell'}\delta(k-k')` (no survey convolution).
+        ``'smooth'`` builds the Hankel / Wigner kernel from ``W_ell``.
+        The outer discrete-shell sum then samples that kernel on the FFT
+        grid: global LOS uses the same :math:`(2\ell+1)\mathcal{L}_\ell(\mu)`
+        projector as :meth:`~meer21cm.power.PowerSpectrum.get_1d_power`;
+        local LOS averages in :math:`|k|` only.
     n_fftlog : int, default 512
         FFTlog grid size for Hankel transforms (smooth only).
     n_k_eval : int, default 256
         Intermediate :math:`|k|` grid for interpolating continuous
-        :math:`W_{L\ell'}` onto discrete modes.
+        :math:`W_{\ell\ell'}` onto discrete modes.
     k_log_min, k_log_max : float, optional
         Ends of the intermediate log ``k`` grid (smooth only).
     q : float, default 0
@@ -750,6 +766,12 @@ def build_discrete_shell_window_matrix(
     W_zero : float, default 0
         :math:`k=0` monopole window power (see
         :func:`window_zero_mode_power`).
+    mode_scale : array_like, optional
+        Same-\(k\) multiplicative transfer on each Cartesian Fourier mode
+        (same shape as ``shell_map.k``). Multiplies the theory contribution
+        inside the discrete-shell sum but does **not** enter the bin
+        normalisation \(U=\sum w_n\). Use for MAS / gridding compensation
+        (and any other exact per-mode grid transfer).
 
     Returns
     -------
@@ -770,12 +792,14 @@ def build_discrete_shell_window_matrix(
         if ells_in is None
         else tuple(int(e) for e in ells_in)
     )
-    if ells_conv is not None:
-        ells_L = tuple(int(e) for e in ells_conv)
-    elif continuous_s == "identity":
-        ells_L = tuple(sorted(set(ells_out_t) | set(ells_in_t)))
-    else:
-        ells_L = tuple(sorted(set(ells_out_t) | set(ells_in_t)))
+    los = str(getattr(shell_map, "los", "global"))
+    use_discrete_mu = los == "global"
+    # Intermediate L for P(k,μ)=∑_L P_L L_L, then (2ℓ+1) L_ℓ projection.
+    ells_L = (
+        tuple(sorted(set(ells_out_t) | set(ells_in_t)))
+        if use_discrete_mu
+        else ells_out_t
+    )
 
     k_in_np = np.asarray(k_in, dtype=float)
     k_out = np.asarray(shell_map.k_eff, dtype=float)
@@ -841,28 +865,30 @@ def build_discrete_shell_window_matrix(
         )
 
     bin_index = np.asarray(shell_map.bin_index)
-    mu = np.asarray(shell_map.mu, dtype=float)
     weights = np.asarray(shell_map.weights, dtype=float)
-    stored_L = getattr(shell_map, "legendre_plain", None) or {}
-
-    matrix = np.zeros((n_ell_out * n_out, n_ell_in * n_in), dtype=float)
+    mu = np.asarray(shell_map.mu, dtype=float)
+    if mode_scale is None:
+        mode_scale_arr = None
+    else:
+        mode_scale_arr = np.asarray(mode_scale, dtype=float)
+        if mode_scale_arr.shape != k_mode.shape:
+            raise ValueError(
+                "mode_scale must match shell_map.k shape "
+                f"(got {mode_scale_arr.shape}, expected {k_mode.shape})"
+            )
 
     L_plain: dict[int, NDArray[np.floating]] = {}
     ell_factor: dict[int, NDArray[np.floating]] = {}
-    for L in ells_L:
-        if int(L) in stored_L:
-            L_plain[int(L)] = np.asarray(stored_L[int(L)], dtype=float)
-        else:
+    if use_discrete_mu:
+        for L in ells_L:
             L_plain[int(L)] = _legendre_plain(L, mu)
-    for ell in ells_out_t:
-        if int(ell) in stored_L:
-            ell_factor[int(ell)] = (2 * int(ell) + 1) * np.asarray(
-                stored_L[int(ell)], dtype=float
-            )
-        else:
+        for ell in ells_out_t:
             ell_factor[int(ell)] = _legendre_with_factor(ell, mu)
 
+    matrix = np.zeros((n_ell_out * n_out, n_ell_in * n_in), dtype=float)
+
     for i_out, ell_out in enumerate(ells_out_t):
+        ell_out_i = int(ell_out)
         for i_bin in range(n_out):
             in_bin = bin_index == i_bin
             w_bin = weights * in_bin
@@ -871,21 +897,35 @@ def build_discrete_shell_window_matrix(
                 continue
             k_n = k_mode[in_bin]
             w_n = weights[in_bin]
-            B_ell = ell_factor[ell_out][in_bin] * (w_n / U)
-            L_on_bin = {L: L_plain[L][in_bin] for L in ells_L}
+            # mode_scale is a theory transfer at each Cartesian mode; keep U
+            # as the estimator's bin weight sum (selection / k1dweights only).
+            t_n = 1.0 if mode_scale_arr is None else mode_scale_arr[in_bin]
+            wt = (w_n / U) * t_n
 
             row_index = i_out * n_out + i_bin
-            for i_in, ell_in in enumerate(ells_in_t):
-                acc = np.zeros(n_in, dtype=float)
-                for L in ells_L:
-                    key = (int(L), int(ell_in))
-                    w_rows = np.asarray(interps[key](k_n), dtype=float)
-                    coeff = B_ell * L_on_bin[L]
-                    acc += np.sum(coeff[:, None] * w_rows, axis=0)
-                matrix[
-                    row_index,
-                    i_in * n_in : (i_in + 1) * n_in,
-                ] = acc
+            if use_discrete_mu:
+                B_ell = ell_factor[ell_out_i][in_bin] * wt
+                L_on_bin = {L: L_plain[L][in_bin] for L in ells_L}
+                for i_in, ell_in in enumerate(ells_in_t):
+                    acc = np.zeros(n_in, dtype=float)
+                    for L in ells_L:
+                        w_rows = np.asarray(
+                            interps[(int(L), int(ell_in))](k_n), dtype=float
+                        )
+                        acc += np.sum((B_ell * L_on_bin[L])[:, None] * w_rows, axis=0)
+                    matrix[
+                        row_index,
+                        i_in * n_in : (i_in + 1) * n_in,
+                    ] = acc
+            else:
+                for i_in, ell_in in enumerate(ells_in_t):
+                    w_rows = np.asarray(
+                        interps[(ell_out_i, int(ell_in))](k_n), dtype=float
+                    )
+                    matrix[
+                        row_index,
+                        i_in * n_in : (i_in + 1) * n_in,
+                    ] = np.sum(wt[:, None] * w_rows, axis=0)
 
     return DiscreteShellWindowMatrix(
         matrix=matrix,
