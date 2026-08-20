@@ -36,12 +36,19 @@ from meer21cm.smooth_window import (
 )
 from meer21cm.util import legendre_polynomial_with_factor
 
+# Far +z observer: n_ref = z, so endpoint identity W matches 3D→1D.
+_FAR_OBS = (0.0, 0.0, 1.0e5)
+
 
 def _shell_map(ndim=(8, 8, 8), box_len=(80.0, 80.0, 80.0), k1dbins=None):
     if k1dbins is None:
         k1dbins = np.linspace(0.1, 0.4, 5)
     fps = FieldPowerSpectrum(
-        np.ones(ndim), box_len, los="global", _skip_specification=True
+        np.ones(ndim),
+        box_len,
+        los="endpoint",
+        los_observer=_FAR_OBS,
+        _skip_specification=True,
     )
     return fps.multipole_bin_index_map(k1dbins=k1dbins)
 
@@ -107,7 +114,11 @@ def test_matrix_shape_contract():
     ]
     acc = accumulate_window_multipoles(results)
     fps = FieldPowerSpectrum(
-        np.ones(ndim), box_len, los="global", _skip_specification=True
+        np.ones(ndim),
+        box_len,
+        los="endpoint",
+        los_observer=_FAR_OBS,
+        _skip_specification=True,
     )
     shell = fps.multipole_bin_index_map(k1dbins=k1dbins)
     mat = build_discrete_shell_window_matrix(
@@ -240,6 +251,8 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         ells=(0, 2),
         nmu=16,
         n_k_eval=32,
+        los="endpoint",
+        los_observer=_FAR_OBS,
     )
     assert set(ident) >= {
         "k",
@@ -261,6 +274,8 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         nmu=16,
         n_k_eval=32,
         theory_scale=scale,
+        los="endpoint",
+        los_observer=_FAR_OBS,
     )
     np.testing.assert_allclose(scaled["P_ell"][0], 1.1 * ident["P_ell"][0])
     np.testing.assert_allclose(scaled["P_ell"][2], 1.1 * ident["P_ell"][2])
@@ -274,6 +289,8 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         nmu=16,
         n_k_eval=32,
         mode_scale=mode,
+        los="endpoint",
+        los_observer=_FAR_OBS,
     )
     np.testing.assert_allclose(mode_scaled["P_ell"][0], 1.1 * ident["P_ell"][0])
     np.testing.assert_allclose(mode_scaled["P_ell"][2], 1.1 * ident["P_ell"][2])
@@ -289,6 +306,8 @@ def test_predict_windowed_multipoles_identity_and_smooth():
         n_window_bins=128,
         n_fftlog=64,
         n_k_eval=32,
+        los="endpoint",
+        los_observer=_FAR_OBS,
     )
     assert np.all(np.isfinite(smooth["P_ell"][0]))
     assert smooth["W_zero"] is None
@@ -342,7 +361,8 @@ def test_anisotropic_operator_order_vs_conv3d():
     fps = FieldPowerSpectrum(
         np.ones((nx, ny, nz)),
         box_len,
-        los="global",
+        los="endpoint",
+        los_observer=_FAR_OBS,
         _skip_specification=True,
     )
     shell = fps.multipole_bin_index_map(k1dbins=k1dbins)
@@ -355,6 +375,7 @@ def test_anisotropic_operator_order_vs_conv3d():
         ells=ells,
         n_fftlog=128,
         n_k_eval=64,
+        discrete_mu=True,
     )
 
     from scipy.interpolate import interp1d
@@ -400,9 +421,11 @@ def test_cross_worker_runs_smoke():
 
 def test_identity_window_is_block_diagonal_k_rebin():
     """
-    Identity W is |k|-shell rebin only: no discrete-μ mixing between
-    multipoles. P_0-only theory yields P_2^out ≈ 0; P_0^out matches the
-    shell average of interpolated P_0(|k_n|).
+    Far-observer endpoint identity W matches discrete-μ 3D→1D.
+
+    P_0-only theory: P_0^out is the shell average of interpolated
+    P_0(|k_n|); P_2^out is the same average of
+    (2·2+1) L_2(μ) P_0(|k_n|) (Cartesian μ sampling, not identically 0).
     """
     from meer21cm.power_ops import bin_3d_to_1d
     from meer21cm.smooth_window import _linear_interpolation_matrix
@@ -422,17 +445,16 @@ def test_identity_window_is_block_diagonal_k_rebin():
     k_in = np.geomspace(0.05, 0.4, 48)
     n_k_eval = 96
     mat = build_discrete_shell_window_matrix(
-        shell, k_in=k_in, ells=(0, 2), continuous="identity", n_k_eval=n_k_eval
+        shell,
+        k_in=k_in,
+        ells=(0, 2),
+        continuous="identity",
+        n_k_eval=n_k_eval,
+        discrete_mu=True,
     )
-    n_out = len(k1dbins) - 1
-    n_in = len(k_in)
-    W = mat.matrix.reshape(2, n_out, 2, n_in)
-    assert float(np.max(np.abs(W[0, :, 1, :]))) < 1e-12
-    assert float(np.max(np.abs(W[1, :, 0, :]))) < 1e-12
 
     P_in = {0: np.exp(-((k_in / 0.15) ** 2)), 2: np.zeros_like(k_in)}
     P_out = mat.apply(P_in)
-    assert float(np.max(np.abs(P_out[2]))) < 1e-12
 
     kpos = shell.k[np.isfinite(shell.k) & (shell.k > 0)]
     k_eval = np.geomspace(0.5 * float(kpos.min()), 1.5 * float(kpos.max()), n_k_eval)
@@ -440,10 +462,18 @@ def test_identity_window_is_block_diagonal_k_rebin():
     p0_of_k = interp1d(
         k_eval, p_eval, kind="linear", bounds_error=False, fill_value=0.0
     )(shell.k)
-    expected, _, _ = bin_3d_to_1d(p0_of_k, shell.k, k1dbins, weights=shell.weights)
-    m = np.isfinite(expected) & np.isfinite(P_out[0])
+    expected0, _, _ = bin_3d_to_1d(p0_of_k, shell.k, k1dbins, weights=shell.weights)
+    m = np.isfinite(expected0) & np.isfinite(P_out[0])
     assert m.any()
-    np.testing.assert_allclose(P_out[0][m], expected[m], rtol=1e-10, atol=1e-12)
+    np.testing.assert_allclose(P_out[0][m], expected0[m], rtol=1e-10, atol=1e-12)
+
+    factor2 = np.poly1d(legendre_polynomial_with_factor(2))(shell.mu)
+    expected2, _, _ = bin_3d_to_1d(
+        p0_of_k * factor2, shell.k, k1dbins, weights=shell.weights
+    )
+    m2 = np.isfinite(expected2) & np.isfinite(P_out[2])
+    assert m2.any()
+    np.testing.assert_allclose(P_out[2][m2], expected2[m2], rtol=1e-10, atol=1e-12)
 
 
 def test_identity_continuous_matches_anisotropic_shell():
@@ -468,7 +498,11 @@ def test_identity_continuous_matches_anisotropic_shell():
     k1dbins = np.linspace(0.06, 0.28, 7)
     ells = (0, 2)
     fps = FieldPowerSpectrum(
-        np.ones((nx, ny, nz)), box_len, los="global", _skip_specification=True
+        np.ones((nx, ny, nz)),
+        box_len,
+        los="endpoint",
+        los_observer=_FAR_OBS,
+        _skip_specification=True,
     )
     shell = fps.multipole_bin_index_map(k1dbins=k1dbins)
 
@@ -495,6 +529,7 @@ def test_identity_continuous_matches_anisotropic_shell():
         ells=ells,
         continuous="identity",
         n_k_eval=128,
+        discrete_mu=True,
     )
     P_win = mat.apply(P_in)
 
@@ -543,6 +578,8 @@ def test_discrete_mu_sampling_with_identity_window():
     assert np.max(rel_mm) < 0.1
 
     ells = (0, 2, 4)
+    mock.los = "endpoint"
+    mock.los_observer = np.asarray(_FAR_OBS, dtype=float)
     shell = mock.multipole_bin_index_map(k1dbins=mock.k1dbins)
     k_in = np.geomspace(
         max(float(mock.k1dbins[0]) * 0.5, 1e-3),
@@ -553,7 +590,12 @@ def test_discrete_mu_sampling_with_identity_window():
         warnings.simplefilter("ignore", UserWarning)
         cont = mock.get_theory_multipoles_kmu(k_in, ells=ells, nmu=64, which="auto_1")
     mat = build_discrete_shell_window_matrix(
-        shell, k_in=k_in, ells=ells, continuous="identity", n_k_eval=128
+        shell,
+        k_in=k_in,
+        ells=ells,
+        continuous="identity",
+        n_k_eval=128,
+        discrete_mu=True,
     )
     P_win = mat.apply(cont["P_ell"])
 
@@ -579,7 +621,11 @@ def test_identity_does_not_need_W_ell():
     k1dbins = np.linspace(0.1, 0.35, 5)
     k_in = np.geomspace(0.08, 0.4, 16)
     fps = FieldPowerSpectrum(
-        np.ones(ndim), box_len, los="global", _skip_specification=True
+        np.ones(ndim),
+        box_len,
+        los="endpoint",
+        los_observer=_FAR_OBS,
+        _skip_specification=True,
     )
     shell = fps.multipole_bin_index_map(k1dbins=k1dbins)
     mat = build_discrete_shell_window_matrix(
@@ -704,6 +750,8 @@ def test_continuous_window_matrix_with_tapering():
     mock.weights_grid_1 = mock.weights_1
     ells = (0, 2, 4)
     k1dbins = mock.k1dbins
+    mock.los = "endpoint"
+    mock.los_observer = np.asarray(_FAR_OBS, dtype=float)
     shell = mock.multipole_bin_index_map(k1dbins=k1dbins)
 
     p3d_model = mock.auto_power_tracer_1_model
@@ -734,6 +782,7 @@ def test_continuous_window_matrix_with_tapering():
         continuous="smooth",
         n_fftlog=256,
         n_k_eval=128,
+        discrete_mu=True,
     )
 
     with warnings.catch_warnings():
@@ -1229,6 +1278,25 @@ def test_linear_interpolation_matrix_edge_cases():
     assert np.isclose(mat[3].sum(), 1.0)
 
 
+def test_window_matrix_rejects_global_los():
+    """Window route is Yamamoto-only; global LOS is the 3D get_1d_power path."""
+    fps = FieldPowerSpectrum(
+        np.ones((8, 8, 8)),
+        [80.0, 80.0, 80.0],
+        los="global",
+        _skip_specification=True,
+    )
+    shell = fps.multipole_bin_index_map(k1dbins=np.linspace(0.1, 0.4, 5))
+    assert shell.los == "global"
+    with pytest.raises(ValueError, match="legacy 3D path"):
+        build_discrete_shell_window_matrix(
+            shell,
+            k_in=np.geomspace(0.1, 0.3, 5),
+            ells=(0,),
+            continuous="identity",
+        )
+
+
 def test_build_discrete_shell_window_matrix_errors():
     shell = _shell_map()
     with pytest.raises(TypeError, match="k_in is required"):
@@ -1253,7 +1321,11 @@ def test_build_discrete_shell_window_matrix_errors():
 
 def test_discrete_shell_matrix_zero_weight_bin_skipped():
     fps = FieldPowerSpectrum(
-        np.ones((8, 8, 8)), [80.0, 80.0, 80.0], los="global", _skip_specification=True
+        np.ones((8, 8, 8)),
+        [80.0, 80.0, 80.0],
+        los="endpoint",
+        los_observer=_FAR_OBS,
+        _skip_specification=True,
     )
     k1dbins = np.linspace(0.1, 0.4, 5)
     k1dweights = np.ones_like(fps.k_mode)
@@ -1350,6 +1422,8 @@ def test_continuous_window_matrix_taper_periodic_box():
         k_min=float(np.asarray(mock.k_mode)[np.asarray(mock.k_mode) > 0].min()),
         n=400,
     )
+    mock.los = "endpoint"
+    mock.los_observer = np.asarray(_FAR_OBS, dtype=float)
     swe = SmoothWindowEstimator.from_power_spectrum(
         mock,
         tracer="hi",
@@ -1358,6 +1432,8 @@ def test_continuous_window_matrix_taper_periodic_box():
         weights_grid_1=None,
         k1dbins_window=k1dbins_window,
         k1dbins_out=mock.k1dbins,
+        los="endpoint",
+        los_observer=_FAR_OBS,
     )
     swe.accumulate([swe.run_one(0)])
     k_in = np.geomspace(
@@ -1370,6 +1446,7 @@ def test_continuous_window_matrix_taper_periodic_box():
         continuous="smooth",
         n_fftlog=256,
         n_k_eval=128,
+        discrete_mu=True,
     )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)

@@ -9,9 +9,11 @@ Yamamoto-matched alternative to 3D :func:`~meer21cm.power_ops.get_modelpk_conv`
    ``k1dbins_window`` via :class:`SmoothWindowEstimator`.
 2. Build a discrete-shell matrix
    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` that maps
-   continuous theory :math:`P_{\ell'}(k_{\mathrm{in}})` onto coarse
-   estimator bins :math:`P_\ell(k_{\mathrm{out}})` by an isotropic
-   :math:`|k|` average (no extra discrete-:math:`\\mu` projector).
+   continuous theory     :math:`P_{\ell'}(k_{\mathrm{in}})` onto coarse
+   estimator bins :math:`P_\ell(k_{\mathrm{out}})` with the same
+   discrete-:math:`\\mu` projector as
+   :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` (far observer
+   matches 3D→1D). ``los='global'`` is not a window path.
 3. Evaluate convolved multipoles with :class:`WindowedMultipoleModel`
    or the one-shot :func:`predict_windowed_multipoles`.
 
@@ -20,8 +22,9 @@ Galaxy windows use the same selection-weight cube (mask × optional
 :math:`\mathrm{d}N/\mathrm{d}z`); ``tot_num_galaxies`` only sets a Poisson
 sampling density used to *estimate* that selection (then amplitude is
 restored). Field multipoles use
-:class:`~meer21cm.estimator.FieldPowerSpectrum` (``los='global'`` or
-local Yamamoto ``firstpoint`` / ``endpoint``). Default 3D modelling on
+:class:`~meer21cm.estimator.FieldPowerSpectrum` (Yamamoto
+``firstpoint`` / ``endpoint`` only; ``los='global'`` raises). Default
+3D modelling on
 :class:`~meer21cm.power.PowerSpectrum` is unchanged.
 
 Window multipoles are scaled by the same weight-squared renorm
@@ -56,6 +59,7 @@ from .smooth_window import (
     WindowEllMap,
     apply_discrete_shell_window_matrix,
     build_discrete_shell_window_matrix,
+    require_yamamoto_los,
     window_zero_mode_power,
 )
 from .wide_angle import propose_odd_wa_ells
@@ -180,11 +184,15 @@ def predict_windowed_multipoles(
     wide_angle: bool | None = None,
     wa_d: float | None = None,
     wa_los: str | None = None,
+    discrete_mu: bool = False,
 ) -> dict[str, Any]:
     """
     One-shot continuous :math:`P_\\ell(k_{\\mathrm{in}})` × discrete-shell
-    window → estimator multipoles (Yamamoto-matched :math:`|k|` average;
-    identity :math:`W` is k-rebin only).
+    window → estimator multipoles.
+
+    ``discrete_mu=True``: far-observer plane-parallel
+    :math:`\\mu=\\hat k\\cdot\\hat z` (identity :math:`W` matches 3D→1D).
+    ``discrete_mu=False`` (default): Yamamoto :math:`|k|` shells.
 
     Unifies the identity / smooth prediction glue used by the Yamamoto
     validation scripts: build (or skip) a
@@ -202,7 +210,7 @@ def predict_windowed_multipoles(
         ``get_theory_multipoles_kmu``.
     continuous : {'identity', 'smooth'}, default 'smooth'
         Discrete-shell continuous layer. ``'identity'`` needs no measured
-        :math:`W_L` (isotropic :math:`|k|` rebin only); ``'smooth'``
+        :math:`W_L` (no survey convolution). ``'smooth'``
         accumulates one HI selection realisation.
     k_in : array_like, optional
         Fine theory nodes. Defaults to :func:`propose_k_in` on ``k1dbins``.
@@ -224,6 +232,11 @@ def predict_windowed_multipoles(
         sum.
     box_volume, n_fftlog, n_k_eval, wide_angle, wa_d, wa_los :
         Forwarded to the matrix builder.
+    discrete_mu : bool, default False
+        Forwarded to
+        :func:`~meer21cm.smooth_window.build_discrete_shell_window_matrix`.
+        True: far-observer :math:`\\mu=\\hat k\\cdot\\hat z`. False:
+        Yamamoto :math:`|k|` shells.
 
     Returns
     -------
@@ -245,7 +258,8 @@ def predict_windowed_multipoles(
     else:
         k_in_arr = np.asarray(k_in, dtype=float)
 
-    los_use = getattr(ps, "los", "global") if los is None else str(los)
+    los_use = getattr(ps, "los", "endpoint") if los is None else str(los)
+    require_yamamoto_los(los_use)
     obs_saved = getattr(ps, "los_observer", None)
     los_saved = getattr(ps, "los", None)
     if los_observer is not None:
@@ -280,6 +294,7 @@ def predict_windowed_multipoles(
                 continuous="identity",
                 n_k_eval=n_k_eval,
                 mode_scale=mode_scale,
+                discrete_mu=discrete_mu,
             )
             if do_wa:
                 d_wa = wa_d
@@ -360,6 +375,7 @@ def predict_windowed_multipoles(
                 build_kw["wa_los"] = wa_los
             if mode_scale is not None:
                 build_kw["mode_scale"] = mode_scale
+            build_kw["discrete_mu"] = bool(discrete_mu)
             mat = swe.build_window_matrix(k_in_arr, **build_kw)
 
         with warnings.catch_warnings():
@@ -763,12 +779,16 @@ class SmoothWindowEstimator:
         Coarse estimator bin edges (matrix ``k_out``; usually ``ps.k1dbins``).
     ells : sequence, default (0, 2, 4)
         Multipoles to measure / store.
-    los : {'global', 'endpoint', 'firstpoint', 'midpoint'}, default 'global'
-        Line-of-sight convention for
+    los : {'endpoint', 'firstpoint'}, default 'endpoint'
+        Yamamoto LOS for
         :class:`~meer21cm.estimator.FieldPowerSpectrum`.
+        ``los='global'`` is rejected (use the 3D ``get_1d_power`` path).
     los_observer : array_like, optional
-        Observer position for local Yamamoto LOS (Mpc). ``from_power_spectrum``
-        defaults this to ``ps.box_origin``.
+        Observer position for local Yamamoto LOS (Mpc). Defaults to a far
+        observer along :math:`+z` so :math:`\\hat n_{\\mathrm{ref}}=\\hat z`
+        (plane-parallel Yamamoto; identity :math:`W` matches 3D→1D).
+        ``from_power_spectrum`` uses ``ps.los_observer`` or ``ps.box_origin``
+        when present.
     tracer : {'hi', 'gal', 'cross'}
         HI selection auto, galaxy randoms auto, or HI×gal cross window.
     weights_hi : ndarray, optional
@@ -802,7 +822,7 @@ class SmoothWindowEstimator:
         box_len,
         k1dbins=None,
         ells=(0, 2, 4),
-        los="global",
+        los="endpoint",
         los_observer=None,
         tracer="hi",
         weights_hi=None,
@@ -829,10 +849,12 @@ class SmoothWindowEstimator:
         # Legacy alias: estimator / shell-map edges (not the W_L measure grid).
         self.k1dbins = self.k1dbins_out
         self.ells = tuple(int(e) for e in ells)
-        self.los = str(los).lower()
-        self.los_observer = (
-            None if los_observer is None else np.asarray(los_observer, dtype=float)
-        )
+        self.los = require_yamamoto_los(los)
+        if los_observer is None:
+            # Far +z: n_ref = z, so identity W matches get_1d_power of the 3D cube.
+            self.los_observer = np.array([0.0, 0.0, 1.0e12], dtype=float)
+        else:
+            self.los_observer = np.asarray(los_observer, dtype=float)
         self.wide_angle = bool(wide_angle)
         self.wa_d = None if wa_d is None else float(wa_d)
         self.wa_los = None if wa_los is None else str(wa_los).lower()
@@ -918,7 +940,7 @@ class SmoothWindowEstimator:
             kw = np.asarray(k1dbins_window, dtype=float).copy()
             kw[0] = max(float(kw[0]), k_fund)
             k1dbins_window = kw
-        kwargs.setdefault("los", getattr(ps, "los", "global"))
+        kwargs.setdefault("los", getattr(ps, "los", "endpoint"))
         if "los_observer" not in kwargs:
             los_observer = getattr(ps, "los_observer", None)
             if los_observer is None:
@@ -1039,8 +1061,9 @@ class SmoothWindowEstimator:
 
         Uses :attr:`k1dbins_out` (legacy estimator edges), not the fine
         :attr:`k1dbins_window` used to measure :math:`W_L`. The map is
-        :math:`|k|`-shell membership for the discrete-shell window; it does
-        not store a discrete-:math:`\\mu` projector.
+        :math:`|k|`-shell membership for the discrete-shell window. For a
+        far observer, :attr:`~meer21cm.estimator.MultipoleShellMap.mu` is
+        :math:`\\mu_z` and is used as the discrete-:math:`\\mu` projector.
         """
         shape = None
         for candidate in (
@@ -1096,9 +1119,10 @@ class SmoothWindowEstimator:
             :meth:`make_shell_map` from :attr:`k1dbins_out`.
         continuous : {'smooth', 'identity'}, default 'smooth'
             ``'identity'`` needs no accumulated ``W_ell`` (no survey
-            convolution; discrete-shell sampling of continuous
-            :math:`P_{\ell'}`). ``'smooth'`` requires :meth:`accumulate`
+            convolution). ``'smooth'`` requires :meth:`accumulate`
             first (uses measured :attr:`k_window` / :attr:`W_ell`).
+            Pass ``discrete_mu=True`` for far-observer
+            :math:`\\mu=\\hat z` 3D→1D sampling.
         wide_angle : bool, optional
             If True, include wa_order=1 odd theory columns then resum so
             :meth:`~meer21cm.smooth_window.DiscreteShellWindowMatrix.apply`
@@ -1165,8 +1189,9 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
     RSD only; **no** beam, map sampling, or MAS compensation — those belong in
     the window), forms unconvolved multipoles at fine :math:`k_{\\mathrm{in}}`
     by a continuous :math:`\\mu` integral, then optionally applies a
-    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` (global LOS:
-    discrete-:math:`\\mu` 3D→1D; local LOS: :math:`|k|` average).
+    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` (discrete
+    :math:`\\mu` sampling via box-centre :math:`\\hat n_{\\mathrm{ref}}`;
+    far observer matches 3D→1D). ``los='global'`` is not a window path.
     Does **not** use :func:`~meer21cm.power_ops.get_modelpk_conv`.
 
     Parameters

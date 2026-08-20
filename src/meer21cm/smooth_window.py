@@ -7,39 +7,21 @@ Builds a dense matrix that maps continuous theory multipoles
 :math:`W_{L\ell'}(k,k')` (identity or smooth) is evaluated on each FFT
 mode and then sampled the same way as the data estimator.
 
-**Global plane-parallel** (``los='global'``; same projector as
-:meth:`~meer21cm.power.PowerSpectrum.get_1d_power`): reconstruct
-:math:`P(k,\mu)=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)` from the theory
-multipoles (after any survey :math:`W_{L\ell'}`) and bin with
-:math:`(2\ell+1)\mathcal{L}_\ell(\mu)` on the Cartesian grid
+The window matrix is Yamamoto-only (``los='firstpoint'`` / ``'endpoint'``).
+``los='global'`` raises; that estimator is path **(1)+(2)**
+(:meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of 3D cubes).
 
-.. math::
+The outer discrete-shell sum has two projectors (``discrete_mu``):
 
-    W_{\ell i,\,\ell' j}
-    =
-    \sum_{\mathbf{k}_n\in S_i}
-    \frac{w_n}{U_i}\,
-    t(\mathbf{k}_n)\,
-    (2\ell+1)\,\mathcal{L}_\ell(\mu_n)
-    \sum_L
-    \mathcal{L}_L(\mu_n)\,
-    W_{L\ell'}\bigl(|\mathbf{k}_n|,\,k'_j\bigr).
-
-With ``continuous='identity'`` this is exactly discrete-:math:`\mu`
-3D→1D of the continuous :math:`P_{\ell'}`.
-
-**Yamamoto** (``los='firstpoint'`` / ``'endpoint'``): the estimator
-already forms :math:`P_\ell(\mathbf{k})`, so the outer sum is an
-isotropic :math:`|k|`-shell average (no extra Legendre projector)
-
-.. math::
-
-    W_{\ell i,\,\ell' j}
-    =
-    \sum_{\mathbf{k}_n\in S_i}
-    \frac{w_n}{U_i}\,
-    t(\mathbf{k}_n)\,
-    W_{\ell\ell'}\bigl(|\mathbf{k}_n|,\,k'_j\bigr).
+- ``discrete_mu=True`` (far observer, :math:`\hat n\simeq\hat z`):
+  reconstruct :math:`P(k,\mu)=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)` and
+  bin with :math:`(2\ell+1)\mathcal{L}_\ell(\mu)`,
+  :math:`\mu_n=\hat k\cdot\hat z`. Identity :math:`W` matches
+  :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of the 3D cube.
+- ``discrete_mu=False`` (default; close observer): isotropic
+  :math:`|k|`-shell average of :math:`W_{\ell\ell'}(|k_n|,k')`. This is
+  the Yamamoto binning. It does **not** use a single box-centre
+  :math:`\hat n_{\mathrm{ref}}`.
 
 Notation
 --------
@@ -54,8 +36,8 @@ Notation
 - :math:`t(\mathbf{k}_n)` — optional same-:math:`k` transfer (``mode_scale``;
   MAS / gridding compensation). Does **not** enter :math:`U_i`.
 - :math:`\mu_n` — LOS cosine of mode :math:`\mathbf{k}_n`
-  (:attr:`~meer21cm.estimator.MultipoleShellMap.mu`); used only for
-  ``los='global'``.
+  (:attr:`~meer21cm.estimator.MultipoleShellMap.mu`;
+  :math:`\hat k\cdot\hat n_{\mathrm{ref}}`).
 - :math:`W_{L\ell'}(k,k')` — continuous response kernel (see below).
 
 The continuous kernel :math:`W_{L\ell'}(k,k')` may be:
@@ -120,6 +102,29 @@ from .util import legendre_polynomial_with_factor
 from .wide_angle import power_spectrum_odd_wide_angle_matrix
 
 WindowEllMap = Mapping[int, ArrayLike]
+
+_WINDOW_LOS = ("firstpoint", "endpoint")
+
+
+def require_yamamoto_los(los: str) -> str:
+    """
+    Window matrices are Yamamoto-only.
+
+    ``los='global'`` is the legacy 3D path
+    (:meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of 3D cubes).
+    """
+    los_s = str(los)
+    if los_s == "global":
+        raise ValueError(
+            "los='global' is the legacy 3D path (get_1d_power of 3D cubes); "
+            "the window matrix is Yamamoto-only (los='firstpoint'/'endpoint')."
+        )
+    if los_s not in _WINDOW_LOS:
+        raise ValueError(
+            "los must be 'firstpoint' or 'endpoint' for the window matrix, "
+            f"got {los_s!r}"
+        )
+    return los_s
 
 
 # ---------------------------------------------------------------------------
@@ -721,6 +726,7 @@ def build_discrete_shell_window_matrix(
     box_volume: float | None = None,
     W_zero: float = 0.0,
     mode_scale: ArrayLike | None = None,
+    discrete_mu: bool = False,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Build the discrete-shell multipole window matrix.
@@ -745,9 +751,14 @@ def build_discrete_shell_window_matrix(
         :math:`\delta_{L\ell'}\delta(k-k')` (no survey convolution).
         ``'smooth'`` builds the Hankel / Wigner kernel from ``W_ell``.
         The outer discrete-shell sum then samples that kernel on the FFT
-        grid: global LOS uses the same :math:`(2\ell+1)\mathcal{L}_\ell(\mu)`
-        projector as :meth:`~meer21cm.power.PowerSpectrum.get_1d_power`;
-        local LOS averages in :math:`|k|` only.
+        grid (see ``discrete_mu``). ``shell_map.los='global'`` raises.
+    discrete_mu : bool, default False
+        If True, apply the plane-parallel
+        :math:`(2\ell+1)\mathcal{L}_\ell(\mu)` projector with
+        :math:`\mu=\hat k\cdot\hat n_{\mathrm{ref}}` (far observer:
+        :math:`\hat n_{\mathrm{ref}}\approx\hat z`, same as
+        :meth:`~meer21cm.power.PowerSpectrum.get_1d_power`). If False
+        (default), average in :math:`|k|` only (Yamamoto shells).
     n_fftlog : int, default 512
         FFTlog grid size for Hankel transforms (smooth only).
     n_k_eval : int, default 256
@@ -792,8 +803,8 @@ def build_discrete_shell_window_matrix(
         if ells_in is None
         else tuple(int(e) for e in ells_in)
     )
-    los = str(getattr(shell_map, "los", "global"))
-    use_discrete_mu = los == "global"
+    require_yamamoto_los(str(getattr(shell_map, "los", "endpoint")))
+    use_discrete_mu = bool(discrete_mu)
     # Intermediate L for P(k,μ)=∑_L P_L L_L, then (2ℓ+1) L_ℓ projection.
     ells_L = (
         tuple(sorted(set(ells_out_t) | set(ells_in_t)))

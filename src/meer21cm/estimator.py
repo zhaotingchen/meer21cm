@@ -63,11 +63,11 @@ class MultipoleShellMap:
     Uses the same bin edges and weighting convention as
     :meth:`FieldPowerSpectrum.measure_multipoles` so that
     :mod:`meer21cm.smooth_window` can apply the identical shell average.
-    For ``los='global'``, :attr:`mu` is :math:`k_z/|k|` and is used as
-    the discrete-:math:`\mu` projector. For local LOS, :attr:`mu` is
-    :math:`\hat k\cdot\hat n_{\mathrm{ref}}` at the box centre
-    (diagnostic); the Yamamoto discrete-shell sum averages in
-    :math:`|k|` only.
+    For ``los='global'``, :attr:`mu` is :math:`k_z/|k|`. For local LOS,
+    :attr:`mu` is :math:`\hat k\cdot\hat n_{\mathrm{ref}}` at the box
+    centre. The window matrix uses this :math:`\mu` as the discrete
+    projector (far observer matches 3D→1D). The Yamamoto *data*
+    estimator does not.
 
     Attributes
     ----------

@@ -159,7 +159,8 @@ def _identity_shell_mat(ells_out, ells_in, k_in=None):
     fps = FieldPowerSpectrum(
         np.ones((8, 8, 8)),
         np.array([80.0, 80.0, 80.0]),
-        los="global",
+        los="endpoint",
+        los_observer=(0.0, 0.0, 1.0e5),
         _skip_specification=True,
     )
     shell = fps.multipole_bin_index_map(k1dbins=np.linspace(0.1, 0.3, 5))
