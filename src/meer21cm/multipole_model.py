@@ -8,7 +8,7 @@ Yamamoto-matched alternative to 3D :func:`~meer21cm.power_ops.get_modelpk_conv`
 1. Measure window multipoles :math:`W_L(k)` on a **fine**
    ``k1dbins_window`` via :class:`SmoothWindowEstimator`.
 2. Build a discrete-shell matrix
-   :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` that maps
+   :class:`~meer21cm.window.DiscreteShellWindowMatrix` that maps
    continuous theory     :math:`P_{\ell'}(k_{\mathrm{in}})` onto coarse
    estimator bins :math:`P_\ell(k_{\mathrm{out}})` with the same
    discrete-:math:`\\mu` projector as
@@ -35,7 +35,7 @@ while the estimator still divides by :math:`\sum w^2`. Pass ``W_zero``
 (the :math:`k=0` selection power) into
 :meth:`SmoothWindowEstimator.build_window_matrix` to restore the pair-count
 term that measured :math:`W_L` bins omit. Matrix algebra lives in
-:mod:`meer21cm.smooth_window`.
+:mod:`meer21cm.window`.
 """
 
 from __future__ import annotations
@@ -55,11 +55,12 @@ from .estimator import (
 )
 from .model import ModelPowerSpectrum
 from .power_ops import power_weights_renorm
-from .smooth_window import (
+from .window import (
     DiscreteShellWindowMatrix,
     WindowEllMap,
     apply_discrete_shell_window_matrix,
     build_discrete_shell_window_matrix,
+    build_mesh_window_matrix,
     require_yamamoto_los,
     window_zero_mode_power,
 )
@@ -197,7 +198,7 @@ def predict_windowed_multipoles(
     Unifies the identity / smooth prediction glue used by the Yamamoto
     validation scripts: build (or skip) a
     :class:`SmoothWindowEstimator`, form the shell map, build
-    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix`, evaluate
+    :class:`~meer21cm.window.DiscreteShellWindowMatrix`, evaluate
     continuous theory via
     :meth:`~meer21cm.model.ModelPowerSpectrum.get_theory_multipoles_kmu`,
     and apply the matrix.
@@ -227,7 +228,7 @@ def predict_windowed_multipoles(
     mode_scale : array_like, optional
         Per-Cartesian-mode theory transfer (same shape as ``ps`` Fourier
         ``k_mode`` / shell map). Forwarded to
-        :func:`~meer21cm.smooth_window.build_discrete_shell_window_matrix`
+        :func:`~meer21cm.window.build_discrete_shell_window_matrix`
         so MAS / gridding compensation multiplies inside the discrete-shell
         sum.
     box_volume, n_fftlog, n_k_eval, wide_angle, wa_d, wa_los :
@@ -757,7 +758,7 @@ class SmoothWindowEstimator:
     externally, then :meth:`accumulate`. Use :meth:`build_window_matrix` to
     turn accumulated :math:`W_L(k)` (or an identity :math:`|k|`-rebin
     kernel) into a
-    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix`.
+    :class:`~meer21cm.window.DiscreteShellWindowMatrix`.
 
     Parameters
     ----------
@@ -1122,7 +1123,7 @@ class SmoothWindowEstimator:
             Yamamoto binning / 3D→1D sampling).
         wide_angle : bool, optional
             If True, include wa_order=1 odd theory columns then resum so
-            :meth:`~meer21cm.smooth_window.DiscreteShellWindowMatrix.apply`
+            :meth:`~meer21cm.window.DiscreteShellWindowMatrix.apply`
             takes even Kaiser :math:`P_\\ell` only.
         wa_d : float, optional
             Comoving distance to the effective redshift (Mpc). Defaults to
@@ -1186,7 +1187,7 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
     RSD only; **no** beam, map sampling, or MAS compensation — those belong in
     the window), forms unconvolved multipoles at fine :math:`k_{\\mathrm{in}}`
     by a continuous :math:`\\mu` integral, then optionally applies a
-    :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` (discrete
+    :class:`~meer21cm.window.DiscreteShellWindowMatrix` (discrete
     :math:`\\mu` sampling via box-centre :math:`\\hat n_{\\mathrm{ref}}`;
     the leading-order Yamamoto binning, matching 3D→1D for identity
     :math:`W`). ``los='global'`` is not a window path.

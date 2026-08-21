@@ -20,6 +20,7 @@ __all__ = [
     "WindowedMultipoleModel",
     "DiscreteShellWindowMatrix",
     "predict_windowed_multipoles",
+    "build_mesh_window_matrix",
 ]
 
 
@@ -31,12 +32,16 @@ _LAZY_ATTRS = {
     "SmoothWindowEstimator": ("meer21cm.multipole_model", "SmoothWindowEstimator"),
     "WindowedMultipoleModel": ("meer21cm.multipole_model", "WindowedMultipoleModel"),
     "DiscreteShellWindowMatrix": (
-        "meer21cm.smooth_window",
+        "meer21cm.window",
         "DiscreteShellWindowMatrix",
     ),
     "predict_windowed_multipoles": (
         "meer21cm.multipole_model",
         "predict_windowed_multipoles",
+    ),
+    "build_mesh_window_matrix": (
+        "meer21cm.window",
+        "build_mesh_window_matrix",
     ),
 }
 

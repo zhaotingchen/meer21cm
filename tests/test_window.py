@@ -19,7 +19,7 @@ from meer21cm.multipole_model import (
     run_smooth_window_realization,
 )
 from meer21cm.power_ops import get_modelpk_conv
-from meer21cm.smooth_window import (
+from meer21cm.window import (
     DiscreteShellWindowMatrix,
     apply_discrete_shell_window_matrix,
     interpolate_window_to_log_k,
@@ -427,7 +427,7 @@ def test_identity_window_is_block_diagonal_k_rebin():
     (2·2+1) L_2(μ) P_0(|k_n|) (Cartesian μ sampling, not identically 0).
     """
     from meer21cm.power_ops import bin_3d_to_1d
-    from meer21cm.smooth_window import _linear_interpolation_matrix
+    from meer21cm.window import _linear_interpolation_matrix
     from scipy.interpolate import interp1d
 
     nx = ny = nz = 16

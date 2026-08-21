@@ -321,7 +321,7 @@ def test_finish_healpix_cartview_figure_colorbar_layout():
 
 
 def _tiny_discrete_shell_mat(ells=(0, 2, 4), n_out=3, n_in=5):
-    from meer21cm.smooth_window import DiscreteShellWindowMatrix
+    from meer21cm.window import DiscreteShellWindowMatrix
 
     n_ell = len(ells)
     return DiscreteShellWindowMatrix(

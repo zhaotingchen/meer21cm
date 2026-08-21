@@ -5,7 +5,7 @@ import pytest
 
 from meer21cm.estimator import FieldPowerSpectrum
 from meer21cm.multipole_model import SmoothWindowEstimator, WindowedMultipoleModel
-from meer21cm.smooth_window import (
+from meer21cm.window import (
     DiscreteShellWindowMatrix,
     build_discrete_shell_window_matrix,
 )

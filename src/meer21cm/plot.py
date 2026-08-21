@@ -654,7 +654,7 @@ def plot_discrete_shell_window_row(
     Parameters
     ----------
     mat : DiscreteShellWindowMatrix
-        Matrix from :func:`~meer21cm.smooth_window.build_discrete_shell_window_matrix`.
+        Matrix from :func:`~meer21cm.window.build_discrete_shell_window_matrix`.
     k_out_index : int
         Index into ``mat.k_out``.
     ell_out : int, optional
@@ -724,7 +724,7 @@ def plot_discrete_shell_window_matrix(
     Parameters
     ----------
     mat : DiscreteShellWindowMatrix
-        Matrix from :func:`~meer21cm.smooth_window.build_discrete_shell_window_matrix`.
+        Matrix from :func:`~meer21cm.window.build_discrete_shell_window_matrix`.
     vmin, vmax : float, default -1, 1
         Color scale for :meth:`~matplotlib.axes.Axes.pcolormesh`.
     cmap : str or Colormap, default 'coolwarm'

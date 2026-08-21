@@ -9,7 +9,7 @@ This module implements Hamilton's FFTlog algorithm for integrals of the form
 
 evaluated on a logarithmically spaced grid via FFT convolution with the
 Mellin transform of the kernel :math:`K`. It is used by
-:mod:`meer21cm.smooth_window` to convert window multipoles
+:mod:`meer21cm.window` to convert window multipoles
 :math:`W_\ell(k) \leftrightarrow W_\ell(s)` when building the plane-parallel
 survey-window matrix :math:`W_{\ell\ell'}(k,k')`.
 
@@ -27,7 +27,7 @@ Design notes
 - For smooth-window round-trips in this package we typically use
   ``lowring=False`` and ``xy=1.0`` so that
   ``CorrelationToPower(PowerToCorrelation(k)[0])`` recovers the same ``k``
-  grid (see tests in ``tests/test_smooth_window.py`` / ``tests/test_fftlog.py``).
+  grid (see tests in ``tests/test_window.py`` / ``tests/test_fftlog.py``).
 - Only a single 1D transform is supported per instance (no multi-kernel
   batching). That is enough for the even multipoles used in the first-level
   smooth-window path.

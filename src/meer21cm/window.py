@@ -1,14 +1,39 @@
 r"""
-Discrete-shell survey-window matrix for theory multipoles.
+Survey-window matrices for theory multipoles: smooth (Hankel/Wigner) and
+exact mesh-level (FFT) layers.
 
-Builds a dense matrix that maps continuous theory multipoles
+Builds dense matrices that map continuous theory multipoles
 :math:`P_{\ell'}(k_{\mathrm{in}})` to estimator bin multipoles
-:math:`P_\ell(k_{\mathrm{out}})`. The continuous kernel
-:math:`W_{L\ell'}(k,k')` (identity or smooth) is evaluated on each FFT
-mode and then sampled the same way as the data estimator.
+:math:`P_\ell(k_{\mathrm{out}})`.  Two continuous layers share the same
+discrete-shell row structure (``k_out`` bins from
+:class:`~meer21cm.estimator.MultipoleShellMap`):
 
-The window matrix is Yamamoto-only (``los='firstpoint'`` / ``'endpoint'``).
-``los='global'`` raises; that estimator is path **(1)+(2)**
+- **smooth** (``build_discrete_shell_window_matrix`` with
+  ``continuous='smooth'`` / ``'identity'``): the scalar survey selection is
+  measured as :math:`W_L(k)`, Hankel-transformed to :math:`Q_L(s)`, coupled
+  by Wigner-3j to the kernel :math:`W_{L\ell'}(k,k')`, evaluated on each
+  FFT mode and sampled the same way as the data estimator (the discrete-
+  :math:`\mu` projector; the pypower / Beutler et al. pipeline).
+- **mesh** (``build_mesh_window_matrix``): the estimator's own mesh
+  response, exact for **any** line of sight.  For a windowed isotropic
+  theory with selection :math:`w(x)` and the observer of
+  ``ps.los_observer``,
+
+  .. math::
+
+      \langle P_\ell^{3D}(\mathbf k)\rangle
+      =
+      4\pi R \sum_m Y_{\ell m}(\hat k)\,
+      \bigl[\mathrm{FFT}[w\,Y_{\ell m}(\hat n(x))]
+      \,\mathrm{FFT}[w]^* \;\circledast\; (t\,P_0)\bigr](\mathbf k),
+
+  evaluated on the mesh with the estimator's own operators.  The varying
+  :math:`\hat n(x)` of a true lightcone observer is fully contained in
+  :math:`Y_{\ell m}(\hat n(x))`; the discrete-:math:`\mu` projector is its
+  :math:`1/d\to 0` limit (see ``misc/rsd_sims/window_formalism.md`` §11).
+
+The window matrices are Yamamoto-only (``los='firstpoint'`` /
+``'endpoint'``).  ``los='global'`` raises; that estimator is path **(1)+(2)**
 (:meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of 3D cubes).
 
 The outer discrete-shell sum applies the discrete-:math:`\mu` projector:
@@ -97,6 +122,8 @@ from scipy.special import eval_legendre, spherical_jn
 
 from .estimator import MultipoleShellMap
 from .fftlog import CorrelationToPower, PowerToCorrelation
+from .power_ops import bin_3d_to_1d, power_weights_renorm
+from .spherical import get_real_Ylm, unit_khat_from_k_vec
 from .util import legendre_polynomial_with_factor
 from .wide_angle import power_spectrum_odd_wide_angle_matrix
 
@@ -968,3 +995,171 @@ def apply_discrete_shell_window_matrix(
     out = window_matrix_np @ vec
     n_out = window_matrix_np.shape[0] // len(ells_out_t)
     return {ell: out[i * n_out : (i + 1) * n_out] for i, ell in enumerate(ells_out_t)}
+
+
+# ---------------------------------------------------------------------------
+# Exact mesh-level (FFT) window
+# ---------------------------------------------------------------------------
+
+
+def _extend_hermitian_z(
+    c_rfft: NDArray[np.complexfloating], shape: tuple
+) -> NDArray[np.complexfloating]:
+    """Hermitian z-extension of an rfft-grid array to the full grid."""
+    nz = c_rfft.shape[2]
+    out = np.zeros(shape, dtype=np.result_type(c_rfft, complex))
+    out[..., :nz] = c_rfft
+    out[..., nz:] = np.conj(np.flip(c_rfft[..., 1 : shape[2] - nz + 1], axis=-1))
+    return out
+
+
+def build_mesh_window_matrix(
+    ps,
+    k_in: ArrayLike,
+    *,
+    weights: ArrayLike,
+    ells: Sequence[int] = (0, 2, 4),
+    mode_scale: ArrayLike | None = None,
+) -> DiscreteShellWindowMatrix:
+    r"""
+    Exact mesh-level (FFT) window matrix for a local-LOS Yamamoto estimator.
+
+    Replaces the smooth (Hankel/Wigner) continuous layer with the estimator's
+    own mesh response.  For a windowed isotropic theory with selection
+    :math:`w(x)` and the observer of ``ps.los_observer`` (:math:`\hat n(x)`
+    from ``ps.los_xhat``), the estimator's 3D multipole cube has the exact
+    ensemble mean
+
+    .. math::
+
+        \langle P_\ell^{3D}(\mathbf k)\rangle
+        =
+        4\pi R \sum_m Y_{\ell m}(\hat k)\,
+        \bigl[\mathrm{FFT}[w\,Y_{\ell m}(\hat n(x))]\,
+        \mathrm{FFT}[w]^* \;\circledast\; (t\,P_0)\bigr](\mathbf k),
+
+    with :math:`R` the weight renorm and ``mode_scale`` :math:`t` multiplying
+    the theory inside the convolution.  Each matrix column is the estimator's
+    response to a **unit theory shell** at ``k_in[j]`` — the kernel convolved
+    with the shell indicator — binned with the estimator's :math:`|k|` shells
+    and ``k1dweights``, so ``apply({0: P_0(k_in)})`` returns the windowed
+    multipoles.
+
+    Exact for **any** LOS: the varying :math:`\hat n(x)` of a true lightcone
+    observer is fully contained in :math:`Y_{\ell m}(\hat n(x))`; the
+    discrete-:math:`\mu` projector of the smooth path is the
+    :math:`1/d\to 0` limit (constant :math:`\hat n` reduces the matrix to the
+    discrete-μ binning of :math:`(2\ell+1)L_\ell(\hat k\cdot\hat n)|w̃|^2`).
+
+    Input multipoles: isotropic monopole only (``ells_in = (0,)``) — the
+    response to :math:`\ell'>0` input would require an angular mesh injection
+    (pypower ``MeshFFTWindow``-style; not implemented).  The matrix therefore
+    maps :math:`P_0(k_{\mathrm{in}})\to P_\ell(k_{\mathrm{out}})`, which is
+    sufficient for no-RSD theories (test 04).
+
+    Parameters
+    ----------
+    ps :
+        FieldPowerSpectrum-like object with ``k_vec``, ``k_mode``,
+        ``x_vec``, ``los_observer`` (local ``los``) and the estimator's
+        ``k1dbins`` / ``k1dweights``.
+    k_in : array_like
+        Fine theory :math:`|k|` nodes (matrix columns).
+    weights : array_like
+        The selection cube :math:`w` that multiplies the data in the
+        estimator FFT (e.g. ``weights_1`` = lightcone counts).
+    ells : sequence of int, default (0, 2, 4)
+        Output multipoles (matrix rows).
+    mode_scale : array_like, optional
+        Same-k transfer applied to the theory inside the convolution (e.g.
+        the product of the MAS window squared and the map-sampling kernel).
+    """
+    require_yamamoto_los(str(getattr(ps, "los", "endpoint")))
+    ells_out_t = tuple(int(e) for e in ells)
+    ells_in_t = (0,)
+    k_in_np = np.asarray(k_in, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    shape = tuple(w.shape)
+    n_grid = int(np.prod(shape))
+    R = float(power_weights_renorm(w, w))
+
+    w_tilde = np.fft.rfftn(w, norm="forward")
+    khat = unit_khat_from_k_vec(ps.k_vec)
+    xhat = ps.los_xhat
+    nz = w_tilde.shape[2]
+
+    # real-space kernels xi_ℓm = IFFT[ FFT[w Y_ℓm(n̂)] FFT[w]^* ]
+    xi: dict[tuple[int, int], NDArray[np.complexfloating]] = {}
+    for ell in ells_out_t:
+        for m in range(-ell, ell + 1):
+            ylm = get_real_Ylm(ell, m)
+            c_rfft = np.fft.rfftn(w * ylm(*xhat), norm="forward") * np.conj(w_tilde)
+            xi[(ell, m)] = np.fft.ifftn(_extend_hermitian_z(c_rfft, shape))
+
+    k_mode = np.asarray(ps.k_mode, dtype=float).ravel()
+    k1dweights = (
+        np.ones_like(k_mode)
+        if getattr(ps, "k1dweights", None) is None
+        else np.asarray(ps.k1dweights, dtype=float).ravel()
+    )
+    k1dbins = np.asarray(ps.k1dbins, dtype=float)
+    n_out = len(k1dbins) - 1
+    if mode_scale is None:
+        ms = np.ones(w_tilde.shape, dtype=float)
+    else:
+        ms = np.asarray(mode_scale, dtype=float)
+        if ms.shape != w_tilde.shape:
+            raise ValueError(
+                "mode_scale must match the rFFT grid shape "
+                f"(got {ms.shape}, expected {w_tilde.shape})"
+            )
+
+    # |k| shell of each theory node (Voronoi on k_in) and of each output bin
+    shell_edges = np.concatenate(([0.0], 0.5 * (k_in_np[:-1] + k_in_np[1:]), [np.inf]))
+    in_shell = [
+        (k_mode >= shell_edges[j]) & (k_mode < shell_edges[j + 1])
+        for j in range(len(k_in_np))
+    ]
+    bin_idx = np.digitize(k_mode, k1dbins) - 1
+    valid = (bin_idx >= 0) & (bin_idx < n_out) & (k1dweights > 0)
+    w_bin = np.bincount(
+        bin_idx[valid], weights=k1dweights[valid], minlength=n_out
+    ).astype(float)
+    w_bin[w_bin <= 0] = np.nan
+    k_eff = np.bincount(
+        bin_idx[valid], weights=(k_mode * k1dweights)[valid], minlength=n_out
+    ) / np.where(np.isnan(w_bin), 1.0, w_bin)
+    nmodes = np.bincount(bin_idx[valid], minlength=n_out).astype(float)
+
+    matrix = np.zeros((len(ells_out_t) * n_out, len(k_in_np)), dtype=float)
+    for j in range(len(k_in_np)):
+        # transferred shell theory on the full grid (hermitian extension)
+        t_rfft = ms * in_shell[j].reshape(w_tilde.shape)
+        t_full = np.zeros(shape)
+        t_full[..., :nz] = t_rfft
+        t_full[..., nz:] = np.flip(t_rfft[..., 1 : shape[2] - nz + 1], axis=-1)
+        xi_t = np.fft.ifftn(t_full)
+        for i_ell, ell in enumerate(ells_out_t):
+            cube = np.zeros(w_tilde.shape, dtype=complex)
+            for m in range(-ell, ell + 1):
+                ylm = get_real_Ylm(ell, m)
+                # cyclic convolution: conv(k'') = Σ_k C(k) P(k''−k) (backward
+                # FFT norms; the factor N restores the forward-FFT convention)
+                conv = np.fft.fftn(xi[(ell, m)] * xi_t) * n_grid
+                cube = cube + ylm(*khat) * conv[..., :nz]
+            p3d = (4.0 * np.pi) * R * np.real(cube)
+            binned = (
+                np.bincount(bin_idx[valid], weights=p3d.ravel()[valid], minlength=n_out)
+                / w_bin
+            )
+            matrix[i_ell * n_out : (i_ell + 1) * n_out, j] = np.nan_to_num(binned)
+
+    return DiscreteShellWindowMatrix(
+        matrix=matrix,
+        k_in=k_in_np,
+        k_out=k_eff,
+        nmodes=nmodes,
+        ells=ells_out_t,
+        ells_in=ells_in_t,
+        ells_out=ells_out_t,
+    )

@@ -33,6 +33,18 @@ Enhancements
   :math:`\max(W(0)-W(k_{\mathrm{fund}}),0)` so FFTLog edge extrapolation is
   not double-counted
 
+Changed
++++++++
+* rename ``smooth_window.py`` → ``window.py`` (the module now holds both the
+  smooth Hankel/Wigner layer and the exact mesh-level FFT window
+  ``build_mesh_window_matrix``); imports change from
+  ``meer21cm.smooth_window`` to ``meer21cm.window``, and
+  ``tests/test_smooth_window.py`` → ``tests/test_window.py``
+* add exact mesh-level window ``build_mesh_window_matrix`` (estimator's own
+  mesh response, exact for any LOS incl. the true lightcone observer; the
+  discrete-:math:`\mu` projector is its :math:`1/d\to 0` limit) with tests in
+  ``tests/test_mesh_window.py``
+
 v0.9.0
 ------
 Features

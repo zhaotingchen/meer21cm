@@ -11,7 +11,7 @@ global plane-parallel (``los='global'``) or local Yamamoto (Hand et al.;
 ``los='firstpoint'`` / ``'endpoint'``). Both paths form a 3D multipole cube
 (:meth:`multipole_power_3d`) then bin with :func:`~meer21cm.power_ops.bin_3d_to_1d`.
 ``los='midpoint'`` remains reserved. Survey-window matrix construction for
-theory multipoles lives in :mod:`meer21cm.smooth_window` (discrete-shell matrix).
+theory multipoles lives in :mod:`meer21cm.window` (discrete-shell matrix).
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class MultipoleShellMap:
 
     Uses the same bin edges and weighting convention as
     :meth:`FieldPowerSpectrum.measure_multipoles` so that
-    :mod:`meer21cm.smooth_window` can apply the identical shell average.
+    :mod:`meer21cm.window` can apply the identical shell average.
     For ``los='global'``, :attr:`mu` is :math:`k_z/|k|`. For local LOS,
     :attr:`mu` is :math:`\hat k\cdot\hat n_{\mathrm{ref}}` at the box
     centre. The window matrix uses this :math:`\mu` as the discrete
@@ -900,7 +900,7 @@ class FieldPowerSpectrum(Specification):
 
         Uses the same edges, :attr:`k_mode`, and weighting convention as
         :meth:`measure_multipoles`. Intended for the opt-in discrete-shell
-        window matrix (:mod:`meer21cm.smooth_window`), which averages the
+        window matrix (:mod:`meer21cm.window`), which averages the
         continuous :math:`W_{\ell\ell'}` kernel over those shells.
         Yamamoto :meth:`measure_multipoles` does not use this map.
 

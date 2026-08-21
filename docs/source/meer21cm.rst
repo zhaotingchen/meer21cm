@@ -97,10 +97,10 @@ meer21cm.power module
    :undoc-members:
    :show-inheritance:
 
-meer21cm.smooth_window module
+meer21cm.window module
 -----------------------------
 
-.. automodule:: meer21cm.smooth_window
+.. automodule:: meer21cm.window
    :members:
    :undoc-members:
    :show-inheritance:
