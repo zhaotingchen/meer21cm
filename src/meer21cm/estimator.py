@@ -66,8 +66,9 @@ class MultipoleShellMap:
     For ``los='global'``, :attr:`mu` is :math:`k_z/|k|`. For local LOS,
     :attr:`mu` is :math:`\hat k\cdot\hat n_{\mathrm{ref}}` at the box
     centre. The window matrix uses this :math:`\mu` as the discrete
-    projector (far observer matches 3D→1D). The Yamamoto *data*
-    estimator does not.
+    projector (the leading-order binning of the Yamamoto estimator; it
+    matches 3D→1D for identity :math:`W`). The Yamamoto *data*
+    estimator itself does not use this array.
 
     Attributes
     ----------

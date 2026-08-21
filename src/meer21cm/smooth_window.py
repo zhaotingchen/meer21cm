@@ -11,17 +11,16 @@ The window matrix is Yamamoto-only (``los='firstpoint'`` / ``'endpoint'``).
 ``los='global'`` raises; that estimator is path **(1)+(2)**
 (:meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of 3D cubes).
 
-The outer discrete-shell sum has two projectors (``discrete_mu``):
-
-- ``discrete_mu=True`` (far observer, :math:`\hat n\simeq\hat z`):
-  reconstruct :math:`P(k,\mu)=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)` and
-  bin with :math:`(2\ell+1)\mathcal{L}_\ell(\mu)`,
-  :math:`\mu_n=\hat k\cdot\hat z`. Identity :math:`W` matches
-  :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of the 3D cube.
-- ``discrete_mu=False`` (default; close observer): isotropic
-  :math:`|k|`-shell average of :math:`W_{\ell\ell'}(|k_n|,k')`. This is
-  the Yamamoto binning. It does **not** use a single box-centre
-  :math:`\hat n_{\mathrm{ref}}`.
+The outer discrete-shell sum applies the discrete-:math:`\mu` projector:
+reconstruct :math:`P(k,\mu)=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)` and bin
+with :math:`(2\ell+1)\mathcal{L}_\ell(\mu)`,
+:math:`\mu_n=\hat k_n\cdot\hat n_{\mathrm{ref}}` (the local-LOS reference
+direction, box centre). This is the **leading-order** binning of the
+Yamamoto estimator, whose 3D cube is
+:math:`P_\ell^{3D}=(2\ell+1)\mathcal{L}_\ell(\mu)\,P_0^{3D}`; identity
+:math:`W` matches :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of the
+3D cube. The *varying* :math:`\hat n(x)` is a higher-order (wide-angle,
+:math:`1/d`) correction, not part of this projector.
 
 Notation
 --------
@@ -726,7 +725,6 @@ def build_discrete_shell_window_matrix(
     box_volume: float | None = None,
     W_zero: float = 0.0,
     mode_scale: ArrayLike | None = None,
-    discrete_mu: bool = False,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Build the discrete-shell multipole window matrix.
@@ -751,14 +749,10 @@ def build_discrete_shell_window_matrix(
         :math:`\delta_{L\ell'}\delta(k-k')` (no survey convolution).
         ``'smooth'`` builds the Hankel / Wigner kernel from ``W_ell``.
         The outer discrete-shell sum then samples that kernel on the FFT
-        grid (see ``discrete_mu``). ``shell_map.los='global'`` raises.
-    discrete_mu : bool, default False
-        If True, apply the plane-parallel
-        :math:`(2\ell+1)\mathcal{L}_\ell(\mu)` projector with
-        :math:`\mu=\hat k\cdot\hat n_{\mathrm{ref}}` (far observer:
-        :math:`\hat n_{\mathrm{ref}}\approx\hat z`, same as
-        :meth:`~meer21cm.power.PowerSpectrum.get_1d_power`). If False
-        (default), average in :math:`|k|` only (Yamamoto shells).
+        grid with the discrete-:math:`\mu` projector
+        :math:`(2\ell+1)\mathcal{L}_\ell(\mu)`,
+        :math:`\mu=\hat k\cdot\hat n_{\mathrm{ref}}`.
+        ``shell_map.los='global'`` raises.
     n_fftlog : int, default 512
         FFTlog grid size for Hankel transforms (smooth only).
     n_k_eval : int, default 256
@@ -804,13 +798,8 @@ def build_discrete_shell_window_matrix(
         else tuple(int(e) for e in ells_in)
     )
     require_yamamoto_los(str(getattr(shell_map, "los", "endpoint")))
-    use_discrete_mu = bool(discrete_mu)
     # Intermediate L for P(k,μ)=∑_L P_L L_L, then (2ℓ+1) L_ℓ projection.
-    ells_L = (
-        tuple(sorted(set(ells_out_t) | set(ells_in_t)))
-        if use_discrete_mu
-        else ells_out_t
-    )
+    ells_L = tuple(sorted(set(ells_out_t) | set(ells_in_t)))
 
     k_in_np = np.asarray(k_in, dtype=float)
     k_out = np.asarray(shell_map.k_eff, dtype=float)
@@ -890,11 +879,10 @@ def build_discrete_shell_window_matrix(
 
     L_plain: dict[int, NDArray[np.floating]] = {}
     ell_factor: dict[int, NDArray[np.floating]] = {}
-    if use_discrete_mu:
-        for L in ells_L:
-            L_plain[int(L)] = _legendre_plain(L, mu)
-        for ell in ells_out_t:
-            ell_factor[int(ell)] = _legendre_with_factor(ell, mu)
+    for L in ells_L:
+        L_plain[int(L)] = _legendre_plain(L, mu)
+    for ell in ells_out_t:
+        ell_factor[int(ell)] = _legendre_with_factor(ell, mu)
 
     matrix = np.zeros((n_ell_out * n_out, n_ell_in * n_in), dtype=float)
 
@@ -914,29 +902,19 @@ def build_discrete_shell_window_matrix(
             wt = (w_n / U) * t_n
 
             row_index = i_out * n_out + i_bin
-            if use_discrete_mu:
-                B_ell = ell_factor[ell_out_i][in_bin] * wt
-                L_on_bin = {L: L_plain[L][in_bin] for L in ells_L}
-                for i_in, ell_in in enumerate(ells_in_t):
-                    acc = np.zeros(n_in, dtype=float)
-                    for L in ells_L:
-                        w_rows = np.asarray(
-                            interps[(int(L), int(ell_in))](k_n), dtype=float
-                        )
-                        acc += np.sum((B_ell * L_on_bin[L])[:, None] * w_rows, axis=0)
-                    matrix[
-                        row_index,
-                        i_in * n_in : (i_in + 1) * n_in,
-                    ] = acc
-            else:
-                for i_in, ell_in in enumerate(ells_in_t):
+            B_ell = ell_factor[ell_out_i][in_bin] * wt
+            L_on_bin = {L: L_plain[L][in_bin] for L in ells_L}
+            for i_in, ell_in in enumerate(ells_in_t):
+                acc = np.zeros(n_in, dtype=float)
+                for L in ells_L:
                     w_rows = np.asarray(
-                        interps[(ell_out_i, int(ell_in))](k_n), dtype=float
+                        interps[(int(L), int(ell_in))](k_n), dtype=float
                     )
-                    matrix[
-                        row_index,
-                        i_in * n_in : (i_in + 1) * n_in,
-                    ] = np.sum(wt[:, None] * w_rows, axis=0)
+                    acc += np.sum((B_ell * L_on_bin[L])[:, None] * w_rows, axis=0)
+                matrix[
+                    row_index,
+                    i_in * n_in : (i_in + 1) * n_in,
+                ] = acc
 
     return DiscreteShellWindowMatrix(
         matrix=matrix,

@@ -12,8 +12,9 @@ Yamamoto-matched alternative to 3D :func:`~meer21cm.power_ops.get_modelpk_conv`
    continuous theory     :math:`P_{\ell'}(k_{\mathrm{in}})` onto coarse
    estimator bins :math:`P_\ell(k_{\mathrm{out}})` with the same
    discrete-:math:`\\mu` projector as
-   :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` (far observer
-   matches 3D→1D). ``los='global'`` is not a window path.
+   :meth:`~meer21cm.power.PowerSpectrum.get_1d_power` (the leading-order
+   Yamamoto binning; identity :math:`W` matches 3D→1D). ``los='global'``
+   is not a window path.
 3. Evaluate convolved multipoles with :class:`WindowedMultipoleModel`
    or the one-shot :func:`predict_windowed_multipoles`.
 
@@ -184,15 +185,14 @@ def predict_windowed_multipoles(
     wide_angle: bool | None = None,
     wa_d: float | None = None,
     wa_los: str | None = None,
-    discrete_mu: bool = False,
 ) -> dict[str, Any]:
     """
     One-shot continuous :math:`P_\\ell(k_{\\mathrm{in}})` × discrete-shell
-    window → estimator multipoles.
-
-    ``discrete_mu=True``: far-observer plane-parallel
-    :math:`\\mu=\\hat k\\cdot\\hat z` (identity :math:`W` matches 3D→1D).
-    ``discrete_mu=False`` (default): Yamamoto :math:`|k|` shells.
+    window → estimator multipoles. The outer discrete-shell sum applies the
+    discrete-:math:`\\mu` projector
+    :math:`(2\\ell+1)\\mathcal{L}_\\ell(\\mu)` with
+    :math:`\\mu=\\hat k\\cdot\\hat n_{\\mathrm{ref}}` (the local-LOS reference
+    direction, box centre); identity :math:`W` matches 3D→1D.
 
     Unifies the identity / smooth prediction glue used by the Yamamoto
     validation scripts: build (or skip) a
@@ -232,11 +232,6 @@ def predict_windowed_multipoles(
         sum.
     box_volume, n_fftlog, n_k_eval, wide_angle, wa_d, wa_los :
         Forwarded to the matrix builder.
-    discrete_mu : bool, default False
-        Forwarded to
-        :func:`~meer21cm.smooth_window.build_discrete_shell_window_matrix`.
-        True: far-observer :math:`\\mu=\\hat k\\cdot\\hat z`. False:
-        Yamamoto :math:`|k|` shells.
 
     Returns
     -------
@@ -294,7 +289,6 @@ def predict_windowed_multipoles(
                 continuous="identity",
                 n_k_eval=n_k_eval,
                 mode_scale=mode_scale,
-                discrete_mu=discrete_mu,
             )
             if do_wa:
                 d_wa = wa_d
@@ -375,7 +369,6 @@ def predict_windowed_multipoles(
                 build_kw["wa_los"] = wa_los
             if mode_scale is not None:
                 build_kw["mode_scale"] = mode_scale
-            build_kw["discrete_mu"] = bool(discrete_mu)
             mat = swe.build_window_matrix(k_in_arr, **build_kw)
 
         with warnings.catch_warnings():
@@ -1061,9 +1054,11 @@ class SmoothWindowEstimator:
 
         Uses :attr:`k1dbins_out` (legacy estimator edges), not the fine
         :attr:`k1dbins_window` used to measure :math:`W_L`. The map is
-        :math:`|k|`-shell membership for the discrete-shell window. For a
-        far observer, :attr:`~meer21cm.estimator.MultipoleShellMap.mu` is
-        :math:`\\mu_z` and is used as the discrete-:math:`\\mu` projector.
+        :math:`|k|`-shell membership for the discrete-shell window.
+        :attr:`~meer21cm.estimator.MultipoleShellMap.mu` is
+        :math:`\\hat k\\cdot\\hat n_{\\mathrm{ref}}` (the local-LOS reference
+        direction, box centre) and is used as the discrete-:math:`\\mu`
+        projector.
         """
         shape = None
         for candidate in (
@@ -1121,8 +1116,10 @@ class SmoothWindowEstimator:
             ``'identity'`` needs no accumulated ``W_ell`` (no survey
             convolution). ``'smooth'`` requires :meth:`accumulate`
             first (uses measured :attr:`k_window` / :attr:`W_ell`).
-            Pass ``discrete_mu=True`` for far-observer
-            :math:`\\mu=\\hat z` 3D→1D sampling.
+            The outer discrete-shell sum always applies the
+            discrete-:math:`\\mu` projector
+            (:math:`\\mu=\\hat k\\cdot\\hat n_{\\mathrm{ref}}`, the leading-order
+            Yamamoto binning / 3D→1D sampling).
         wide_angle : bool, optional
             If True, include wa_order=1 odd theory columns then resum so
             :meth:`~meer21cm.smooth_window.DiscreteShellWindowMatrix.apply`
@@ -1191,7 +1188,8 @@ class WindowedMultipoleModel(ModelPowerSpectrum):
     by a continuous :math:`\\mu` integral, then optionally applies a
     :class:`~meer21cm.smooth_window.DiscreteShellWindowMatrix` (discrete
     :math:`\\mu` sampling via box-centre :math:`\\hat n_{\\mathrm{ref}}`;
-    far observer matches 3D→1D). ``los='global'`` is not a window path.
+    the leading-order Yamamoto binning, matching 3D→1D for identity
+    :math:`W`). ``los='global'`` is not a window path.
     Does **not** use :func:`~meer21cm.power_ops.get_modelpk_conv`.
 
     Parameters

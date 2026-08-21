@@ -375,7 +375,6 @@ def test_anisotropic_operator_order_vs_conv3d():
         ells=ells,
         n_fftlog=128,
         n_k_eval=64,
-        discrete_mu=True,
     )
 
     from scipy.interpolate import interp1d
@@ -450,7 +449,6 @@ def test_identity_window_is_block_diagonal_k_rebin():
         ells=(0, 2),
         continuous="identity",
         n_k_eval=n_k_eval,
-        discrete_mu=True,
     )
 
     P_in = {0: np.exp(-((k_in / 0.15) ** 2)), 2: np.zeros_like(k_in)}
@@ -529,7 +527,6 @@ def test_identity_continuous_matches_anisotropic_shell():
         ells=ells,
         continuous="identity",
         n_k_eval=128,
-        discrete_mu=True,
     )
     P_win = mat.apply(P_in)
 
@@ -595,7 +592,6 @@ def test_discrete_mu_sampling_with_identity_window():
         ells=ells,
         continuous="identity",
         n_k_eval=128,
-        discrete_mu=True,
     )
     P_win = mat.apply(cont["P_ell"])
 
@@ -782,7 +778,6 @@ def test_continuous_window_matrix_with_tapering():
         continuous="smooth",
         n_fftlog=256,
         n_k_eval=128,
-        discrete_mu=True,
     )
 
     with warnings.catch_warnings():
@@ -1446,7 +1441,6 @@ def test_continuous_window_matrix_taper_periodic_box():
         continuous="smooth",
         n_fftlog=256,
         n_k_eval=128,
-        discrete_mu=True,
     )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
