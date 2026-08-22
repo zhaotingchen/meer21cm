@@ -470,6 +470,11 @@ class DiscreteShellWindowMatrix:
         Theory input multipoles. Defaults to :attr:`ells`.
     ells_out : tuple of int, optional
         Observed output multipoles. Defaults to :attr:`ells`.
+    offset : mapping, optional
+        ``{ell: P_ell(k_out)}`` additive terms added on top of the matrix
+        product in :meth:`apply` (theory-independent; e.g. the map-sampling
+        shot diagonal of :func:`build_mesh_window_matrix`, which cannot be a
+        linear operator on the theory).
     """
 
     matrix: NDArray[np.floating]
@@ -479,6 +484,7 @@ class DiscreteShellWindowMatrix:
     ells: tuple[int, ...]
     ells_in: tuple[int, ...] | None = None
     ells_out: tuple[int, ...] | None = None
+    offset: Mapping[int, ArrayLike] | None = None
 
     def __post_init__(self) -> None:
         self.ells = tuple(int(e) for e in self.ells)
@@ -493,17 +499,26 @@ class DiscreteShellWindowMatrix:
             if self.ells_in is None
             else tuple(int(e) for e in self.ells_in)
         )
+        if self.offset is not None:
+            self.offset = {
+                int(e): np.asarray(o, dtype=float) for e, o in self.offset.items()
+            }
 
     def apply(
         self, p_ell_in: Mapping[int, ArrayLike] | ArrayLike
     ) -> dict[int, NDArray[np.floating]]:
         """Apply this matrix; see :func:`apply_discrete_shell_window_matrix`."""
-        return apply_discrete_shell_window_matrix(
+        out = apply_discrete_shell_window_matrix(
             p_ell_in,
             self.matrix,
             ells=self.ells_out,
             ells_in=self.ells_in,
         )
+        if self.offset:
+            for ell, off in self.offset.items():
+                if ell in out:
+                    out[int(ell)] = out[int(ell)] + off
+        return out
 
     def resum_input_odd_wide_angle(
         self,
@@ -1005,12 +1020,347 @@ def apply_discrete_shell_window_matrix(
 def _extend_hermitian_z(
     c_rfft: NDArray[np.complexfloating], shape: tuple
 ) -> NDArray[np.complexfloating]:
-    """Hermitian z-extension of an rfft-grid array to the full grid."""
+    """Hermitian extension of an rfft-grid array to the full FFT grid.
+
+    For the transform of a real field,
+    :math:`F(-k_x,-k_y,-k_z)=F^*(k_x,k_y,k_z)`, so the negative-:math:`k_z`
+    half is filled from the positive half with
+    :math:`(x,y)\\mapsto(-x,-y)` and conjugation.  (Flipping only the
+    :math:`z` axis is incorrect for a generic real field.)
+    """
     nz = c_rfft.shape[2]
     out = np.zeros(shape, dtype=np.result_type(c_rfft, complex))
     out[..., :nz] = c_rfft
-    out[..., nz:] = np.conj(np.flip(c_rfft[..., 1 : shape[2] - nz + 1], axis=-1))
+    src = c_rfft[..., 1 : shape[2] - nz + 1]
+    src_flipped_z = np.flip(src, axis=-1)
+    src_neg_xy = np.roll(np.flip(np.flip(src_flipped_z, 0), 1), (1, 1), (0, 1))
+    out[..., nz:] = np.conj(src_neg_xy)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Map-sampling shot diagonal (exact per-cell b=b' term)
+# ---------------------------------------------------------------------------
+#
+# The estimator FFTs ``(field x weights)_j = sum_b m_b W_jb`` (map values at
+# the cell positions, MAS-regridded, no interlacing).  The exact b=b'
+# diagonal of its P0 cube is
+#
+#     D_0(k) = (V R / N_box^2) sum_b m_b^2 |W_b(k)|^2,   W_b(k) = sum_j W_jb e^{-ik.x_j},
+#
+# while the coherent models (mesh window / exact discrete window) carry their
+# **own** diagonal
+#
+#     M_0(k) = (R / N_box^2) sum_q t(q) P(q) sum_b |W_b(k-q)|^2,
+#
+# whose per-cell variance is the mode_scale-suppressed sigma_t^2, not the map
+# variance.  The difference D_0 - M_0 is the additive monopole "shot" floor of
+# ``misc/rsd_sims/p0_shot_fix_todo.md``.  Both terms are computed exactly from
+# the per-cell stencils via per-lag scalar sums:
+#
+#     |W_b(k)|^2 = sum_d e^{-2pi i d.n/N} P_d(b),   d = box-index lag between
+#                                                   two stencil points of b,
+#     B_d = sum_b m_b^2 P_d(b),   G_d = sum_b P_d(b)     (P_d real, even in d).
+#
+# Binned like the estimator (with the k1dweights):
+#
+#     bin_i[D_0] = (V R / N^2) sum_d B_d C_{i,d},
+#     bin_i[M_0^(j)] = (R / N^2) sum_d T_d^(j) G_d C_{i,d},
+#
+# with C_{i,d} = (1/U_i) sum_{n in bin i} w_n e^{-2pi i d.n/N} and
+# T_d^(j) = sum_{q in shell j} t(q) e^{+2pi i d.n_q/N} over the full grid.
+
+
+def _map_cell_stencils(ps) -> tuple[NDArray[np.floating], NDArray[np.integer]]:
+    """Exact MAS stencil of every map cell (no interlacing, shift=0).
+
+    Replicates ``grid.project_particle_to_regular_grid`` for the cell
+    positions ``ps.pix_coor_in_box`` with the configured ``ps.grid_scheme``.
+    Returns ``(w, idx3)``: ``(n_cell, n_shift)`` weights and ``(n_cell,
+    n_shift, 3)`` box indices (``-1`` components where the stencil is
+    truncated at the box boundary).
+    """
+    from .grid import allowed_window_scheme, particle_to_mesh_distance, project_function
+
+    pos = np.asarray(ps.pix_coor_in_box, dtype=float)
+    box_len = np.asarray(ps.box_len, dtype=float)
+    box_ndim = np.asarray(ps.box_ndim, dtype=int)
+    s, indx = particle_to_mesh_distance(pos, box_len, box_ndim)
+    indx = np.array(indx).T
+    scheme = str(ps.grid_scheme)
+    p = allowed_window_scheme.index(scheme)
+    shift_limit = int(np.floor(p / 2 + 0.5))
+    shifts = np.arange(-shift_limit, shift_limit + 1)
+    sm = np.meshgrid(shifts, shifts, shifts, indexing="ij")
+    shifts_arr = np.stack([sm[i].ravel() for i in range(3)], axis=1)
+    n_sh = shifts_arr.shape[0]
+    n_cell = pos.shape[0]
+    w = np.zeros((n_cell, n_sh), dtype=np.float64)
+    idx3 = np.full((n_cell, n_sh, 3), -1, dtype=np.int64)
+    for i in range(n_sh):
+        sh = shifts_arr[i]
+        gf = (
+            project_function(s[:, 0] + sh[0], scheme)
+            * project_function(s[:, 1] + sh[1], scheme)
+            * project_function(s[:, 2] + sh[2], scheme)
+        )
+        idx_shift = indx - sh[None, :]
+        ok = np.all((idx_shift >= 0) & (idx_shift < box_ndim[None, :]), axis=1) & (
+            gf > 0
+        )
+        w[:, i] = gf
+        idx3[:, i] = idx_shift
+        idx3[~ok, i] = -1
+        w[~ok, i] = 0.0
+    keep = w.sum(axis=0) > 0
+    return w[:, keep], idx3[:, keep]
+
+
+def _pair_lag_scalars(
+    w: NDArray[np.floating],
+    idx3: NDArray[np.integer],
+    m2: ArrayLike,
+) -> tuple[NDArray[np.integer], NDArray[np.floating]]:
+    """Per-lag scalars from the ordered stencil pairs of every map cell.
+
+    ``B_d = sum_b m2_b sum_{ordered pairs j-j'=d} w_j w_j'`` with ``d`` the
+    box-index lag between the two stencil points of a cell (pairs with a
+    truncated point are dropped).  Returns ``(lags, B)`` with ``lags``
+    ``(n_lag, 3)`` in the ``(dx, dy, dz)`` ordering (dx slowest) and lag
+    components in ``[-2, 2]`` (the CIC support difference).
+    """
+    n_cell, n_sh = w.shape
+    d_off = np.arange(-2, 3)
+    lags = np.array(
+        [(dx, dy, dz) for dx in d_off for dy in d_off for dz in d_off], dtype=np.int64
+    )
+    n_lag = len(lags)
+    B = np.zeros(n_lag, dtype=np.float64)
+    valid = np.all(idx3 >= 0, axis=2)
+    m2_np = np.asarray(m2, dtype=float)
+    if m2_np.shape != (n_cell,):
+        raise ValueError(f"m2 must have shape ({n_cell},) per map cell")
+    for i in range(n_sh):
+        wi = w[:, i]
+        vi = valid[:, i]
+        for j in range(n_sh):
+            msk = vi & valid[:, j]
+            if not msk.any():
+                continue
+            d = idx3[msk, i] - idx3[msk, j]
+            dd = (d[:, 0] + 2) * 25 + (d[:, 1] + 2) * 5 + (d[:, 2] + 2)
+            contrib = m2_np[msk] * wi[msk] * w[msk, j]
+            B += np.bincount(dd, weights=contrib, minlength=n_lag)
+    return lags, B
+
+
+def _mode_index_grids(ps) -> tuple[NDArray, NDArray, NDArray, NDArray]:
+    """rFFT-grid mode indices (n_i = k_i L_i / 2pi) and the full z indices."""
+    box_len = np.asarray(ps.box_len, dtype=float)
+    kx, ky, kz = ps.k_vec
+    Nx, Ny, Nzr = np.shape(kx)[0], np.shape(ky)[0], np.shape(kz)[0]
+    nxg = np.broadcast_to(
+        (np.asarray(kx, float) * box_len[0] / (2.0 * np.pi)).reshape(Nx, 1, 1),
+        (Nx, Ny, Nzr),
+    )
+    nyg = np.broadcast_to(
+        (np.asarray(ky, float) * box_len[1] / (2.0 * np.pi)).reshape(1, Ny, 1),
+        (Nx, Ny, Nzr),
+    )
+    nzg = np.broadcast_to(
+        (np.asarray(kz, float) * box_len[2] / (2.0 * np.pi)).reshape(1, 1, Nzr),
+        (Nx, Ny, Nzr),
+    )
+    nzf = np.arange(int(np.asarray(ps.box_ndim, dtype=int)[2]), dtype=float)
+    return nxg, nyg, nzg, nzf
+
+
+def _lag_phases(nxg, nyg, nzg, lags, nz_full) -> NDArray[np.complexfloating]:
+    """e^{-2pi i d.n/N} on the rFFT grid for every lag.
+
+    The z-mode indices run over the rFFT half-grid but the phase denominator
+    is the FULL z length ``nz_full`` (the FFT lattice is periodic in Nz)."""
+    Nx, Ny, Nzr = nxg.shape
+    out = np.empty((len(lags), Nx, Ny, Nzr), dtype=np.complex64)
+    for i, (dx, dy, dz) in enumerate(lags):
+        out[i] = np.exp(
+            -2.0j * np.pi * (dx * nxg / Nx + dy * nyg / Ny + dz * nzg / nz_full)
+        ).astype(np.complex64, copy=False)
+    return out
+
+
+def _bin_lag_phases(
+    ps, lags, bin_idx, valid, k1dweights, w_bin
+) -> NDArray[np.complexfloating]:
+    """C_{i,d} = (1/U_i) sum_{n in bin i} w_n e^{-2pi i d.n/N}."""
+    nxg, nyg, nzg, nzf = _mode_index_grids(ps)
+    Nx, Ny, Nzr = nxg.shape
+    Nz = int(nzf.size)
+    n_out = len(w_bin)
+    C = np.zeros((n_out, len(lags)), dtype=np.complex128)
+    bin_valid = bin_idx[valid]
+    for i_d, (dx, dy, dz) in enumerate(lags):
+        ph = np.exp(-2.0j * np.pi * (dx * nxg / Nx + dy * nyg / Ny + dz * nzg / Nz))
+        wph = np.asarray(k1dweights, dtype=float) * ph.ravel()
+        summed = np.zeros(n_out, dtype=np.complex128)
+        np.add.at(summed, bin_valid, wph[valid])
+        C[:, i_d] = summed / np.where(np.isfinite(w_bin) & (w_bin > 0), w_bin, 1.0)
+    return C
+
+
+def map_sampling_shot_diagonal(
+    ps,
+    *,
+    weights: ArrayLike,
+    mode_scale: ArrayLike | None,
+    map_m2: ArrayLike,
+    k_in: ArrayLike | None = None,
+    stencils: tuple | None = None,
+) -> dict:
+    r"""
+    Exact b=b' (diagonal) map-sampling "shot" terms of the mesh estimator.
+
+    The estimator FFTs the MAS-regridded map; the exact diagonal of its P0
+    cube is
+
+    .. math::
+
+        D_0(k) = \frac{V R}{N^2}\sum_b m_b^2 |W_b(k)|^2,
+
+    while the coherent window models carry their own diagonal
+
+    .. math::
+
+        M_0(k) = \frac{R}{N^2}\sum_q t(q) P(q) \sum_b |W_b(k-q)|^2
+
+    (the mode_scale-suppressed variance, not the map variance).  This helper
+    returns the binned pieces needed to replace :math:`M_0` by :math:`D_0`
+    (the additive monopole shot floor of
+    ``misc/rsd_sims/p0_shot_fix_todo.md``):
+
+    - ``offset``: ``{0: bin[D_0](k_out)}`` — the theory-independent data
+      diagonal (per-seed realized ``m_b^2``), added on top of the windowed
+      multipoles;
+    - ``cols``: ``(n_in, n_out)`` — ``bin_i[M_0^(j)]`` for every theory
+      column ``j`` (the matrix subtraction that removes the model's own
+      diagonal);
+    - ``full``: ``bin[M_0]`` with the full-grid theory
+      ``ps.auto_power_matter_model_r`` (when present) — the mirror for the
+      exact discrete-window / smooth models, whose diagonal is the same
+      operator evaluated on the full theory rather than the shells.
+
+    ``map_m2`` are the per-cell map second moments in the
+    ``ps.pix_coor_in_box`` order (the cells that ``grid_data_to_field``
+    regrids).  ``stencils`` optionally carries ``(w, idx3)`` from
+    :func:`_map_cell_stencils` (the geometry is deterministic, so it can be
+    computed once and shared across seeds).  ``k_in`` is only needed for the
+    per-column ``cols`` piece (``None`` returns ``cols=None``).
+    """
+    box_ndim = np.asarray(ps.box_ndim, dtype=int)
+    n_grid = int(np.prod(box_ndim))
+    V = float(np.prod(np.asarray(ps.box_len, dtype=float)))
+    R = float(
+        power_weights_renorm(
+            np.asarray(weights, dtype=float), np.asarray(weights, dtype=float)
+        )
+    )
+    if stencils is None:
+        stencils = _map_cell_stencils(ps)
+    w_st, idx3 = stencils
+    lags, B = _pair_lag_scalars(w_st, idx3, np.asarray(map_m2, dtype=float))
+    _, G = _pair_lag_scalars(w_st, idx3, np.ones(w_st.shape[0], dtype=float))
+
+    # estimator-style binning (same convention as build_mesh_window_matrix)
+    k_mode = np.asarray(ps.k_mode, dtype=float).ravel()
+    k1dweights = (
+        np.ones_like(k_mode)
+        if getattr(ps, "k1dweights", None) is None
+        else np.asarray(ps.k1dweights, dtype=float).ravel()
+    )
+    k1dbins = np.asarray(ps.k1dbins, dtype=float)
+    n_out = len(k1dbins) - 1
+    bin_idx = np.digitize(k_mode, k1dbins) - 1
+    valid = (bin_idx >= 0) & (bin_idx < n_out) & (k1dweights > 0)
+    w_bin = np.bincount(
+        bin_idx[valid], weights=k1dweights[valid], minlength=n_out
+    ).astype(float)
+    C = _bin_lag_phases(ps, lags, bin_idx, valid, k1dweights, w_bin)
+
+    pref_d = V * R / n_grid**2
+    pref_m = R / n_grid**2
+    offset0 = pref_d * np.real(C @ B)
+
+    k_in_np = np.asarray(k_in, dtype=float) if k_in is not None else None
+    cols = None
+    if k_in_np is not None:
+        shell_edges = np.concatenate(
+            ([0.0], 0.5 * (k_in_np[:-1] + k_in_np[1:]), [np.inf])
+        )
+        # full-grid shell lag scalars: T_d^(j) = sum_{q in shell j} t(q) e^{2pi i d.n/N}
+        nxg, nyg, nzg, nzf = _mode_index_grids(ps)
+        Nx, Ny, Nzr = nxg.shape
+        Nz = int(nzf.size)
+        ms = (
+            np.ones(k_mode.shape, dtype=float)
+            if mode_scale is None
+            else np.asarray(mode_scale, dtype=float).ravel()
+        )
+        if ms.shape != k_mode.shape:
+            raise ValueError("mode_scale must match the rFFT grid shape")
+        n_in = len(k_in_np)
+        T = np.zeros((n_in, len(lags)), dtype=np.complex128)
+        z_edge = (nzg[0, 0] == 0) | (nzg[0, 0] == Nzr - 1)  # (Nzr,) edge mask
+        for j in range(n_in):
+            shell = (k_mode >= shell_edges[j]) & (k_mode < shell_edges[j + 1])
+            if not shell.any():
+                continue
+            t_s = ms * shell
+            for i_d, (dx, dy, dz) in enumerate(lags):
+                ph = np.exp(
+                    2.0j * np.pi * (dx * nxg / Nx + dy * nyg / Ny + dz * nzg / Nz)
+                )
+                ph_m = np.exp(
+                    2.0j * np.pi * (dx * nxg / Nx + dy * nyg / Ny - dz * nzg / Nz)
+                )
+                terms = t_s * (ph + np.where(z_edge, 0.0, ph_m)).ravel()
+                T[j, i_d] = np.sum(terms)
+        cols = pref_m * np.real((T * G[None, :]) @ C.T)  # (n_in, n_out)
+
+    full = None
+    if (
+        hasattr(ps, "auto_power_matter_model_r")
+        and ps.auto_power_matter_model_r is not None
+    ):
+        ms = (
+            np.ones(k_mode.shape, dtype=float)
+            if mode_scale is None
+            else np.asarray(mode_scale, dtype=float).ravel()
+        )
+        nxg, nyg, nzg, nzf = _mode_index_grids(ps)
+        Nx, Ny, Nzr = nxg.shape
+        Nz = int(nzf.size)
+        z_edge = (nzg[0, 0] == 0) | (nzg[0, 0] == Nzr - 1)
+        pth = np.asarray(ps.auto_power_matter_model_r, dtype=float).ravel().copy()
+        pth[0] = 0.0  # DC excluded, matching exact_window_models
+        pth = pth * ms
+        T_full = np.zeros(len(lags), dtype=np.complex128)
+        # full-grid sum with the even z-extension of the (even) t·P grid
+        for i_d, (dx, dy, dz) in enumerate(lags):
+            ph = np.exp(2.0j * np.pi * (dx * nxg / Nx + dy * nyg / Ny + dz * nzg / Nz))
+            ph_m = np.exp(
+                2.0j * np.pi * (dx * nxg / Nx + dy * nyg / Ny - dz * nzg / Nz)
+            )
+            T_full[i_d] = np.sum(pth * (ph + np.where(z_edge, 0.0, ph_m)).ravel())
+        full = pref_m * np.real(C @ (T_full * G))
+
+    return {
+        "offset": {0: offset0},
+        "cols": cols,
+        "full": full,
+        "lags": lags,
+        "stencils": stencils,
+        "n_out": n_out,
+    }
 
 
 def build_mesh_window_matrix(
@@ -1020,6 +1370,11 @@ def build_mesh_window_matrix(
     weights: ArrayLike,
     ells: Sequence[int] = (0, 2, 4),
     mode_scale: ArrayLike | None = None,
+    out_mode_scale: ArrayLike | None = None,
+    deconvolve_mas: bool = False,
+    w_mas: ArrayLike | None = None,
+    renorm_weights: ArrayLike | None = None,
+    map_m2: ArrayLike | None = None,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Exact mesh-level (FFT) window matrix for a local-LOS Yamamoto estimator.
@@ -1057,6 +1412,14 @@ def build_mesh_window_matrix(
     maps :math:`P_0(k_{\mathrm{in}})\to P_\ell(k_{\mathrm{out}})`, which is
     sufficient for no-RSD theories (test 04).
 
+    For a CIC (or other MAS) deposit of off-grid map cells the exact response
+    factors as :math:`|W_{\mathrm{MAS}}(k)|^2` at the **output** mode times a
+    convolution against the **raw** cell comb (no MAS).  Pass
+    ``out_mode_scale = W_MAS(k)^2``, ``deconvolve_mas=True`` and
+    ``w_mas = W_MAS(k)``, and keep only map-sampling (etc.) in
+    ``mode_scale``.  Default behaviour (``out_mode_scale=None``,
+    ``deconvolve_mas=False``) is unchanged.
+
     Parameters
     ----------
     ps :
@@ -1071,8 +1434,30 @@ def build_mesh_window_matrix(
     ells : sequence of int, default (0, 2, 4)
         Output multipoles (matrix rows).
     mode_scale : array_like, optional
-        Same-k transfer applied to the theory inside the convolution (e.g.
-        the product of the MAS window squared and the map-sampling kernel).
+        Same-k transfer on the **inner** (theory) mode ``q`` (e.g. the
+        map-sampling kernel).  Do not put ``W_MAS^2`` here when using
+        ``out_mode_scale`` / ``deconvolve_mas``.
+    out_mode_scale : array_like, optional
+        Per-Cartesian-mode factor on the 3D response at the **output**
+        mode ``k`` before ``|k|``-shell binning (e.g. ``W_MAS(k)^2``).
+    deconvolve_mas : bool, default False
+        Divide ``FFT(weights)`` by ``w_mas`` to recover the raw cell comb.
+    w_mas : array_like, optional
+        MAS window ``W_hat(k)`` on the rFFT grid (not squared).  Required
+        when ``deconvolve_mas`` is True.
+    renorm_weights : array_like, optional
+        Weights used only for ``R = power_weights_renorm`` (defaults to
+        ``weights``).  Use the estimator's CIC counts here when
+        ``weights`` is a raw/NGP comb.
+    map_m2 : array_like, optional
+        Per-cell map second moments :math:`m_b^2` (the cells that
+        ``grid_data_to_field`` regrids, in the ``ps.pix_coor_in_box`` order).
+        When given, the matrix includes the **Poisson-limit** map-sampling
+        shot diagonal (see :func:`map_sampling_shot_diagonal`).  This is the
+        Poisson estimate of a sub-Poissonian per-cell term and **must not
+        be applied** as a lightcone P0 correction — it over-corrects (see
+        ``misc/rsd_sims/p0_shot_fix_todo.md``).  Kept for diagnostics /
+        unit tests only.  Off by default.
     """
     require_yamamoto_los(str(getattr(ps, "los", "endpoint")))
     ells_out_t = tuple(int(e) for e in ells)
@@ -1081,9 +1466,22 @@ def build_mesh_window_matrix(
     w = np.asarray(weights, dtype=float)
     shape = tuple(w.shape)
     n_grid = int(np.prod(shape))
-    R = float(power_weights_renorm(w, w))
+    w_ren = w if renorm_weights is None else np.asarray(renorm_weights, dtype=float)
+    if w_ren.shape != shape:
+        raise ValueError("renorm_weights must match weights shape")
+    R = float(power_weights_renorm(w_ren, w_ren))
 
     w_tilde = np.fft.rfftn(w, norm="forward")
+    wh_safe = None
+    if deconvolve_mas:
+        if w_mas is None:
+            raise ValueError("deconvolve_mas=True requires w_mas on the rFFT grid")
+        wh = np.asarray(w_mas, dtype=float)
+        if wh.shape != w_tilde.shape:
+            raise ValueError(f"w_mas shape {wh.shape} != rFFT shape {w_tilde.shape}")
+        wh_safe = np.where(np.abs(wh) > 1e-30, wh, 1.0)
+        w_tilde = w_tilde / wh_safe
+
     khat = unit_khat_from_k_vec(ps.k_vec)
     xhat = ps.los_xhat
     nz = w_tilde.shape[2]
@@ -1093,7 +1491,10 @@ def build_mesh_window_matrix(
     for ell in ells_out_t:
         for m in range(-ell, ell + 1):
             ylm = get_real_Ylm(ell, m)
-            c_rfft = np.fft.rfftn(w * ylm(*xhat), norm="forward") * np.conj(w_tilde)
+            c_rfft = np.fft.rfftn(w * ylm(*xhat), norm="forward")
+            if deconvolve_mas:
+                c_rfft = c_rfft / wh_safe
+            c_rfft = c_rfft * np.conj(w_tilde)
             xi[(ell, m)] = np.fft.ifftn(_extend_hermitian_z(c_rfft, shape))
 
     k_mode = np.asarray(ps.k_mode, dtype=float).ravel()
@@ -1112,6 +1513,16 @@ def build_mesh_window_matrix(
             raise ValueError(
                 "mode_scale must match the rFFT grid shape "
                 f"(got {ms.shape}, expected {w_tilde.shape})"
+            )
+
+    if out_mode_scale is None:
+        oms = np.ones(w_tilde.shape, dtype=float)
+    else:
+        oms = np.asarray(out_mode_scale, dtype=float)
+        if oms.shape != w_tilde.shape:
+            raise ValueError(
+                "out_mode_scale must match the rFFT grid shape "
+                f"(got {oms.shape}, expected {w_tilde.shape})"
             )
 
     # |k| shell of each theory node (Voronoi on k_in) and of each output bin
@@ -1147,12 +1558,30 @@ def build_mesh_window_matrix(
                 # FFT norms; the factor N restores the forward-FFT convention)
                 conv = np.fft.fftn(xi[(ell, m)] * xi_t) * n_grid
                 cube = cube + ylm(*khat) * conv[..., :nz]
-            p3d = (4.0 * np.pi) * R * np.real(cube)
+            p3d = (4.0 * np.pi) * R * np.real(cube) * oms
             binned = (
                 np.bincount(bin_idx[valid], weights=p3d.ravel()[valid], minlength=n_out)
                 / w_bin
             )
             matrix[i_ell * n_out : (i_ell + 1) * n_out, j] = np.nan_to_num(binned)
+
+    shot_offset = None
+    if map_m2 is not None:
+        # exact b=b' diagonal: replace the model's own diagonal (whose
+        # per-cell variance is mode_scale-suppressed) with the data's actual
+        # diagonal (the map variance).  The subtraction is per column; the
+        # data diagonal is a theory-independent monopole offset.
+        shot = map_sampling_shot_diagonal(
+            ps,
+            weights=weights,
+            mode_scale=ms,
+            map_m2=map_m2,
+            k_in=k_in_np,
+        )
+        if shot["cols"].shape != (len(k_in_np), n_out):
+            raise RuntimeError("shot diagonal column shape mismatch")
+        matrix[0:n_out, :] -= shot["cols"].T
+        shot_offset = shot["offset"]
 
     return DiscreteShellWindowMatrix(
         matrix=matrix,
@@ -1162,4 +1591,5 @@ def build_mesh_window_matrix(
         ells=ells_out_t,
         ells_in=ells_in_t,
         ells_out=ells_out_t,
+        offset=shot_offset,
     )

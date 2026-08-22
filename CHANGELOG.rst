@@ -44,6 +44,19 @@ Changed
   mesh response, exact for any LOS incl. the true lightcone observer; the
   discrete-:math:`\mu` projector is its :math:`1/d\to 0` limit) with tests in
   ``tests/test_mesh_window.py``
+* add the exact b=b' map-sampling shot diagonal to the mesh window:
+  ``build_mesh_window_matrix(..., map_m2=...)`` replaces the model's own
+  mode_scale-suppressed diagonal
+  :math:`(R/N^2)\sum_q t(q)P(q)\sum_b |W_b(k-q)|^2` with the data's actual
+  diagonal :math:`(V R/N^2)\sum_b m_b^2 |W_b(k)|^2` (per-lag stencil
+  machinery in ``window.map_sampling_shot_diagonal``; monopole offset on
+  ``DiscreteShellWindowMatrix.offset``); test-03 ``exact_window_models`` /
+  check-C smooth ladder and test-04 mesh models mirror it via the cached
+  per-seed ``map_m2`` (see ``misc/rsd_sims/p0_shot_fix_todo.md``).  The
+  post-correction P0 residual is the still-open **coherent deficit** (the
+  model over-predicts the data's coherent part by ~2–5% at mid-k; ruled out:
+  sampling kernel, mode_scale placement, MAS commutation, and — via a
+  z-taper experiment — window leakage)
 
 v0.9.0
 ------
