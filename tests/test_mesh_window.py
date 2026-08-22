@@ -427,7 +427,7 @@ def test_shot_diagonal_matches_direct_per_cell():
     Nx, Ny, Nz = box_ndim
     modes = [(3, 5, 2), (10, 7, 6), (23, 3, 9), (11, 11, 10)]
 
-    for (i, j, k) in modes:
+    for i, j, k in modes:
         # direct: |Σ_j w_j e^{-2πi idx.n/N}|² per cell, summed with m²
         ph = np.exp(
             -2.0j
@@ -487,3 +487,91 @@ def test_shot_offset_matches_helper():
     # and P2/P4 are unchanged by the offset (monopole-only)
     for ell in (2, 4):
         assert np.allclose(model_shot[ell], model_plain[ell])
+
+
+def test_ngp_raw_cell_comb_and_mas_out_api():
+    """Library helpers assemble the preferred MAS-out mesh recipe."""
+    from meer21cm.window import build_mesh_window_mas_out, ngp_raw_cell_comb
+
+    fps = _shot_fps()
+    comb = ngp_raw_cell_comb(fps)
+    assert comb.shape == tuple(BOX_NDIM)
+    assert float(comb.sum()) == pytest.approx(float(fps.pix_coor_in_box.shape[0]))
+
+    k_in = np.geomspace(0.012, 0.16, N_K_IN)
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    mat = build_mesh_window_mas_out(
+        fps, k_in, renorm_weights=weights, ells=ELLS, raw_comb=weights
+    )
+    assert mat.matrix.shape[0] == len(ELLS) * (len(fps.k1dbins) - 1)
+
+
+def test_map_sampling_mode_scale_level0():
+    """Level-0 map sampling matches mean-sinc |S|^2."""
+    from meer21cm.multipole_model import map_sampling_mode_scale
+    from meer21cm.power_ops import step_window_attenuation
+    from meer21cm.util import get_nd_slicer
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _far_observer())
+    fps.pix_resol_in_mpc = 5.0
+    fps.los_resol_in_mpc = 4.0
+    s = map_sampling_mode_scale(fps, z_resolved=False)
+    slicer = get_nd_slicer()
+    kx = np.asarray(fps.k_vec[0][slicer[0]], dtype=float)
+    ky = np.asarray(fps.k_vec[1][slicer[1]], dtype=float)
+    kz = np.asarray(fps.k_vec[2][slicer[2]], dtype=float)
+    expect = (
+        step_window_attenuation(kx, 5.0, p=2)
+        * step_window_attenuation(ky, 5.0, p=2)
+        * step_window_attenuation(kz, 4.0, p=2)
+    )
+    assert np.allclose(s, expect)
+
+
+# ---------------------------------------------------------------------------
+# 5. Extended-q path (Band 2 / Band 3) — additive, defaults unchanged
+# ---------------------------------------------------------------------------
+
+
+def test_cell_sampling_kernel_matches_radial_sinc():
+    """Aligned cells + q ∥ n̂ recover sinc(q Δ_∥ / 2)."""
+    from meer21cm.multipole_model import cell_sampling_kernel
+    from meer21cm.power_ops import step_window_attenuation
+
+    n_cell = 32
+    nhat = np.zeros((n_cell, 3))
+    nhat[:, 2] = 1.0
+    dperp = np.full(n_cell, 5.0)
+    dpar = np.full(n_cell, 4.0)
+    q_abs = 0.02
+    s = cell_sampling_kernel((0.0, 0.0, 1.0), q_abs, nhat, dperp, dpar)
+    expect = np.sqrt(step_window_attenuation(q_abs, 4.0, p=2))
+    assert np.allclose(s, expect)
+    # low-q |S|² vs level-0 radial factor
+    t0 = step_window_attenuation(q_abs, 4.0, p=2)
+    assert abs(float(np.mean(s**2)) / t0 - 1.0) < 1e-3
+
+
+def test_cell_sampling_kernel_lowq_matches_level0_mean():
+    """Angle-averaged |S_b|² tracks the survey-mean sinc at low q."""
+    from meer21cm.multipole_model import (
+        cell_sampling_kernel_mu_rms,
+        map_sampling_mode_scale,
+    )
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _far_observer())
+    fps.pix_resol_in_mpc = 5.0
+    fps.los_resol_in_mpc = 4.0
+    s0 = map_sampling_mode_scale(fps, z_resolved=False)
+    k = np.asarray(fps.k_mode, dtype=float)
+    low = (k > 0.035) & (k < 0.055)
+    t_mean = float(np.mean(s0[low]))
+    # isotropic cells with the same mean widths
+    n_cell = 64
+    dperp = np.full(n_cell, 5.0)
+    dpar = np.full(n_cell, 4.0)
+    q_abs = 0.045
+    rms = cell_sampling_kernel_mu_rms(q_abs, dperp, dpar, nmu=16)
+    assert abs(float(np.mean(rms**2)) / t_mean - 1.0) < 2e-3

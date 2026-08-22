@@ -54,7 +54,7 @@ from .estimator import (
     MultipoleShellMap,
 )
 from .model import ModelPowerSpectrum
-from .power_ops import power_weights_renorm
+from .power_ops import power_weights_renorm, step_window_attenuation
 from .window import (
     DiscreteShellWindowMatrix,
     WindowEllMap,
@@ -115,6 +115,177 @@ def propose_k_in(
         float(edges[-1]) * float(high_factor),
         int(n),
     )
+
+
+def map_sampling_mode_scale(ps, *, z_resolved=True):
+    r"""
+    Map-sampling transfer :math:`|S(k)|^2` for path-(4) ``mode_scale``.
+
+    Propagation averages the fine box field over each HEALPix pixel ×
+    frequency channel — a 3D bin constant in (angle, frequency) whose
+    **comoving** size varies with redshift:
+
+    .. math::
+
+        D_\perp(z) = \theta_{\mathrm{pix}}\,\chi(z),\quad
+        D_\parallel(z) = |\chi(\nu+\Delta\nu/2)-\chi(\nu-\Delta\nu/2)|.
+
+    With ``z_resolved=False`` (level 0): the survey-mean kernel
+
+    .. math::
+
+        \mathrm{sinc}^2(k_x D_\perp/2)\,
+        \mathrm{sinc}^2(k_y D_\perp/2)\,
+        \mathrm{sinc}^2(k_z D_\parallel/2)
+
+    using ``pix_resol_in_mpc`` / ``los_resol_in_mpc``.
+
+    With ``z_resolved=True`` (level 1): transverse uses the mean-width
+    sinc; radial uses the per-channel projected width
+
+    .. math::
+
+        D_{\parallel,\mathrm{eff}}(z)^2
+        = D_\parallel(z)^2\langle\cos^2\theta\rangle
+        + D_\perp(z)^2\langle\sin^2\theta\rangle,
+
+    with ``θ`` the pixel angle from the box ``z`` axis, averaged with
+    uniform channel weights.  Validated against a single-mode transfer
+    probe (``misc/rsd_sims/03_lightcone_sampling_window.py``).
+
+    Returns an array on the rFFT grid of ``ps``.
+    """
+    from .util import freq_to_redshift, get_nd_slicer
+
+    slicer = get_nd_slicer()
+    kx = np.asarray(ps.k_vec[0][slicer[0]], dtype=float)
+    ky = np.asarray(ps.k_vec[1][slicer[1]], dtype=float)
+    kz = np.asarray(ps.k_vec[2][slicer[2]], dtype=float)
+    if not z_resolved:
+        dperp = float(ps.pix_resol_in_mpc)
+        dpar = float(ps.los_resol_in_mpc)
+        return (
+            step_window_attenuation(kx, dperp, p=2)
+            * step_window_attenuation(ky, dperp, p=2)
+            * step_window_attenuation(kz, dpar, p=2)
+        )
+
+    cosmo = ps.astropy_cosmo_fiducial
+    theta_pix = float(np.radians(ps.pix_resol))
+    dnu = float(ps.freq_resol)
+    z_lo = freq_to_redshift(ps.nu + 0.5 * dnu)
+    z_hi = freq_to_redshift(ps.nu - 0.5 * dnu)
+    chi_lo = cosmo.comoving_distance(z_lo).value
+    chi_hi = cosmo.comoving_distance(z_hi).value
+    dpar_ch = np.abs(chi_hi - chi_lo)
+    chi_ch = 0.5 * (chi_lo + chi_hi)
+    dperp_ch = theta_pix * chi_ch
+
+    pos = np.asarray(ps.pix_coor_in_cartesian, dtype=float).reshape(-1, 3)
+    nrm = np.linalg.norm(pos, axis=1)
+    ok = nrm > 0
+    cos2 = float(np.mean((pos[ok, 2] / nrm[ok]) ** 2))
+    sin2 = 1.0 - cos2
+
+    dperp_mean = float(ps.pix_resol_in_mpc)
+    b_t = step_window_attenuation(kx, dperp_mean, p=2) * step_window_attenuation(
+        ky, dperp_mean, p=2
+    )
+    out = np.zeros((kx.shape[0], ky.shape[1], kz.shape[2]))
+    for c in range(len(chi_ch)):
+        dpar_eff = float(np.sqrt(dpar_ch[c] ** 2 * cos2 + dperp_ch[c] ** 2 * sin2))
+        out = out + b_t * step_window_attenuation(kz, dpar_eff, p=2)
+    return out / len(chi_ch)
+
+
+def cell_sampling_geometry(ps):
+    r"""
+    Per-cell line-of-sight and comoving top-hat widths.
+
+    ``pix_coor_in_cartesian`` is assigned to the nearest frequency
+    channel via comoving distance.  Returns ``nhat`` ``(n_cell, 3)``,
+    ``dperp`` and ``dpar`` ``(n_cell,)``.
+    """
+    from .util import freq_to_redshift
+
+    if getattr(ps, "_pix_coor_in_cartesian", None) is not None:
+        pos = np.asarray(ps.pix_coor_in_cartesian, dtype=float).reshape(-1, 3)
+    else:
+        origin = np.asarray(getattr(ps, "box_origin", np.zeros(3)), dtype=float)
+        pos = np.asarray(ps.pix_coor_in_box, dtype=float).reshape(
+            -1, 3
+        ) + origin.reshape(1, 3)
+    chi = np.linalg.norm(pos, axis=1)
+    nhat = np.zeros_like(pos)
+    ok = chi > 0
+    nhat[ok] = pos[ok] / chi[ok, None]
+
+    cosmo = ps.astropy_cosmo_fiducial
+    theta_pix = float(np.radians(ps.pix_resol))
+    dnu = float(ps.freq_resol)
+    chi_lo = cosmo.comoving_distance(freq_to_redshift(ps.nu + 0.5 * dnu)).value
+    chi_hi = cosmo.comoving_distance(freq_to_redshift(ps.nu - 0.5 * dnu)).value
+    dpar_ch = np.abs(chi_hi - chi_lo)
+    chi_ch = 0.5 * (chi_lo + chi_hi)
+    dperp_ch = theta_pix * chi_ch
+    ic = np.argmin(np.abs(chi[:, None] - chi_ch[None, :]), axis=1)
+    return {
+        "nhat": nhat,
+        "dperp": np.asarray(dperp_ch[ic], dtype=float),
+        "dpar": np.asarray(dpar_ch[ic], dtype=float),
+        "chi": chi,
+        "dperp_ch": np.asarray(dperp_ch, dtype=float),
+        "dpar_ch": np.asarray(dpar_ch, dtype=float),
+    }
+
+
+def cell_sampling_kernel(q_hat, q_abs, nhat, dperp, dpar):
+    r"""
+    Per-cell map-sampling kernel :math:`\hat S_b(\mathbf q)`.
+
+    Each cell is a top-hat of radial width ``dpar`` and angular side
+    ``dperp`` in its own frame :math:`\hat n_b`.  The two transverse
+    axes split :math:`q_\perp` evenly (the diagnostic split; swapping
+    it changes :math:`\langle|S|^2\rangle` by :math:`<10^{-3}`).
+    """
+    q_hat = np.asarray(q_hat, dtype=float).reshape(3)
+    qn = float(np.linalg.norm(q_hat))
+    if qn <= 0:
+        raise ValueError("q_hat must be a non-zero 3-vector")
+    q_hat = q_hat / qn
+    q_abs = float(q_abs)
+    nhat = np.asarray(nhat, dtype=float).reshape(-1, 3)
+    dperp = np.asarray(dperp, dtype=float).reshape(-1)
+    dpar = np.asarray(dpar, dtype=float).reshape(-1)
+    mu = nhat @ q_hat
+    q_par = q_abs * mu
+    q_perp = q_abs * np.sqrt(np.maximum(1.0 - mu**2, 0.0))
+    rad = np.sinc(q_par * dpar / (2.0 * np.pi))
+    tr = np.sinc((q_perp / np.sqrt(2.0)) * dperp / (2.0 * np.pi)) ** 2
+    return rad * tr
+
+
+def cell_sampling_kernel_mu_rms(q_abs, dperp, dpar, *, nmu: int = 16):
+    r"""
+    Shell-frozen per-cell amplitude :math:`\sqrt{\langle\hat S_b^2\rangle_\mu}`.
+
+    :math:`\hat S_b` in the cell frame depends on :math:`|q|` and
+    :math:`\mu=\hat q\cdot\hat n_b` only.  Gauss–Legendre average over
+    :math:`\mu\in[-1,1]`.
+    """
+    q_abs = float(q_abs)
+    dperp = np.asarray(dperp, dtype=float).reshape(-1)
+    dpar = np.asarray(dpar, dtype=float).reshape(-1)
+    mus, wts = np.polynomial.legendre.leggauss(int(nmu))
+    s2 = np.zeros(dperp.shape[0], dtype=float)
+    for mu, w in zip(mus, wts):
+        q_par = q_abs * float(mu)
+        q_perp = q_abs * float(np.sqrt(max(1.0 - mu * mu, 0.0)))
+        s = np.sinc(q_par * dpar / (2.0 * np.pi)) * (
+            np.sinc((q_perp / np.sqrt(2.0)) * dperp / (2.0 * np.pi)) ** 2
+        )
+        s2 = s2 + float(w) * s**2
+    return np.sqrt(np.maximum(0.5 * s2, 0.0))
 
 
 def propose_k1dbins_window(

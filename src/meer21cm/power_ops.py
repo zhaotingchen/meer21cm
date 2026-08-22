@@ -614,3 +614,36 @@ def step_window_attenuation(k_dir, step_size_in_mpc, p=1):
     """
     # note np.sinc is sin(pi x)/(pi x)
     return np.sinc(k_dir * step_size_in_mpc / np.pi / 2) ** p
+
+
+def configure_k1d_bins(
+    ps,
+    n_bins=12,
+    *,
+    kmax_frac=0.5,
+    k_lo_floor=0.005,
+):
+    """
+    Set ``ps.k1dweights`` and ``ps.k1dbins`` from a Nyquist cut.
+
+    Modes with any Cartesian ``|k_i| > kmax_frac * k_Nyquist,i`` are dropped
+    (and the DC mode).  Linear ``k1dbins`` span the kept ``|k|`` range,
+    floored at ``k_lo_floor``.
+    """
+    from .util import get_nd_slicer
+
+    k_nyq = np.asarray(ps.k_nyquist, dtype=float)
+    k_max = float(kmax_frac) * k_nyq
+    slicer = get_nd_slicer()
+    w = np.ones_like(ps.k_mode, dtype=float)
+    for i in range(3):
+        w = w * (np.abs(ps.k_vec[i])[slicer[i]] <= k_max[i])
+    w[0, 0, 0] = 0.0
+    ps.k1dweights = w
+    k_hi = float(kmax_frac) * float(np.min(k_nyq))
+    k_kept = np.asarray(ps.k_mode, dtype=float)[w > 0]
+    k_lo = float(k_lo_floor)
+    if k_kept.size:
+        k_lo = max(k_lo, float(np.min(k_kept)))
+        k_hi = min(k_hi, float(np.max(k_kept)))
+    ps.k1dbins = np.linspace(k_lo, k_hi, int(n_bins) + 1)

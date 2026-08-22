@@ -122,7 +122,7 @@ from scipy.special import eval_legendre, spherical_jn
 
 from .estimator import MultipoleShellMap
 from .fftlog import CorrelationToPower, PowerToCorrelation
-from .power_ops import bin_3d_to_1d, power_weights_renorm
+from .power_ops import power_weights_renorm
 from .spherical import get_real_Ylm, unit_khat_from_k_vec
 from .util import legendre_polynomial_with_factor
 from .wide_angle import power_spectrum_odd_wide_angle_matrix
@@ -1593,3 +1593,140 @@ def build_mesh_window_matrix(
         ells_out=ells_out_t,
         offset=shot_offset,
     )
+
+
+def ngp_raw_cell_comb(ps, particle_mass=None):
+    r"""
+    NGP deposit of map cells at ``ps.pix_coor_in_box`` (raw cell comb).
+
+    For a CIC (or other MAS) regrid of off-grid cells the exact mesh-window
+    response factors as :math:`|W_{\mathrm{MAS}}(k)|^2` at the **output**
+    mode times a convolution against this **raw** comb (no MAS).  Pass the
+    result as ``weights`` to :func:`build_mesh_window_matrix` with
+    ``out_mode_scale = W_MAS(k)^2`` and ``renorm_weights`` = the
+    estimator's CIC counts (see :func:`build_mesh_window_mas_out`).
+
+    Parameters
+    ----------
+    ps :
+        Object with ``pix_coor_in_box``, ``box_len``, ``box_ndim``.
+    particle_mass : array_like, optional
+        Per-cell masses (e.g. a pre-deposit frequency taper), length
+        ``len(pix_coor_in_box)``.  Default: unit masses.
+
+    Returns
+    -------
+    comb : ndarray
+        Real-space NGP cube matching ``box_ndim``.
+    """
+    from .grid import project_particle_to_regular_grid
+
+    pix = np.asarray(ps.pix_coor_in_box, dtype=float)
+    if particle_mass is None:
+        mass = np.ones(pix.shape[0], dtype=float)
+    else:
+        mass = np.asarray(particle_mass, dtype=float)
+        if mass.shape != (pix.shape[0],):
+            raise ValueError(
+                f"particle_mass shape {mass.shape} != n_cell {pix.shape[0]}"
+            )
+    raw, _w, _c = project_particle_to_regular_grid(
+        pix,
+        np.asarray(ps.box_len, float),
+        np.asarray(ps.box_ndim, int),
+        particle_mass=mass,
+        grid_scheme="nnb",
+        average=False,
+    )
+    return np.asarray(raw, dtype=float)
+
+
+def build_mesh_window_mas_out(
+    ps,
+    k_in: ArrayLike,
+    *,
+    renorm_weights: ArrayLike,
+    ells: Sequence[int] = (0, 2, 4),
+    mode_scale: ArrayLike | None = None,
+    particle_mass: ArrayLike | None = None,
+    raw_comb: ArrayLike | None = None,
+) -> DiscreteShellWindowMatrix:
+    r"""
+    Preferred MAS-at-output mesh window for lightcone CIC deposits.
+
+    Builds :func:`build_mesh_window_matrix` with:
+
+    - ``weights`` = NGP raw cell comb at ``pix_coor_in_box``
+      (:func:`ngp_raw_cell_comb`), or ``raw_comb`` if given;
+    - ``out_mode_scale`` = :math:`W_{\mathrm{MAS}}(k)^2`;
+    - ``renorm_weights`` = the estimator's CIC counts (for ``R``);
+    - ``mode_scale`` = map-sampling (etc.) only — do **not** put
+      :math:`W_{\mathrm{MAS}}^2` here.
+
+    The theory :math:`q` integral runs over the PS Fourier grid only.
+    Extending it past the grid was measured to be negligible (Band 2 +
+    Band 3 contribute :math:`0.05`–:math:`0.17\%` of :math:`P_0` on the
+    ``misc/rsd_sims/04`` lightcone): out-of-zone :math:`q` enters
+    weighted by the cell-comb power at large lag, which is
+    :math:`\sim 10^{-6}` of the :math:`\kappa = 0` spike.
+
+    Parameters
+    ----------
+    particle_mass :
+        Optional per-cell masses for the NGP comb (e.g. a pre-deposit
+        frequency taper).  Ignored when ``raw_comb`` is provided.
+    """
+    from .grid import fourier_window_for_assignment
+
+    if raw_comb is None:
+        kernel = ngp_raw_cell_comb(ps, particle_mass=particle_mass)
+    else:
+        kernel = np.asarray(raw_comb, dtype=float)
+    w_mas2 = fourier_window_for_assignment(ps.box_ndim, ps.grid_scheme) ** 2
+    return build_mesh_window_matrix(
+        ps,
+        k_in,
+        weights=kernel,
+        ells=ells,
+        mode_scale=mode_scale,
+        out_mode_scale=w_mas2,
+        renorm_weights=renorm_weights,
+    )
+
+
+def predict_mesh_windowed_multipoles(
+    ps,
+    k_in: ArrayLike | None = None,
+    *,
+    renorm_weights: ArrayLike,
+    ells: Sequence[int] = (0, 2, 4),
+    mode_scale: ArrayLike | None = None,
+    particle_mass: ArrayLike | None = None,
+    raw_comb: ArrayLike | None = None,
+    n_k_in: int = 80,
+    nmu: int = 64,
+) -> dict[int, NDArray[np.floating]]:
+    """
+    One-shot MAS-out mesh window applied to the isotropic theory monopole.
+
+    Theory is ``get_theory_multipoles_kmu`` of ``ps`` on the matrix
+    ``k_in``.  Returns ``{ell: P_ell(k_out)}``.
+    """
+    from .multipole_model import propose_k_in
+
+    if k_in is None:
+        k_in = propose_k_in(ps.k1dbins, n=int(n_k_in))
+    k_in_np = np.asarray(k_in, dtype=float)
+    mat = build_mesh_window_mas_out(
+        ps,
+        k_in_np,
+        renorm_weights=renorm_weights,
+        ells=ells,
+        mode_scale=mode_scale,
+        particle_mass=particle_mass,
+        raw_comb=raw_comb,
+    )
+    theory0 = ps.get_theory_multipoles_kmu(mat.k_in, ells=(0,), nmu=int(nmu))["P_ell"][
+        0
+    ]
+    return mat.apply({0: theory0})
