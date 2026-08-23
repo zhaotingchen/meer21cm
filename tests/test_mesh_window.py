@@ -122,7 +122,7 @@ def _bin(fps, p3d):
     return np.asarray(p1d, float)[0]
 
 
-def _direct_mesh_model(fps, weights, k_in, theory_nodes):
+def _direct_mesh_model(fps, weights, k_in, theory_nodes, out_mode_scale=None):
     """Reference: bin[4πR Re Σ_m Y_ℓm(k̂) (FFT[wY_ℓm(n̂)]FFT[w]* ⊛ t·P_pw)].
 
     ``P_pw`` is the piecewise-constant theory on the k_in Voronoi shells, so
@@ -159,7 +159,10 @@ def _direct_mesh_model(fps, weights, k_in, theory_nodes):
             c_full = np.fft.fftn(w * ylm(*xhat), norm="forward") * np.conj(w_full)
             conv = np.fft.fftn(np.fft.ifftn(c_full) * xi_p) * n_grid
             cube = cube + ylm(*khat) * conv[..., :nz]
-        out[int(ell)] = _bin(fps, 4.0 * np.pi * R * np.real(cube))
+        p3d = 4.0 * np.pi * R * np.real(cube)
+        if out_mode_scale is not None:
+            p3d = p3d * np.asarray(out_mode_scale, dtype=float)
+        out[int(ell)] = _bin(fps, p3d)
     return out
 
 
@@ -575,3 +578,559 @@ def test_cell_sampling_kernel_lowq_matches_level0_mean():
     q_abs = 0.045
     rms = cell_sampling_kernel_mu_rms(q_abs, dperp, dpar, nmu=16)
     assert abs(float(np.mean(rms**2)) / t_mean - 1.0) < 2e-3
+
+
+# ---------------------------------------------------------------------------
+# 6. Beam transfer at the output mode
+# ---------------------------------------------------------------------------
+
+
+def test_beam_out_mode_scale_level0_matches_gaussian_attenuation():
+    """Level 0 is the legacy Gaussian B(k_perp)^2 on the box-frame k_perp."""
+    from meer21cm.multipole_model import beam_out_mode_scale
+    from meer21cm.power_ops import gaussian_beam_attenuation
+    from meer21cm.util import get_nd_slicer
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _far_observer())
+    sigma = 12.0
+    got = beam_out_mode_scale(fps, level=0, sigma_beam_in_mpc=sigma)
+    slicer = get_nd_slicer()
+    kx = np.asarray(fps.k_vec[0][slicer[0]], dtype=float)
+    ky = np.asarray(fps.k_vec[1][slicer[1]], dtype=float)
+    kz = np.asarray(fps.k_vec[2][slicer[2]], dtype=float)
+    expect = (
+        gaussian_beam_attenuation(np.sqrt(kx**2 + ky**2 + 0.0 * kz), sigma) ** 2
+    )
+    assert np.allclose(got, expect)
+
+
+def test_beam_ylm_decomposition_matches_cell_average():
+    """Addition-theorem <B> equals the brute-force cell mean on a small set."""
+    from meer21cm.multipole_model import mean_gaussian_beam_on_modes
+    from meer21cm.spherical import get_real_Ylm
+
+    rng = np.random.default_rng(4)
+    nhat = rng.normal(size=(48, 3))
+    nhat = nhat / np.linalg.norm(nhat, axis=1)[:, None]
+    sigma_ch = np.array([8.0, 10.0, 14.0])
+    k_hat = np.array([0.3, 0.4, np.sqrt(1.0 - 0.3**2 - 0.4**2)])
+    k_abs = 0.07
+    mu = nhat @ k_hat
+    brute = 0.0
+    for sig in sigma_ch:
+        brute += float(np.mean(np.exp(-0.5 * (k_abs * sig) ** 2 * (1.0 - mu**2))))
+    brute /= len(sigma_ch)
+    # single-mode arrays with the same broadcasting as the rFFT helpers
+    k_abs_a = np.array([k_abs])
+    khat_a = (np.array([k_hat[0]]), np.array([k_hat[1]]), np.array([k_hat[2]]))
+    got = mean_gaussian_beam_on_modes(
+        k_abs_a, khat_a, nhat, sigma_ch, coherent=True, ell_max=16, nmu=64
+    )
+    assert abs(float(got[0]) / brute - 1.0) < 2e-4
+    del get_real_Ylm
+
+
+def test_beam_level1_reduces_to_level0_for_narrow_footprint():
+    """Constant sigma and n̂ ≈ ẑ recovers the box-frame k_perp Gaussian."""
+    from meer21cm.multipole_model import (
+        beam_out_mode_scale,
+        mean_gaussian_beam_on_modes,
+    )
+    from meer21cm.power_ops import gaussian_beam_attenuation
+    from meer21cm.spherical import unit_khat_from_k_vec
+    from meer21cm.util import get_nd_slicer
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _far_observer())
+    sigma = 10.0
+    slicer = get_nd_slicer()
+    kx = np.asarray(fps.k_vec[0][slicer[0]], dtype=float)
+    ky = np.asarray(fps.k_vec[1][slicer[1]], dtype=float)
+    kz = np.asarray(fps.k_vec[2][slicer[2]], dtype=float)
+    k_abs = np.sqrt(kx**2 + ky**2 + kz**2)
+    khat = unit_khat_from_k_vec(fps.k_vec)
+    nhat = np.zeros((16, 3))
+    nhat[:, 2] = 1.0
+    mean_b = mean_gaussian_beam_on_modes(
+        k_abs, khat, nhat, [sigma], coherent=True, ell_max=12, nmu=48
+    )
+    lvl0 = gaussian_beam_attenuation(np.sqrt(kx**2 + ky**2 + 0.0 * kz), sigma)
+    # In-zone k of the coarse lightcone (k σ ≲ 1); high-k modes on this
+    # periodic test box need a much larger L expansion.
+    ok = (k_abs > 0.02) & (k_abs < 0.10)
+    rel = np.abs(mean_b[ok] / np.maximum(lvl0[ok], 1.0e-12) - 1.0)
+    assert float(np.median(rel)) < 5e-3
+    # level-0 helper still matches the closed form
+    assert np.allclose(
+        beam_out_mode_scale(fps, level=0, sigma_beam_in_mpc=sigma),
+        lvl0**2,
+    )
+
+
+def test_mesh_window_beam_out_mode_scale_matches_direct():
+    """Mesh matrix with a beam out_mode_scale equals the direct convolution."""
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, N_K_IN)
+    theory_nodes = _theory_grid(k_in)
+    from meer21cm.power_ops import gaussian_beam_attenuation
+    from meer21cm.util import get_nd_slicer
+
+    slicer = get_nd_slicer()
+    kx = np.asarray(fps.k_vec[0][slicer[0]], dtype=float)
+    ky = np.asarray(fps.k_vec[1][slicer[1]], dtype=float)
+    kz = np.asarray(fps.k_vec[2][slicer[2]], dtype=float)
+    beam = gaussian_beam_attenuation(np.sqrt(kx**2 + ky**2 + 0.0 * kz), 15.0) ** 2
+    mat = build_mesh_window_matrix(
+        fps, k_in, ells=ELLS, weights=weights, out_mode_scale=beam
+    )
+    model = mat.apply({0: theory_nodes})
+    direct = _direct_mesh_model(fps, weights, k_in, theory_nodes, out_mode_scale=beam)
+    for ell in ELLS:
+        assert np.allclose(
+            model[ell], direct[ell], rtol=1e-8, atol=1e-8 * np.max(np.abs(direct[ell]))
+        ), f"ell={ell}: beam out_mode_scale matrix != direct"
+
+
+def test_mean_beam_amplitude_on_cells_matches_direct():
+    """Y_LM cell amplitude equals the brute-force Gaussian at one mode."""
+    from meer21cm.multipole_model import mean_beam_amplitude_on_cells
+
+    rng = np.random.default_rng(5)
+    nhat = rng.normal(size=(32, 3))
+    nhat = nhat / np.linalg.norm(nhat, axis=1)[:, None]
+    sigma_b = np.full(32, 11.0)
+    k_hat = np.array([0.2, 0.5, np.sqrt(1.0 - 0.2**2 - 0.5**2)])
+    k_abs = 0.055
+    mu = nhat @ k_hat
+    brute = np.exp(-0.5 * (k_abs * 11.0) ** 2 * (1.0 - mu**2))
+    got = mean_beam_amplitude_on_cells(
+        np.array([k_abs]),
+        (np.array([k_hat[0]]), np.array([k_hat[1]]), np.array([k_hat[2]])),
+        nhat,
+        sigma_b,
+        ell_max=12,
+        nmu=64,
+    )
+    assert float(np.max(np.abs(got / brute - 1.0))) < 3e-4
+
+
+def test_mesh_window_constant_bin_mass_equals_out_mode_scale():
+    """Cell-independent B_b in out_bin_weights equals scalar B^2 out_mode_scale."""
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, N_K_IN)
+    theory_nodes = _theory_grid(k_in)
+    from meer21cm.power_ops import gaussian_beam_attenuation
+    from meer21cm.util import get_nd_slicer
+
+    slicer = get_nd_slicer()
+    kx = np.asarray(fps.k_vec[0][slicer[0]], dtype=float)
+    ky = np.asarray(fps.k_vec[1][slicer[1]], dtype=float)
+    kz = np.asarray(fps.k_vec[2][slicer[2]], dtype=float)
+    b_amp = gaussian_beam_attenuation(np.sqrt(kx**2 + ky**2 + 0.0 * kz), 15.0)
+    # A spatially constant mass c scales xi by c^2, matching out_mode_scale=c^2.
+    # Use one c for every bin so the two matrices are identical.
+    c = 0.7
+    n_out = len(np.asarray(fps.k1dbins)) - 1
+    out_bin_weights = [c * weights for _ in range(n_out)]
+    mat_b3 = build_mesh_window_matrix(
+        fps, k_in, ells=ELLS, weights=weights, out_bin_weights=out_bin_weights
+    )
+    mat_b2 = build_mesh_window_matrix(
+        fps,
+        k_in,
+        ells=ELLS,
+        weights=weights,
+        out_mode_scale=np.full_like(b_amp, c**2),
+    )
+    model_b3 = mat_b3.apply({0: theory_nodes})
+    model_b2 = mat_b2.apply({0: theory_nodes})
+    for ell in ELLS:
+        assert np.allclose(
+            model_b3[ell],
+            model_b2[ell],
+            rtol=1e-8,
+            atol=1e-8 * np.max(np.abs(model_b2[ell])),
+        ), f"ell={ell}: constant-mass B3 != scalar B^2"
+
+
+def test_beam_mode_group_index_partitions_estimator_modes():
+    """(|k| bin, |mu|) groups tile exactly the modes the estimator bins."""
+    from meer21cm.multipole_model import beam_mode_group_index
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    n_out = len(np.asarray(fps.k1dbins)) - 1
+
+    idx1, n1 = beam_mode_group_index(fps, n_mu=1)
+    assert n1 == n_out
+    idx3, n3 = beam_mode_group_index(fps, n_mu=3)
+    assert n3 == 3 * n_out
+    # same set of modes is covered, and each group maps back to its own bin
+    assert np.array_equal(idx1 >= 0, idx3 >= 0)
+    assert np.array_equal(idx3[idx3 >= 0] // 3, idx1[idx1 >= 0])
+    counts = np.bincount(idx3[idx3 >= 0].ravel(), minlength=n3)
+    for i in range(n_out):
+        n_bin = int(np.sum(idx1 == i))
+        if n_bin < 3:
+            continue
+        sub = counts[3 * i : 3 * i + 3]
+        assert sub.sum() == n_bin
+        # equal-count quantiles: no group may be empty for a populated bin
+        assert sub.min() > 0
+
+
+def test_cell_grid_los_reproduces_the_deposited_cube():
+    """The kernel's zero mode must equal the cell sum built on cell_grid_los.
+
+    beam_diagonal_correction subtracts a cell-space mean field from the
+    exact one; if the LOS bookkeeping does not match what
+    ngp_raw_cell_comb + los_xhat actually produce, the subtraction leaves
+    a spurious ell>0 residual instead of removing one.
+    """
+    from meer21cm.multipole_model import cell_grid_los
+    from meer21cm.spherical import get_real_Ylm
+    from meer21cm.window import ngp_raw_cell_comb
+
+    ps = _shot_fps()
+    n_cell = np.asarray(ps.pix_coor_in_box).reshape(-1, 3).shape[0]
+    rng = np.random.default_rng(13)
+    mass = rng.uniform(0.3, 1.0, n_cell)
+    cube = ngp_raw_cell_comb(ps, particle_mass=mass)
+    n_grid = float(np.prod(np.asarray(ps.box_ndim, int)))
+
+    nhat_leg, inside = cell_grid_los(ps)
+    for ell in (0, 2, 4):
+        for m in range(-ell, ell + 1):
+            ylm = get_real_Ylm(ell, m)
+            from_cube = float(np.mean(cube * ylm(*ps.los_xhat)))
+            y_cell = np.asarray(
+                ylm(nhat_leg[:, 0], nhat_leg[:, 1], nhat_leg[:, 2]), float
+            ) * np.ones(n_cell)
+            from_cells = float(np.sum(mass * inside * y_cell)) / n_grid
+            scale = max(abs(from_cube), 1e-30)
+            assert (
+                abs(from_cells - from_cube) < 1e-10 * scale
+            ), f"ell={ell} m={m}: {from_cells:.6e} vs {from_cube:.6e}"
+
+
+def test_mesh_window_diag_correction_is_a_pure_diagonal():
+    """diag_correction adds T(k) P(k) only: no leakage between k_in shells."""
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, N_K_IN)
+    rng = np.random.default_rng(11)
+    corr = {
+        (ell, m): rng.normal(size=np.asarray(fps.k_mode).shape) * 1e-3
+        for ell in ELLS
+        for m in range(-ell, ell + 1)
+    }
+    mat0 = build_mesh_window_matrix(fps, k_in, ells=ELLS, weights=weights)
+    mat1 = build_mesh_window_matrix(
+        fps, k_in, ells=ELLS, weights=weights, diag_correction=corr
+    )
+    delta = mat1.matrix - mat0.matrix
+    # a kappa=0 term can only move power within a shell, so the added
+    # matrix must vanish wherever the theory shell misses the output bin
+    n_out = len(np.asarray(fps.k1dbins)) - 1
+    k_mode = np.asarray(fps.k_mode, float).ravel()
+    edges = np.concatenate(([0.0], 0.5 * (k_in[:-1] + k_in[1:]), [np.inf]))
+    bin_idx = np.digitize(k_mode, np.asarray(fps.k1dbins, float)) - 1
+    for j in range(len(k_in)):
+        in_j = (k_mode >= edges[j]) & (k_mode < edges[j + 1])
+        touched = set(np.unique(bin_idx[in_j]).tolist())
+        for i in range(n_out):
+            if i in touched:
+                continue
+            for i_ell in range(len(ELLS)):
+                assert (
+                    delta[i_ell * n_out + i, j] == 0.0
+                ), f"diag_correction leaked into bin {i} from column {j}"
+    assert np.max(np.abs(delta)) > 0.0, "diag_correction had no effect"
+
+
+def test_exact_beam_legs_match_brute_force():
+    """The Y_LM expansion of the exact zero-lag legs equals a direct cell sum.
+
+    These legs are what a k-hat independent cell mass cannot reproduce for
+    ell > 0: the estimator's Y_lm(nhat) leg couples to the beam's own L
+    structure, so ell needs beam moments up to L = ell.
+    """
+    from meer21cm.multipole_model import exact_beam_legs
+    from meer21cm.spherical import get_real_Ylm
+
+    rng = np.random.default_rng(7)
+    n_cell = 400
+    # a wide footprint: nhat spread ~60 deg about z, as on the 06 lightcone
+    nhat = np.stack(
+        [
+            rng.uniform(-0.8, 0.8, n_cell),
+            rng.uniform(-0.8, 0.8, n_cell),
+            np.ones(n_cell),
+        ],
+        axis=1,
+    )
+    nhat /= np.linalg.norm(nhat, axis=1)[:, None]
+    sigma_b = rng.choice(np.linspace(8.0, 24.0, 12), n_cell)
+    cell_mass = rng.uniform(0.5, 1.0, n_cell)
+
+    n_mode = 9
+    kvec = rng.normal(size=(n_mode, 3))
+    kvec /= np.linalg.norm(kvec, axis=1)[:, None]
+    k_abs = rng.uniform(0.01, 0.07, n_mode)
+    khat = (kvec[:, 0], kvec[:, 1], kvec[:, 2])
+
+    ells = (0, 2, 4)
+    legs = exact_beam_legs(
+        k_abs, khat, nhat, sigma_b, cell_mass, ells=ells, l_max_beam=12, nmu=96
+    )
+    for n in range(n_mode):
+        mu_b = nhat @ kvec[n]
+        b = np.exp(-0.5 * k_abs[n] ** 2 * (1.0 - mu_b**2) * sigma_b**2)
+        assert abs(float(legs[None][n]) / float(np.sum(cell_mass * b)) - 1.0) < 1e-3
+        for ell in ells:
+            for m in range(-ell, ell + 1):
+                y_n = np.asarray(
+                    get_real_Ylm(ell, m)(nhat[:, 0], nhat[:, 1], nhat[:, 2]), float
+                ) * np.ones(n_cell)
+                brute = float(np.sum(cell_mass * b * y_n))
+                got = float(np.asarray(legs[(ell, m)])[n])
+                assert abs(got - brute) <= 2e-3 * abs(brute) + 1e-9 * abs(
+                    float(legs[None][n])
+                ), f"ell={ell} m={m} mode {n}: {got:.6e} vs {brute:.6e}"
+
+
+def test_beam_legs_l0_truncation_fails_above_monopole():
+    """A k-hat independent cell mass only supplies L=0: exact for ell=0 only.
+
+    This is the reason a scalar out_mode_scale (or any mean-field comb
+    mass) cannot carry the beam into P2/P4.
+    """
+    from meer21cm.multipole_model import exact_beam_legs
+
+    rng = np.random.default_rng(8)
+    n_cell = 400
+    nhat = np.stack(
+        [
+            rng.uniform(-0.8, 0.8, n_cell),
+            rng.uniform(-0.8, 0.8, n_cell),
+            np.ones(n_cell),
+        ],
+        axis=1,
+    )
+    nhat /= np.linalg.norm(nhat, axis=1)[:, None]
+    sigma_b = rng.choice(np.linspace(10.0, 26.0, 8), n_cell)
+    cell_mass = np.ones(n_cell)
+    kvec = rng.normal(size=(12, 3))
+    kvec /= np.linalg.norm(kvec, axis=1)[:, None]
+    k_abs = np.full(12, 0.06)
+    khat = (kvec[:, 0], kvec[:, 1], kvec[:, 2])
+
+    l_keep = (0, 2, 4, 6)
+    ref = exact_beam_legs(
+        k_abs, khat, nhat, sigma_b, cell_mass, ells=(0, 2), l_max_beam=12
+    )
+    trunc = {
+        L: exact_beam_legs(
+            k_abs, khat, nhat, sigma_b, cell_mass, ells=(0, 2), l_max_beam=L
+        )
+        for L in l_keep
+    }
+    err_mono = {
+        L: float(np.max(np.abs(trunc[L][None] / ref[None] - 1.0))) for L in l_keep
+    }
+    err_quad = {
+        L: max(
+            float(np.max(np.abs(trunc[L][(2, m)] - ref[(2, m)])))
+            / float(np.max(np.abs(ref[(2, m)])))
+            for m in range(-2, 3)
+        )
+        for L in l_keep
+    }
+    # L=0 is the k-hat independent mean field.  Per mode it is already
+    # ~16% wrong for the monopole leg (the shell average hides that) and
+    # it misses the ell=2 legs almost entirely.
+    assert err_mono[0] > 0.05, f"L=0 unexpectedly accurate for the monopole: {err_mono}"
+    assert err_quad[0] > 0.5, f"L=0 unexpectedly accurate for ell=2: {err_quad}"
+    # convergence needs L beyond ell, and must be monotone
+    assert err_mono[2] < 0.01, err_mono
+    assert err_quad[4] < 0.05, err_quad
+    assert err_quad[6] < 0.005, err_quad
+    for a, b in zip(l_keep[:-1], l_keep[1:]):
+        assert err_quad[b] <= err_quad[a], (a, b, err_quad)
+
+
+def test_mesh_window_mode_groups_reduce_to_ungrouped():
+    """Splitting each |k| bin into |mu| groups is exact for identical kernels.
+
+    The group fill must be additive with the *full* bin weight as the
+    denominator, otherwise the shell average is silently rescaled.
+    """
+    from meer21cm.multipole_model import beam_mode_group_index
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, N_K_IN)
+    theory_nodes = _theory_grid(k_in)
+    idx, n_group = beam_mode_group_index(fps, n_mu=3)
+
+    mat_plain = build_mesh_window_matrix(fps, k_in, ells=ELLS, weights=weights)
+    mat_grouped = build_mesh_window_matrix(
+        fps,
+        k_in,
+        ells=ELLS,
+        weights=weights,
+        out_bin_weights=[weights] * n_group,
+        out_group_index=idx,
+    )
+    model_plain = mat_plain.apply({0: theory_nodes})
+    model_grouped = mat_grouped.apply({0: theory_nodes})
+    for ell in ELLS:
+        assert np.allclose(
+            model_grouped[ell],
+            model_plain[ell],
+            rtol=1e-8,
+            atol=1e-8 * np.max(np.abs(model_plain[ell])),
+        ), f"ell={ell}: mu-grouped fill != ungrouped"
+
+
+def test_mesh_window_input_groups_reduce_to_ungrouped():
+    """Splitting the *theory* shell into |mu| groups is exact for one kernel.
+
+    The input-mode beam path (``in_bin_weights``) sums groups into the
+    same column, so with a q-independent cube it must reproduce the plain
+    matrix bit for bit.  This pins the q-side bookkeeping (shell x group
+    partition, additive fill) independently of any beam.
+    """
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, N_K_IN)
+    theory_nodes = _theory_grid(k_in)
+    idx, n_group = beam_input_mode_groups(fps, n_mu=3)
+    assert n_group == 3
+    assert set(np.unique(idx)) == {0, 1, 2}
+
+    mat_plain = build_mesh_window_matrix(fps, k_in, ells=ELLS, weights=weights)
+    mat_grouped = build_mesh_window_matrix(
+        fps,
+        k_in,
+        ells=ELLS,
+        weights=weights,
+        in_bin_weights=lambda j, g: weights,
+        in_group_index=idx,
+    )
+    model_plain = mat_plain.apply({0: theory_nodes})
+    model_grouped = mat_grouped.apply({0: theory_nodes})
+    for ell in ELLS:
+        assert np.allclose(
+            model_grouped[ell],
+            model_plain[ell],
+            rtol=1e-8,
+            atol=1e-8 * np.max(np.abs(model_plain[ell])),
+        ), f"ell={ell}: q-grouped fill != ungrouped"
+
+
+def test_beam_input_cell_kernels_group_mean_is_the_exact_perp_moment():
+    """u_b = tr(M) - n_b.M.n_b equals the group mean of q_perp,b² per cell.
+
+    The cube can only hold one q, so the beam argument is averaged over
+    the (shell, |mu|) group.  Doing that with the second-moment matrix is
+    exact for the *argument* — no representative direction, so the
+    azimuthal spread of q̂ about n̂_ref is kept.  This is the step that
+    a flat-sky ⟨B⟩ over a |k| shell gets wrong.
+    """
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    fps = _shot_fps()
+    rng = np.random.default_rng(4)
+    nhat = rng.normal(size=(600, 3)) + np.array([0.0, 0.0, 6.0])
+    nhat /= np.linalg.norm(nhat, axis=1)[:, None]
+    idx, n_group = beam_input_mode_groups(fps, n_mu=3)
+
+    k_in = np.geomspace(0.02, 0.12, 8)
+    edges = np.concatenate(([0.0], 0.5 * (k_in[:-1] + k_in[1:]), [np.inf]))
+    k_mode = np.asarray(fps.k_mode, float).ravel()
+    q_vec = np.stack(
+        [
+            np.broadcast_to(np.asarray(c, float), fps.k_mode.shape).ravel()
+            for c in np.meshgrid(*fps.k_vec, indexing="ij")
+        ],
+        axis=1,
+    )
+    g_flat = np.asarray(idx).ravel()
+    cells = [0, 17, 123, 401]
+    for j in (1, 4, 7):
+        for g in range(n_group):
+            sel = (k_mode >= edges[j]) & (k_mode < edges[j + 1]) & (g_flat == g)
+            if not np.any(sel):
+                continue
+            qs = q_vec[sel]
+            mmat = qs.T @ qs / qs.shape[0]
+            u_moment = np.trace(mmat) - np.einsum("ci,ij,cj->c", nhat, mmat, nhat)
+            for c in cells:
+                brute = float(np.mean(np.sum(qs**2, axis=1) - (qs @ nhat[c]) ** 2))
+                assert abs(float(u_moment[c]) - brute) <= 1e-10 * max(brute, 1e-30)
+
+
+def test_beam_input_matrix_reduces_to_nobeam_without_a_beam():
+    """beam_at_input with sigma_beam_ch=None is the plain MAS-out matrix."""
+    from meer21cm.window import build_mesh_window_mas_out
+
+    fps = _shot_fps()
+    fps.sigma_beam_ch = None
+    k_in = np.geomspace(0.02, 0.12, 6)
+    theory_nodes = _theory_grid(k_in)
+    counts = _mask(BOX_NDIM, BOX_LEN) + 0.1
+
+    base = build_mesh_window_mas_out(fps, k_in, renorm_weights=counts, ells=ELLS)
+    beam = build_mesh_window_mas_out(
+        fps, k_in, renorm_weights=counts, ells=ELLS, beam_at_input=True, beam_n_mu=3
+    )
+    m_base = base.apply({0: theory_nodes})
+    m_beam = beam.apply({0: theory_nodes})
+    for ell in ELLS:
+        assert np.allclose(
+            m_beam[ell],
+            m_base[ell],
+            rtol=1e-8,
+            atol=1e-8 * np.max(np.abs(m_base[ell])),
+        ), f"ell={ell}: beam_at_input changed the no-beam matrix"
+
+
+def test_mesh_window_leg_scale_multiplies_only_its_own_ell():
+    """leg_scale rescales one leg product without touching the others.
+
+    The beam correction is applied this way (a per-mode ratio on the whole
+    kappa profile, not just its zero-lag value), so the plumbing has to be
+    exactly multiplicative and ell-local.
+    """
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, 12)
+    theory_nodes = _theory_grid(k_in)
+
+    base = build_mesh_window_matrix(fps, k_in, ells=ELLS, weights=weights)
+    rfft_shape = np.asarray(fps.k_mode).shape
+    scale = {(2, m): np.full(rfft_shape, 3.0) for m in range(-2, 3)}
+    scaled = build_mesh_window_matrix(
+        fps, k_in, ells=ELLS, weights=weights, leg_scale=scale
+    )
+    m_base = base.apply({0: theory_nodes})
+    m_scaled = scaled.apply({0: theory_nodes})
+    assert np.allclose(m_scaled[2], 3.0 * m_base[2], rtol=1e-10, atol=0.0)
+    for ell in (0, 4):
+        assert np.allclose(m_scaled[ell], m_base[ell], rtol=1e-10, atol=0.0)
+
+    with pytest.raises(ValueError):
+        build_mesh_window_matrix(
+            fps,
+            k_in,
+            ells=ELLS,
+            weights=weights,
+            leg_scale=scale,
+            diag_correction={(0, 0): np.zeros(rfft_shape)},
+        )
