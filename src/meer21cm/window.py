@@ -1399,6 +1399,7 @@ def build_mesh_window_matrix(
     diag_correction: dict | None = None,
     in_bin_weights: Callable[[int, int], ArrayLike | None] | None = None,
     in_group_index: ArrayLike | None = None,
+    in_group_scale: Sequence[ArrayLike] | None = None,
     leg_scale: dict | None = None,
 ) -> DiscreteShellWindowMatrix:
     r"""
@@ -1514,12 +1515,19 @@ def build_mesh_window_matrix(
         multiplies the field at the theory mode :math:`\mathbf q`, before
         the selection, so each :math:`(|q|, \hat q)` group needs its own
         beamed cube (:func:`~meer21cm.multipole_model.beam_input_cell_kernels`).
-        Groups sum into the same column, so no output grouping or
-        diagonal correction is needed.  Mutually exclusive with
-        ``out_bin_weights`` / ``diag_correction`` / ``map_m2``.
+        Groups sum into the same column.  Mutually exclusive with
+        ``out_bin_weights`` / ``map_m2``.
     in_group_index : array_like, optional
         Int array on the rFFT grid assigning each theory mode to a group
-        of ``in_bin_weights`` (``-1`` = excluded).
+        of ``in_bin_weights`` (``-1`` = excluded).  A partition: each
+        mode belongs to one group.  Alternative to ``in_group_scale``.
+    in_group_scale : sequence of arrays, optional
+        Per-group theory weights on the rFFT grid (e.g.
+        :math:`\alpha_{LM}(\hat q)^2` for a diagonal :math:`Y_{LM}`
+        expansion).  Every group sees the **whole** theory shell, scaled
+        by this array — not a partition.  Alternative to
+        ``in_group_index``.  The :math:`\boldsymbol\kappa=0` diagonal
+        correction is added once (on the first group).
     leg_scale : dict, optional
         ``{(ell, m): r}`` on the rFFT grid, multiplying the whole
         :math:`\boldsymbol\kappa` profile of that leg product rather than
@@ -1607,14 +1615,29 @@ def build_mesh_window_matrix(
             raise ValueError("in_bin_weights is incompatible with out_bin_weights")
         if map_m2 is not None:
             raise ValueError("in_bin_weights is incompatible with map_m2")
-        if in_group_index is None:
-            raise ValueError("in_bin_weights requires in_group_index")
-        gi_flat = np.asarray(in_group_index, dtype=np.int64).ravel()
-        if gi_flat.size != k_mode.size:
-            raise ValueError(
-                f"in_group_index size {gi_flat.size} != n_mode {k_mode.size}"
-            )
-        n_gin = int(gi_flat.max()) + 1
+        if in_group_scale is not None and in_group_index is not None:
+            raise ValueError("in_group_scale and in_group_index are alternatives")
+        if in_group_scale is not None:
+            scale_list = []
+            for i_s, arr in enumerate(in_group_scale):
+                a = np.asarray(arr, dtype=float)
+                if a.size != k_mode.size:
+                    raise ValueError(
+                        f"in_group_scale[{i_s}] size {a.size} != n_mode {k_mode.size}"
+                    )
+                scale_list.append(a)
+            n_gin = len(scale_list)
+            gi_flat = None
+        elif in_group_index is None:
+            raise ValueError("in_bin_weights requires in_group_index or in_group_scale")
+        else:
+            gi_flat = np.asarray(in_group_index, dtype=np.int64).ravel()
+            if gi_flat.size != k_mode.size:
+                raise ValueError(
+                    f"in_group_index size {gi_flat.size} != n_mode {k_mode.size}"
+                )
+            n_gin = int(gi_flat.max()) + 1
+            scale_list = None
         weight_list = None
         xi = None
     elif out_bin_weights is None:
@@ -1681,8 +1704,11 @@ def build_mesh_window_matrix(
         # all three axes.  A z-only flip happens to agree for an isotropic
         # shell but not for a mu group, whose membership is set by the
         # observer LOS rather than the box axes.
-        sel_in = in_shell[j] if extra is None else (in_shell[j] & extra)
-        t_rfft = ms * sel_in.reshape(w_tilde.shape)
+        # extra may be a bool partition (mu/phi groups) or a float
+        # theory weight (α_LM² on the whole shell).
+        t_rfft = ms * in_shell[j].reshape(w_tilde.shape)
+        if extra is not None:
+            t_rfft = t_rfft * np.asarray(extra, dtype=float).reshape(w_tilde.shape)
         return np.fft.ifftn(_extend_hermitian_z(t_rfft.astype(complex), shape))
 
     def _fill_from_xi(xi_use, xi_t, j, mask=None, accumulate=False, in_mask=None):
@@ -1717,12 +1743,18 @@ def build_mesh_window_matrix(
                 matrix[rows, j] += np.nan_to_num(binned)
 
     if in_bin_weights is not None:
+        empty_in = np.zeros(k_mode.size, dtype=bool)
         for g in range(n_gin):
-            sel_g = gi_flat == g
-            if not np.any(sel_g):
-                continue
+            if gi_flat is not None:
+                sel_g = gi_flat == g
+                if not np.any(sel_g):
+                    continue
+                extra_g = sel_g
+            else:
+                sel_g = None
+                extra_g = scale_list[g]
             for j in range(len(k_in_np)):
-                if not np.any(in_shell[j] & sel_g):
+                if sel_g is not None and not np.any(in_shell[j] & sel_g):
                     continue
                 cube_g = in_bin_weights(j, g)
                 if cube_g is None:
@@ -1739,12 +1771,17 @@ def build_mesh_window_matrix(
                     deconvolve_mas=deconvolve_mas,
                     wh_safe=wh_safe,
                 )
+                if sel_g is not None:
+                    in_mask = sel_g
+                else:
+                    # α_LM² weights every shell mode; add κ=0 once.
+                    in_mask = in_shell[j] if g == 0 else empty_in
                 _fill_from_xi(
                     xi_g,
-                    _theory_ifft(j, extra=sel_g),
+                    _theory_ifft(j, extra=extra_g),
                     j,
                     accumulate=True,
-                    in_mask=sel_g,
+                    in_mask=in_mask,
                 )
     elif weight_list is None:
         for j in range(len(k_in_np)):
@@ -1848,10 +1885,13 @@ def build_mesh_window_mas_out(
     out_mode_scale_extra: ArrayLike | None = None,
     beam_in_kernel: bool = False,
     beam_at_input: bool = False,
-    beam_n_mu: int = 1,
+    beam_n_mu: int = 4,
+    beam_n_phi: int = 1,
     beam_diag_correction: bool = True,
-    beam_leg_scale: bool = True,
+    beam_leg_scale: bool = False,
     beam_l_max: int | None = None,
+    beam_ylm: bool = False,
+    beam_ylm_lmax: int = 2,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Preferred MAS-at-output mesh window for lightcone CIC deposits.
@@ -1902,14 +1942,23 @@ def build_mesh_window_mas_out(
         ``beam_n_mu`` :math:`|\mu|` groups, each with its own beamed cube
         (:func:`~meer21cm.multipole_model.beam_input_cell_kernels`), and
         the groups sum into the same column.  Curved sky and chromaticity
-        are exact per cell, and no diagonal correction is needed.
+        are exact per cell.  The cube still cannot hold the beam's
+        azimuthal structure, so the default is an additive
+        :math:`\boldsymbol\kappa=0` correction
+        (:func:`~meer21cm.multipole_model.beam_input_diagonal_correction`).
         Overrides ``beam_in_kernel``.
     beam_n_mu :
         With ``beam_at_input``, number of :math:`|\mu|` groups of the
-        **theory** mode.  With ``beam_in_kernel``, number of :math:`|\mu|`
+        **theory** mode (production default 4: enough to resolve
+        \(k_\perp\)-dependent leakage; 8 is the same on the 06 cy
+        corners).  With ``beam_in_kernel``, number of :math:`|\mu|`
         sub-groups per output :math:`|k|` bin for the mean-field cube
         (:func:`~meer21cm.multipole_model.beam_mode_group_index`); there
         it only affects the leakage and ``1`` is the measured optimum.
+    beam_n_phi :
+        Extra equal-count azimuth bins around \(\hat n_{\mathrm{ref}}\)
+        (production 1: measured null on the 06 leakage;
+        ``misc/rsd_sims/06_beam_az_leakage.py``).
     beam_diag_correction :
         Apply the exact per-mode beam response of
         :func:`~meer21cm.multipole_model.beam_input_diagonal_correction`.
@@ -1917,16 +1966,27 @@ def build_mesh_window_mas_out(
         structure: on its own the cube saturates at \(0.40\) of the exact
         \(\ell=2\) zero-lag response, however fine ``beam_n_mu`` is.
     beam_leg_scale :
-        Apply that correction as a **ratio** on the whole
-        :math:`\boldsymbol\kappa` profile (so it reaches the window
-        leakage) rather than as an additive term at
-        :math:`\boldsymbol\kappa=0` only.  Both are exact on the
-        diagonal; the ratio additionally assumes the beam's directional
-        response is slowly varying across the window width.
+        If True, apply that correction as a **ratio** on the whole
+        :math:`\boldsymbol\kappa` profile.  Production default is False:
+        additive at :math:`\boldsymbol\kappa=0` only, so the
+        \(n_\mu\)-split leakage is not rescaled.  Both are exact on the
+        diagonal; the ratio assumes the beam's directional response is
+        slowly varying across the window width and fights the grouping.
     beam_l_max :
         Highest beam multipole :math:`L` in the diagonal expansion.
         :math:`\ell` couples to :math:`L\ge\ell`; default
         ``max(ells) + 4`` for per-mode convergence.
+    beam_ylm :
+        Opt-in diagonal :math:`Y_{LM}` cubes
+        (:func:`~meer21cm.multipole_model.beam_ylm_cell_kernels`)
+        instead of :math:`|\mu|` groups.  Off by default — production
+        stays :math:`n_\mu=4` + additive :math:`\kappa=0`.  Requires
+        ``beam_at_input``.  Incompatible with ``beam_leg_scale``.
+        The 06 one-shell probe failed (diagonal closed −26% of the
+        leftover group–exact gap; see
+        ``misc/rsd_sims/06_beam_az_leakage.py --ylm``).
+    beam_ylm_lmax :
+        Highest even :math:`L` of the cubes (default 2: 6 cubes).
     """
     from .grid import fourier_window_for_assignment
 
@@ -1936,7 +1996,10 @@ def build_mesh_window_mas_out(
     diag_correction = None
     in_bin_weights = None
     in_group_index = None
+    in_group_scale = None
     leg_scale = None
+    if beam_ylm and not beam_at_input:
+        raise ValueError("beam_ylm requires beam_at_input")
     if beam_at_input:
         if raw_comb is not None:
             raise ValueError("beam_at_input cannot be combined with raw_comb")
@@ -1944,6 +2007,9 @@ def build_mesh_window_mas_out(
             beam_edge_cell_mass,
             beam_input_cell_kernels,
             beam_input_diagonal_correction,
+            beam_ylm_alpha,
+            beam_ylm_cell_kernels,
+            beam_ylm_diagonal_correction,
         )
 
         edge = beam_edge_cell_mass(ps)
@@ -1954,30 +2020,53 @@ def build_mesh_window_mas_out(
                     f"particle_mass shape {extra_m.shape} != n_cell {edge.shape}"
                 )
             edge = edge * extra_m
-        in_group_index, in_kernel = beam_input_cell_kernels(
-            ps,
-            k_in,
-            n_mu=int(beam_n_mu),
-            mode_scale=mode_scale,
-            cell_mass=edge,
-        )
-        in_bin_weights = in_kernel
-        kernel = ngp_raw_cell_comb(ps, particle_mass=edge)
-        if beam_diag_correction and getattr(ps, "sigma_beam_ch", None) is not None:
-            corr = beam_input_diagonal_correction(
+        use_ylm = bool(beam_ylm) and getattr(ps, "sigma_beam_ch", None) is not None
+        if use_ylm:
+            if beam_leg_scale:
+                raise ValueError("beam_ylm does not support beam_leg_scale (ratio)")
+            labels, in_kernel = beam_ylm_cell_kernels(
+                ps, k_in, l_max=int(beam_ylm_lmax), cell_mass=edge
+            )
+            alpha = beam_ylm_alpha(ps, labels)
+            in_group_scale = [alpha[g] ** 2 for g in range(len(labels))]
+            in_bin_weights = in_kernel
+        else:
+            in_group_index, in_kernel = beam_input_cell_kernels(
                 ps,
                 k_in,
-                ells=ells,
                 n_mu=int(beam_n_mu),
+                n_phi=int(beam_n_phi),
                 mode_scale=mode_scale,
                 cell_mass=edge,
-                l_max_beam=beam_l_max,
-                ratio=bool(beam_leg_scale),
             )
-            if beam_leg_scale:
-                leg_scale = corr
+            in_bin_weights = in_kernel
+        kernel = ngp_raw_cell_comb(ps, particle_mass=edge)
+        if beam_diag_correction and getattr(ps, "sigma_beam_ch", None) is not None:
+            if use_ylm:
+                diag_correction = beam_ylm_diagonal_correction(
+                    ps,
+                    k_in,
+                    ells=ells,
+                    l_max_cube=int(beam_ylm_lmax),
+                    l_max_beam=beam_l_max,
+                    cell_mass=edge,
+                )
             else:
-                diag_correction = corr
+                corr = beam_input_diagonal_correction(
+                    ps,
+                    k_in,
+                    ells=ells,
+                    n_mu=int(beam_n_mu),
+                    n_phi=int(beam_n_phi),
+                    mode_scale=mode_scale,
+                    cell_mass=edge,
+                    l_max_beam=beam_l_max,
+                    ratio=bool(beam_leg_scale),
+                )
+                if beam_leg_scale:
+                    leg_scale = corr
+                else:
+                    diag_correction = corr
     elif beam_in_kernel:
         if raw_comb is not None:
             raise ValueError("beam_in_kernel cannot be combined with raw_comb")
@@ -2035,6 +2124,7 @@ def build_mesh_window_mas_out(
         diag_correction=diag_correction,
         in_bin_weights=in_bin_weights,
         in_group_index=in_group_index,
+        in_group_scale=in_group_scale,
         leg_scale=leg_scale,
     )
 
@@ -2051,9 +2141,12 @@ def predict_mesh_windowed_multipoles(
     out_mode_scale_extra: ArrayLike | None = None,
     beam_in_kernel: bool = False,
     beam_at_input: bool = False,
-    beam_n_mu: int = 1,
+    beam_n_mu: int = 4,
+    beam_n_phi: int = 1,
     beam_diag_correction: bool = True,
-    beam_leg_scale: bool = True,
+    beam_leg_scale: bool = False,
+    beam_ylm: bool = False,
+    beam_ylm_lmax: int = 2,
     n_k_in: int = 80,
     nmu: int = 64,
 ) -> dict[int, NDArray[np.floating]]:
@@ -2080,8 +2173,11 @@ def predict_mesh_windowed_multipoles(
         beam_in_kernel=beam_in_kernel,
         beam_at_input=beam_at_input,
         beam_n_mu=beam_n_mu,
+        beam_n_phi=beam_n_phi,
         beam_diag_correction=beam_diag_correction,
         beam_leg_scale=beam_leg_scale,
+        beam_ylm=beam_ylm,
+        beam_ylm_lmax=beam_ylm_lmax,
     )
     theory0 = ps.get_theory_multipoles_kmu(mat.k_in, ells=(0,), nmu=int(nmu))["P_ell"][
         0

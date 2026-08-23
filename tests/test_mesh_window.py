@@ -1134,3 +1134,274 @@ def test_mesh_window_leg_scale_multiplies_only_its_own_ell():
             leg_scale=scale,
             diag_correction={(0, 0): np.zeros(rfft_shape)},
         )
+
+
+def test_beam_input_n_mu_4_partitions_all_theory_modes():
+    """Production n_mu=4 covers every rFFT mode; groups are nonempty."""
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    fps = _shot_fps()
+    idx, n_group = beam_input_mode_groups(fps, n_mu=4)
+    assert n_group == 4
+    flat = np.asarray(idx).ravel()
+    assert set(np.unique(flat)) == {0, 1, 2, 3}
+    counts = np.bincount(flat, minlength=4)
+    assert np.all(counts > 0)
+
+
+def test_beam_input_n_mu_4_groups_split_q_perp():
+    """Low-|μ| groups have larger ⟨q_⊥²⟩ than high-|μ| groups.
+
+    That is the n_mu=4 leakage split: the same |q| is no longer assigned
+    one shell-mean ⟨q_⊥²⟩ ~ (2/3) q² for every direction.
+    """
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    fps = _shot_fps()
+    idx, n_group = beam_input_mode_groups(fps, n_mu=4)
+    q_vec = np.stack(
+        [
+            np.broadcast_to(np.asarray(c, dtype=float), fps.k_mode.shape).ravel()
+            for c in np.meshgrid(*fps.k_vec, indexing="ij")
+        ],
+        axis=1,
+    )
+    nref = np.array(
+        [float(np.mean(np.asarray(c, dtype=float))) for c in fps.los_xhat],
+        dtype=float,
+    )
+    nref = nref / float(np.linalg.norm(nref))
+    g_flat = np.asarray(idx).ravel()
+    qperp2 = []
+    for g in range(n_group):
+        qs = q_vec[g_flat == g]
+        qperp2.append(float(np.mean(np.sum(qs**2, axis=1) - (qs @ nref) ** 2)))
+    assert qperp2[0] > 1.2 * qperp2[-1], qperp2
+
+
+def _beamed_ps_namespace():
+    """Minimal duck type with a chromatic Gaussian for B5 cell-space tests."""
+    from astropy.cosmology import Planck18
+    from types import SimpleNamespace
+
+    fps = _shot_fps()
+    nu = np.linspace(900.0e6, 1050.0e6, 8)
+    return SimpleNamespace(
+        k_mode=fps.k_mode,
+        k_vec=fps.k_vec,
+        los_xhat=fps.los_xhat,
+        box_len=fps.box_len,
+        box_ndim=fps.box_ndim,
+        box_origin=np.asarray(fps.los_observer, dtype=float),
+        pix_coor_in_box=fps.pix_coor_in_box,
+        pix_coor_in_cartesian=None,
+        grid_scheme="cic",
+        sigma_beam_ch=np.full(8, 0.4),
+        sigma_beam_ch_in_mpc=np.linspace(8.0, 20.0, 8),
+        nu=nu,
+        freq_resol=float(np.diff(nu).mean()),
+        pix_resol=1.0,
+        astropy_cosmo_fiducial=Planck18,
+    )
+
+
+def test_beam_diag_additive_and_ratio_are_both_defined():
+    """Both κ=0 corrections run; the quadrupole is not a no-op.
+
+    Production is additive (beam_leg_scale=False).  The ratio form is
+    still exact on the diagonal; it is not the default because it
+    rescales the n_mu-split leakage.
+    """
+    from meer21cm.multipole_model import beam_input_diagonal_correction
+
+    ps = _beamed_ps_namespace()
+    n_cell = int(np.asarray(ps.pix_coor_in_box).reshape(-1, 3).shape[0])
+    k_in = np.geomspace(0.02, 0.12, 6)
+    cell_mass = np.ones(n_cell, dtype=float)
+    ratio = beam_input_diagonal_correction(
+        ps, k_in, ells=(0, 2), n_mu=4, ratio=True, cell_mass=cell_mass
+    )
+    add = beam_input_diagonal_correction(
+        ps, k_in, ells=(0, 2), n_mu=4, ratio=False, cell_mass=cell_mass
+    )
+    assert set(ratio) == set(add)
+    assert (0, 0) in add and (2, 0) in add
+    assert float(np.max(np.abs(add[(2, 0)]))) > 0.0
+    assert float(np.max(np.abs(np.asarray(ratio[(2, 0)]) - 1.0))) > 1e-3
+
+
+def test_beam_input_n_phi_1_matches_mu_only():
+    """n_phi=1 is bit-identical to the |μ|-only grouping."""
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    fps = _shot_fps()
+    a, na = beam_input_mode_groups(fps, n_mu=4)
+    b, nb = beam_input_mode_groups(fps, n_mu=4, n_phi=1)
+    assert na == nb == 4
+    assert np.array_equal(a, b)
+
+
+def test_beam_input_n_phi_4_partitions_all_modes():
+    """n_mu=4 × n_phi=4 covers every rFFT mode; all 16 groups are nonempty."""
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    fps = _shot_fps()
+    idx, n_group = beam_input_mode_groups(fps, n_mu=4, n_phi=4)
+    assert n_group == 16
+    flat = np.asarray(idx).ravel()
+    assert set(np.unique(flat)) == set(range(16))
+    assert np.all(np.bincount(flat, minlength=16) > 0)
+
+
+def test_beam_input_phi_bins_have_different_M_axes():
+    """Two φ bins at the same |μ| have different in-plane M principal axes."""
+    from meer21cm.multipole_model import beam_input_mode_groups
+
+    fps = _shot_fps()
+    idx, _n = beam_input_mode_groups(fps, n_mu=4, n_phi=4)
+    nref = np.array(
+        [float(np.mean(np.asarray(c, dtype=float))) for c in fps.los_xhat],
+        dtype=float,
+    )
+    nref = nref / float(np.linalg.norm(nref))
+    q_vec = np.stack(
+        [
+            np.broadcast_to(np.asarray(c, dtype=float), fps.k_mode.shape).ravel()
+            for c in np.meshgrid(*fps.k_vec, indexing="ij")
+        ],
+        axis=1,
+    )
+    g_flat = np.asarray(idx).ravel()
+    found = False
+    for i_mu in range(4):
+        axes = []
+        for i_phi in range(4):
+            g = i_mu * 4 + i_phi
+            qs = q_vec[g_flat == g]
+            if qs.shape[0] < 16:
+                continue
+            mmat = qs.T @ qs / qs.shape[0]
+            proj = np.eye(3) - np.outer(nref, nref)
+            mp = proj @ mmat @ proj
+            _w, vecs = np.linalg.eigh(mp)
+            axis = vecs[:, int(np.argmax(_w))]
+            axis = axis - nref * float(axis @ nref)
+            nrm = float(np.linalg.norm(axis))
+            if nrm < 1e-12:
+                continue
+            axes.append(axis / nrm)
+        if len(axes) < 2:
+            continue
+        align = abs(float(axes[0] @ axes[-1]))
+        assert align < 0.95, (i_mu, align)
+        found = True
+        break
+    assert found
+
+
+def test_beam_ylm_labels_lmax2():
+    """L≤2 even real Y_LM is 1 + 5 = 6 terms."""
+    from meer21cm.multipole_model import beam_ylm_labels
+
+    labels = beam_ylm_labels(2)
+    assert labels[0] == (0, 0)
+    assert labels == [
+        (0, 0),
+        (2, -2),
+        (2, -1),
+        (2, 0),
+        (2, 1),
+        (2, 2),
+    ]
+
+
+def test_beam_ylm_s0_matches_truncated_exact_legs():
+    """Σ_LM α_LM ⟨c_LM⟩ equals exact_beam_legs S^0 at the same L_max.
+
+    f_L is frozen at the theory node and k_abs is set to that node so the
+    two expressions are the same addition theorem.
+    """
+    from meer21cm.multipole_model import (
+        beam_cell_sigma_perp,
+        beam_ylm_alpha,
+        beam_ylm_labels,
+        cell_grid_los,
+        exact_beam_legs,
+        gaussian_beam_legendre_moments,
+    )
+    from meer21cm.spherical import get_real_Ylm, unit_khat_from_k_vec
+
+    ps = _beamed_ps_namespace()
+    labels = beam_ylm_labels(2)
+    nhat, sigma_b = beam_cell_sigma_perp(ps)
+    _nhat_leg, inside = cell_grid_los(ps)
+    e_b = np.ones(nhat.shape[0], dtype=float) * inside
+    n_grid = float(np.prod(np.asarray(ps.box_ndim, dtype=int)))
+    k_j = 0.05
+    k_abs = np.full_like(np.asarray(ps.k_mode, dtype=float), k_j)
+    khat = unit_khat_from_k_vec(ps.k_vec)
+    s_ex = exact_beam_legs(
+        k_abs,
+        khat,
+        nhat,
+        sigma_b,
+        e_b,
+        ells=(0,),
+        l_max_beam=2,
+        norm=n_grid,
+        nhat_leg=nhat,
+    )
+    alpha = beam_ylm_alpha(ps, labels)
+    recon = np.zeros(np.asarray(ps.k_mode).size, dtype=float)
+    for g, (L, M) in enumerate(labels):
+        f_L = gaussian_beam_legendre_moments(k_j * sigma_b, (L,))[0]
+        y = np.asarray(
+            get_real_Ylm(L, M)(nhat[:, 0], nhat[:, 1], nhat[:, 2]), dtype=float
+        )
+        s0g = float(np.sum(e_b * f_L * y)) / n_grid
+        recon = recon + alpha[g].ravel() * s0g
+    assert np.allclose(recon, s_ex[None].ravel(), rtol=1e-8, atol=1e-10)
+
+
+def test_in_group_scale_ones_matches_single_group():
+    """A uniform in_group_scale is the same as one all-mode group."""
+    weights = _mask(BOX_NDIM, BOX_LEN)
+    fps = _make_fps(0, weights, _true_observer())
+    k_in = np.geomspace(0.012, 0.16, 8)
+    theory_nodes = _theory_grid(k_in)
+
+    def kern(j, g):
+        return weights
+
+    idx = np.zeros(np.asarray(fps.k_mode).shape, dtype=np.int64)
+    m_idx = build_mesh_window_matrix(
+        fps, k_in, ells=ELLS, weights=weights, in_bin_weights=kern, in_group_index=idx
+    )
+    m_sc = build_mesh_window_matrix(
+        fps,
+        k_in,
+        ells=ELLS,
+        weights=weights,
+        in_bin_weights=kern,
+        in_group_scale=[np.ones(np.asarray(fps.k_mode).shape, dtype=float)],
+    )
+    a = m_idx.apply({0: theory_nodes})
+    b = m_sc.apply({0: theory_nodes})
+    for ell in ELLS:
+        assert np.allclose(
+            a[ell], b[ell], rtol=1e-10, atol=1e-10 * np.max(np.abs(a[ell]))
+        ), f"ell={ell}: in_group_scale ones != single group"
+
+
+def test_beam_ylm_diagonal_correction_quadrupole_nonzero():
+    """L≤2 diagonal cubes miss cross terms and higher L; the additive is not 0."""
+    from meer21cm.multipole_model import beam_ylm_diagonal_correction
+
+    ps = _beamed_ps_namespace()
+    n_cell = int(np.asarray(ps.pix_coor_in_box).reshape(-1, 3).shape[0])
+    cell_mass = np.ones(n_cell, dtype=float)
+    corr = beam_ylm_diagonal_correction(
+        ps, np.geomspace(0.02, 0.12, 6), ells=(0, 2), l_max_cube=2, cell_mass=cell_mass
+    )
+    assert (0, 0) in corr and (2, 0) in corr
+    assert float(np.max(np.abs(corr[(2, 0)]))) > 0.0

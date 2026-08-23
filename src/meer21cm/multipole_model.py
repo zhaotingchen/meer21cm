@@ -773,7 +773,7 @@ def beam_diagonal_correction(
     for :math:`\ell=0` and badly wrong above it — the estimator's
     :math:`Y_{\ell m}(\hat n)` leg couples to the beam's own :math:`L`
     structure, and :math:`\ell` needs :math:`L\le\ell`.  Measured on the
-    06 lightcone (`misc/rsd_sims/06_beam_ell_diag.py`), the mean field
+    06 lightcone, the mean field
     delivers only \(0.27\)–\(0.40\) of the exact \(\ell=2\) diagonal at
     high \(k\).
 
@@ -907,9 +907,33 @@ def beam_kernel_bin_masses(
     return masses, group_index
 
 
-def beam_input_mode_groups(ps, *, n_mu: int = 4):
+def _nref_from_los(ps):
+    nref = np.array(
+        [float(np.mean(np.asarray(c, dtype=float))) for c in ps.los_xhat], dtype=float
+    )
+    nrm = float(np.linalg.norm(nref))
+    return nref / nrm if nrm > 0 else np.array([0.0, 0.0, 1.0])
+
+
+def _phi_around_nref(khat, nref):
+    """Azimuth of :math:`\\hat q` around :math:`\\hat n_{\\mathrm{ref}}`."""
+    tmp = (
+        np.array([1.0, 0.0, 0.0])
+        if abs(float(nref[0])) < 0.9
+        else np.array([0.0, 1.0, 0.0])
+    )
+    e1 = tmp - nref * float(tmp @ nref)
+    e1 = e1 / float(np.linalg.norm(e1))
+    e2 = np.cross(nref, e1)
+    q1 = sum(np.asarray(khat[i], dtype=float).ravel() * e1[i] for i in range(3))
+    q2 = sum(np.asarray(khat[i], dtype=float).ravel() * e2[i] for i in range(3))
+    return np.arctan2(q2, q1)
+
+
+def beam_input_mode_groups(ps, *, n_mu: int = 4, n_phi: int = 1):
     r"""
-    Group the **theory** modes :math:`\mathbf q` by :math:`|\mu|`.
+    Group the **theory** modes :math:`\mathbf q` by :math:`|\mu|` and
+    optionally azimuth :math:`\phi` around :math:`\hat n_{\mathrm{ref}}`.
 
     The beam multiplies the field *before* the selection, so in the mesh
     window it belongs at the inner (theory) mode :math:`\mathbf q`, not at
@@ -918,6 +942,9 @@ def beam_input_mode_groups(ps, *, n_mu: int = 4):
     equal-count :math:`|\mu|` groups
     (:math:`\mu=\hat q\cdot\hat n_{\mathrm{ref}}`) and each group gets its
     own beamed cube.  ``n_mu = 1`` keeps only the shell mean.
+    ``n_phi > 1`` further splits each :math:`|\mu|` group into equal-count
+    azimuth bins (index ``i_mu * n_phi + i_phi``).  ``n_phi = 1`` is
+    identical to the :math:`|\mu|`-only map.
 
     The groups partition **all** theory modes (nothing is dropped), so
     summing them reproduces the ungrouped matrix.
@@ -927,26 +954,32 @@ def beam_input_mode_groups(ps, *, n_mu: int = 4):
     """
     from .spherical import unit_khat_from_k_vec
 
-    k_mode = np.asarray(ps.k_mode, dtype=float)
-    shape = k_mode.shape
-    k_flat = k_mode.ravel()
+    shape = np.asarray(ps.k_mode, dtype=float).shape
     n_mu_i = max(1, int(n_mu))
-    if n_mu_i == 1:
+    n_phi_i = max(1, int(n_phi))
+    if n_mu_i == 1 and n_phi_i == 1:
         return np.zeros(shape, dtype=np.int64), 1
 
     khat = unit_khat_from_k_vec(ps.k_vec)
-    nref = np.array(
-        [float(np.mean(np.asarray(c, dtype=float))) for c in ps.los_xhat], dtype=float
-    )
-    nrm = float(np.linalg.norm(nref))
-    nref = nref / nrm if nrm > 0 else np.array([0.0, 0.0, 1.0])
-    mu_abs = np.abs(
-        sum(np.asarray(khat[i], dtype=float).ravel() * nref[i] for i in range(3))
-    )
-    edges = np.quantile(mu_abs, np.linspace(0.0, 1.0, n_mu_i + 1))
-    edges[0], edges[-1] = -np.inf, np.inf
-    index = np.clip(np.digitize(mu_abs, edges[1:-1]), 0, n_mu_i - 1)
-    return index.reshape(shape).astype(np.int64), n_mu_i
+    nref = _nref_from_los(ps)
+    if n_mu_i == 1:
+        i_mu = np.zeros(int(np.prod(shape)), dtype=np.int64)
+    else:
+        mu_abs = np.abs(
+            sum(np.asarray(khat[i], dtype=float).ravel() * nref[i] for i in range(3))
+        )
+        edges = np.quantile(mu_abs, np.linspace(0.0, 1.0, n_mu_i + 1))
+        edges[0], edges[-1] = -np.inf, np.inf
+        i_mu = np.clip(np.digitize(mu_abs, edges[1:-1]), 0, n_mu_i - 1)
+    if n_phi_i == 1:
+        return i_mu.reshape(shape).astype(np.int64), n_mu_i
+
+    phi = _phi_around_nref(khat, nref)
+    pedges = np.quantile(phi, np.linspace(0.0, 1.0, n_phi_i + 1))
+    pedges[0], pedges[-1] = -np.inf, np.inf
+    i_phi = np.clip(np.digitize(phi, pedges[1:-1]), 0, n_phi_i - 1)
+    index = i_mu * n_phi_i + i_phi
+    return index.reshape(shape).astype(np.int64), n_mu_i * n_phi_i
 
 
 def beam_input_cell_masses(
@@ -954,6 +987,7 @@ def beam_input_cell_masses(
     k_in,
     *,
     n_mu: int = 4,
+    n_phi: int = 1,
     mode_scale=None,
     cell_mass=None,
 ):
@@ -970,7 +1004,7 @@ def beam_input_cell_masses(
     that shell/group intersection is empty).
     """
     k_in_np = np.asarray(k_in, dtype=float)
-    index, _n_group = beam_input_mode_groups(ps, n_mu=n_mu)
+    index, _n_group = beam_input_mode_groups(ps, n_mu=n_mu, n_phi=n_phi)
     g_flat = index.ravel()
 
     if cell_mass is None:
@@ -1023,6 +1057,7 @@ def beam_input_cell_kernels(
     k_in,
     *,
     n_mu: int = 4,
+    n_phi: int = 1,
     mode_scale=None,
     cell_mass=None,
 ):
@@ -1074,7 +1109,7 @@ def beam_input_cell_kernels(
     ``n_mu``: on the 06 lightcone the group cube saturates at
     :math:`0.40` of the exact :math:`\ell=2` zero-lag response, the same
     at ``n_mu = 8`` and ``n_mu = 64``
-    (``misc/rsd_sims/06_beam_quad_diag.py``).  Fixing that needs the
+    (``misc/rsd_sims/06_beam_az_leakage.py``).  Fixing that needs the
     per-mode diagonal of :func:`beam_input_diagonal_correction`; the cube
     then only has to carry the leakage.
 
@@ -1103,7 +1138,7 @@ def beam_input_cell_kernels(
     from .window import ngp_raw_cell_comb
 
     index, _edges, mass_fn = beam_input_cell_masses(
-        ps, k_in, n_mu=n_mu, mode_scale=mode_scale, cell_mass=cell_mass
+        ps, k_in, n_mu=n_mu, n_phi=n_phi, mode_scale=mode_scale, cell_mass=cell_mass
     )
 
     def kernel_fn(j, g):
@@ -1121,6 +1156,7 @@ def beam_input_diagonal_correction(
     *,
     ells: Sequence[int] = (0, 2, 4),
     n_mu: int = 4,
+    n_phi: int = 1,
     mode_scale=None,
     cell_mass=None,
     l_max_beam: int | None = None,
@@ -1172,7 +1208,7 @@ def beam_input_diagonal_correction(
 
     ells_t = tuple(int(e) for e in ells)
     index, edges, mass_fn = beam_input_cell_masses(
-        ps, k_in, n_mu=n_mu, mode_scale=mode_scale, cell_mass=cell_mass
+        ps, k_in, n_mu=n_mu, n_phi=n_phi, mode_scale=mode_scale, cell_mass=cell_mass
     )
     g_flat = np.asarray(index, dtype=np.int64).ravel()
     n_group = int(g_flat.max()) + 1
@@ -1247,6 +1283,196 @@ def beam_input_diagonal_correction(
         r[ok] = num[ok] / den[ok]
         out[key] = np.clip(r, -clip, clip)
     return out
+
+
+def beam_ylm_labels(l_max: int = 2):
+    """Even beam multipoles :math:`(L,M)` up to ``l_max`` (real :math:`Y_{LM}`)."""
+    l_max_i = int(l_max)
+    return [(L, M) for L in range(0, l_max_i + 1, 2) for M in range(-L, L + 1)]
+
+
+def beam_ylm_alpha(ps, labels):
+    r"""
+    Theory weights :math:`\alpha_{LM}(\hat q)=(4\pi/(2L+1))Y_{LM}(\hat q)`.
+
+    The Gaussian beam addition theorem is
+    :math:`\tilde B_b(\mathbf q)=\sum_{LM}\alpha_{LM}(\hat q)\,
+    f_L(|q|\sigma_b)\,Y_{LM}(\hat n_b)`.  A diagonal :math:`Y_{LM}`
+    cube uses :math:`T(q)\propto\alpha_{LM}(\hat q)^2`.
+    """
+    from .spherical import get_real_Ylm, unit_khat_from_k_vec
+
+    khat = unit_khat_from_k_vec(ps.k_vec)
+    shape = np.broadcast_shapes(*(np.asarray(c).shape for c in khat))
+    out = []
+    for L, M in labels:
+        y = np.broadcast_to(
+            np.asarray(get_real_Ylm(int(L), int(M))(*khat), dtype=float), shape
+        )
+        out.append((4.0 * np.pi / (2 * int(L) + 1)) * np.asarray(y, dtype=float))
+    return np.stack(out, axis=0)
+
+
+def beam_ylm_cell_masses(
+    ps,
+    k_in,
+    *,
+    l_max: int = 2,
+    cell_mass=None,
+    nmu: int = 64,
+):
+    r"""
+    Per-cell masses of a diagonal :math:`Y_{LM}` beam cube.
+
+    :math:`c_{LM,j}(b)=m_b\,f_L(k_{\mathrm{in}}[j]\,\sigma_b)\,
+    Y_{LM}(\hat n_b)`.  ``f_L`` is frozen at the theory node (the same
+    Voronoi-shell convention as :func:`beam_input_cell_kernels`).
+    """
+    from .spherical import get_real_Ylm
+
+    labels = beam_ylm_labels(l_max)
+    if cell_mass is None:
+        cell_mass = beam_edge_cell_mass(ps)
+    mass0 = np.asarray(cell_mass, dtype=float)
+    k_in_np = np.asarray(k_in, dtype=float)
+    if getattr(ps, "sigma_beam_ch", None) is None:
+
+        def mass_fn(j, g):
+            L, M = labels[g]
+            if L != 0:
+                return np.zeros_like(mass0)
+            y00 = float(get_real_Ylm(0, 0)(1.0, 0.0, 0.0))
+            return mass0 * y00
+
+        return labels, mass_fn
+
+    nhat, sigma_b = beam_cell_sigma_perp(ps)
+    y_cell = {
+        (L, M): np.asarray(
+            get_real_Ylm(int(L), int(M))(nhat[:, 0], nhat[:, 1], nhat[:, 2]),
+            dtype=float,
+        )
+        for L, M in labels
+    }
+
+    def mass_fn(j, g):
+        L, M = labels[g]
+        f_L = gaussian_beam_legendre_moments(
+            float(k_in_np[j]) * sigma_b, (L,), nmu=int(nmu)
+        )[0]
+        return mass0 * f_L * y_cell[(L, M)]
+
+    return labels, mass_fn
+
+
+def beam_ylm_cell_kernels(
+    ps,
+    k_in,
+    *,
+    l_max: int = 2,
+    cell_mass=None,
+    nmu: int = 64,
+):
+    r"""
+    Diagonal :math:`Y_{LM}` cubes for :func:`~meer21cm.window.build_mesh_window_matrix`.
+
+    Pair with ``in_group_scale[g] = \alpha_{LM}(\hat q)^2``
+    (:func:`beam_ylm_alpha`).  Each theory column is a weighted sum over
+    all shell modes, not a partition — this is why the cubes cannot go
+    through ``in_group_index``.
+    """
+    from .window import ngp_raw_cell_comb
+
+    labels, mass_fn = beam_ylm_cell_masses(
+        ps, k_in, l_max=l_max, cell_mass=cell_mass, nmu=nmu
+    )
+
+    def kernel_fn(j, g):
+        return ngp_raw_cell_comb(ps, particle_mass=mass_fn(j, g))
+
+    return labels, kernel_fn
+
+
+def beam_ylm_diagonal_correction(
+    ps,
+    k_in,
+    *,
+    ells: Sequence[int] = (0, 2, 4),
+    l_max_cube: int = 2,
+    l_max_beam: int | None = None,
+    cell_mass=None,
+    nmu: int = 64,
+):
+    r"""
+    Exact per-mode beam diagonal minus the diagonal-:math:`Y_{LM}` cube's own.
+
+    The cube fill at :math:`\boldsymbol\kappa=0` is
+    :math:`\sum_{LM}
+    \langle c_{LM} Y_{\ell m}\rangle\langle c_{LM}\rangle
+    \alpha_{LM}(\hat k)^2`
+    (no :math:`LM\neq L'M'` cross terms).  The additive term restores
+    :func:`exact_beam_legs` (default :math:`L\le\max\ell+4`).
+    """
+    from .spherical import get_real_Ylm, unit_khat_from_k_vec
+
+    ells_t = tuple(int(e) for e in ells)
+    labels, mass_fn = beam_ylm_cell_masses(
+        ps, k_in, l_max=l_max_cube, cell_mass=cell_mass, nmu=nmu
+    )
+    alpha = beam_ylm_alpha(ps, labels)
+
+    nhat, sigma_b = beam_cell_sigma_perp(ps)
+    nhat_leg, inside = cell_grid_los(ps)
+    e_b = (
+        beam_edge_cell_mass(ps)
+        if cell_mass is None
+        else np.asarray(cell_mass, dtype=float)
+    ) * inside
+
+    n_grid = float(np.prod(np.asarray(ps.box_ndim, dtype=int)))
+    k_mode = np.asarray(ps.k_mode, dtype=float)
+    shape = k_mode.shape
+    s_ex = exact_beam_legs(
+        k_mode,
+        unit_khat_from_k_vec(ps.k_vec),
+        nhat,
+        sigma_b,
+        e_b,
+        ells=ells_t,
+        l_max_beam=l_max_beam,
+        nmu=int(nmu),
+        norm=n_grid,
+        nhat_leg=nhat_leg,
+    )
+    keys = [key for key in s_ex if key is not None]
+    y_cell = {
+        key: np.broadcast_to(
+            np.asarray(
+                get_real_Ylm(*key)(nhat_leg[:, 0], nhat_leg[:, 1], nhat_leg[:, 2]),
+                dtype=float,
+            ),
+            e_b.shape,
+        )
+        for key in keys
+    }
+
+    k_in_np = np.asarray(k_in, dtype=float)
+    edges = np.concatenate(([0.0], 0.5 * (k_in_np[:-1] + k_in_np[1:]), [np.inf]))
+    k_flat = k_mode.ravel()
+    shell_of = np.clip(np.digitize(k_flat, edges[1:-1]), 0, len(edges) - 2)
+    prod = {key: np.zeros(k_flat.size, dtype=float) for key in keys}
+    for j in range(len(k_in_np)):
+        sel = shell_of == j
+        if not np.any(sel):
+            continue
+        for g in range(len(labels)):
+            mass = np.asarray(mass_fn(j, g), dtype=float) * inside
+            s0 = float(np.sum(mass)) / n_grid
+            a2 = (np.asarray(alpha[g], dtype=float).ravel() ** 2)[sel]
+            for key in keys:
+                slm = float(np.sum(mass * y_cell[key])) / n_grid
+                prod[key][sel] += slm * s0 * a2
+    return {key: s_ex[key] * s_ex[None] - prod[key].reshape(shape) for key in keys}
 
 
 def cell_sampling_geometry(ps):
