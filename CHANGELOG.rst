@@ -42,7 +42,6 @@ Changed
   ``beam_input_*`` → ``beam_theory_*``;
   ``beam_kernel_bin_masses`` → ``beam_output_cell_masses``;
   ``beam_out_mode_scale(level=)`` → ``frame='box'|'cells'``.
-  Old names remain as ``DeprecationWarning`` aliases for one cycle.
 * rename ``multipole_power.py`` → ``multipole.py`` and split helpers from
   ``multipole_model.py`` into ``multipole_ops.py`` (same layout as
   ``power.py`` / ``power_ops.py``).  Classes
