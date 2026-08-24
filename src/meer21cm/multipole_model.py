@@ -1109,7 +1109,8 @@ def beam_input_cell_kernels(
     ``n_mu``: on the 06 lightcone the group cube saturates at
     :math:`0.40` of the exact :math:`\ell=2` zero-lag response, the same
     at ``n_mu = 8`` and ``n_mu = 64``
-    (``misc/rsd_sims/06_beam_az_leakage.py``).  Fixing that needs the
+    (historical ``06_beam_az_leakage.py``; see
+    ``misc/rsd_sims/HANDOVER.md``).  Fixing that needs the
     per-mode diagonal of :func:`beam_input_diagonal_correction`; the cube
     then only has to carry the leakage.
 

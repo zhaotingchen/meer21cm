@@ -16,11 +16,13 @@ __all__ = [
     "CosmologyCalculator",
     "PowerSpectrum",
     "MockSimulation",
+    "MultipolePowerSpectrum",
     "SmoothWindowEstimator",
     "WindowedMultipoleModel",
     "DiscreteShellWindowMatrix",
     "predict_windowed_multipoles",
     "build_mesh_window_matrix",
+    "propose_mesh_k_in",
 ]
 
 
@@ -29,6 +31,7 @@ _LAZY_ATTRS = {
     "CosmologyCalculator": ("meer21cm.cosmology", "CosmologyCalculator"),
     "PowerSpectrum": ("meer21cm.power", "PowerSpectrum"),
     "MockSimulation": ("meer21cm.mock", "MockSimulation"),
+    "MultipolePowerSpectrum": ("meer21cm.multipole_power", "MultipolePowerSpectrum"),
     "SmoothWindowEstimator": ("meer21cm.multipole_model", "SmoothWindowEstimator"),
     "WindowedMultipoleModel": ("meer21cm.multipole_model", "WindowedMultipoleModel"),
     "DiscreteShellWindowMatrix": (
@@ -42,6 +45,10 @@ _LAZY_ATTRS = {
     "build_mesh_window_matrix": (
         "meer21cm.window",
         "build_mesh_window_matrix",
+    ),
+    "propose_mesh_k_in": (
+        "meer21cm.window",
+        "propose_mesh_k_in",
     ),
 }
 

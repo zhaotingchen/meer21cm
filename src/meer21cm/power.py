@@ -95,6 +95,7 @@ __all__ = [
     "redshift_to_freq",
     "step_window_attenuation",
     "tagging",
+    "MultipolePowerSpectrum",
 ]
 
 
@@ -691,3 +692,39 @@ class PowerSpectrum(LightconeGriddingMixin, FieldPowerSpectrum, ModelPowerSpectr
             / np.prod(self.box_resol)
         )
         return n_bar2 / n_bar
+
+
+class _FieldModelGlueMixin:
+    """
+    Field + model glue shared by :class:`PowerSpectrum` and
+    :class:`MultipolePowerSpectrum`.
+
+    Methods are copied from :class:`PowerSpectrum` after that class is
+    defined so the two combined classes stay in sync without a risky move.
+    """
+
+
+_GLUE_NAMES = (
+    "_sync_model_k_from_field",
+    "box_len",
+    "box_ndim",
+    "grid_scheme",
+    "propagate_field_k_to_model",
+    "get_1d_power",
+    "get_cy_power",
+    "map_sampling",
+    "gridding_compensation",
+    "average_model_hi_temp",
+    "model_hi_temp_in_box",
+    "get_n_bar_correction",
+)
+for _glue_name in _GLUE_NAMES:
+    setattr(_FieldModelGlueMixin, _glue_name, getattr(PowerSpectrum, _glue_name))
+
+
+def __getattr__(name):
+    if name == "MultipolePowerSpectrum":
+        from .multipole_power import MultipolePowerSpectrum
+
+        return MultipolePowerSpectrum
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

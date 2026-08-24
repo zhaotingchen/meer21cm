@@ -111,7 +111,9 @@ References
 
 from __future__ import annotations
 
+import logging
 import math
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -127,9 +129,12 @@ from .spherical import get_real_Ylm, unit_khat_from_k_vec
 from .util import legendre_polynomial_with_factor
 from .wide_angle import power_spectrum_odd_wide_angle_matrix
 
+logger = logging.getLogger(__name__)
+
 WindowEllMap = Mapping[int, ArrayLike]
 
 _WINDOW_LOS = ("firstpoint", "endpoint")
+_MESH_K_IN_SPAN_RTOL = 1e-3
 
 
 def require_yamamoto_los(los: str) -> str:
@@ -151,6 +156,166 @@ def require_yamamoto_los(los: str) -> str:
             f"got {los_s!r}"
         )
     return los_s
+
+
+def propose_mesh_k_in(
+    ps,
+    n: int = 80,
+    *,
+    low_factor: float = 0.5,
+) -> NDArray[np.floating]:
+    """
+    Theory :math:`k_{\\mathrm{in}}` spanning every grid :math:`|k|` the mesh
+    window can couple in.
+
+    :func:`build_mesh_window_matrix` tiles **all** rFFT modes into Voronoi
+    shells of ``k_in``.  A ``k_in`` that stops below the grid's
+    ``max |k|`` (as :func:`~meer21cm.multipole_model.propose_k_in`'s
+    ``1.5 k_max`` often does — the grid reaches
+    :math:`\\sqrt{3}\,k_{\\mathrm{Nyq}}`) assigns every outer mode the
+    constant :math:`P(k_{\\mathrm{in}}[-1])` instead of the falling
+    theory.
+
+    Keeps :func:`~meer21cm.multipole_model.propose_k_in`'s low end and log
+    node density and extends the top to the grid maximum.  The smooth
+    (Hankel) path integrates :math:`k` continuously and should keep
+    :func:`~meer21cm.multipole_model.propose_k_in`.
+    """
+    from .multipole_model import propose_k_in
+
+    k1dbins = getattr(ps, "k1dbins", None)
+    if k1dbins is None:
+        raise ValueError("ps.k1dbins is required for propose_mesh_k_in")
+    base = propose_k_in(k1dbins, n=int(n), low_factor=float(low_factor))
+    k_mode = getattr(ps, "k_mode", None)
+    if k_mode is None:
+        return base
+    k_grid_max = float(np.max(np.asarray(k_mode, dtype=float))) * 1.001
+    if k_grid_max <= base[-1]:
+        return base
+    n_wide = int(
+        np.ceil(int(n) * np.log(k_grid_max / base[0]) / np.log(base[-1] / base[0]))
+    )
+    return np.geomspace(float(base[0]), k_grid_max, n_wide)
+
+
+def _warn_truncated_mesh_k_in(ps, k_in: ArrayLike) -> None:
+    """Warn if mesh ``k_in`` does not span the PS Fourier grid."""
+    k_mode = getattr(ps, "k_mode", None)
+    if k_mode is None:
+        return
+    k_in_np = np.asarray(k_in, dtype=float)
+    if k_in_np.size == 0:
+        return
+    k_grid_max = float(np.max(np.asarray(k_mode, dtype=float)))
+    k_in_max = float(np.max(k_in_np))
+    if k_in_max < k_grid_max * (1.0 - _MESH_K_IN_SPAN_RTOL):
+        msg = (
+            "k_in does not span the PS Fourier grid "
+            f"(max k_in={k_in_max:.4g}, max |k|={k_grid_max:.4g}); "
+            "outer modes are assigned P(k_in[-1]). "
+            "Use meer21cm.window.propose_mesh_k_in."
+        )
+        logger.warning(msg)
+        warnings.warn(msg, UserWarning, stacklevel=3)
+
+
+def list_mesh_window_columns(
+    n_k_in: int,
+    *,
+    in_group_index: ArrayLike | None = None,
+    in_group_scale: Sequence[ArrayLike] | None = None,
+    in_bin_weights: Callable[[int, int], ArrayLike | None] | None = None,
+    in_shell: Sequence[ArrayLike] | None = None,
+) -> list[int] | list[tuple[int, int]]:
+    """
+    Column ids filled by :func:`build_mesh_window_matrix`.
+
+    Without inner-mode grouping this is ``range(n_k_in)``.  With
+    ``in_bin_weights`` it is the active ``(group, k_in)`` pairs.
+    """
+    n_in = int(n_k_in)
+    if in_bin_weights is None and in_group_index is None and in_group_scale is None:
+        return list(range(n_in))
+    if in_group_scale is not None:
+        n_gin = len(in_group_scale)
+        gi_flat = None
+    elif in_group_index is not None:
+        gi_flat = np.asarray(in_group_index, dtype=np.int64).ravel()
+        n_gin = int(gi_flat.max()) + 1 if gi_flat.size else 0
+    else:
+        raise ValueError(
+            "in_bin_weights columns require in_group_index or in_group_scale"
+        )
+    cols: list[tuple[int, int]] = []
+    for g in range(n_gin):
+        if gi_flat is not None:
+            sel_g = gi_flat == g
+            if not np.any(sel_g):
+                continue
+        else:
+            sel_g = None
+        for j in range(n_in):
+            if (
+                sel_g is not None
+                and in_shell is not None
+                and not np.any(np.asarray(in_shell[j]) & sel_g)
+            ):
+                continue
+            if in_bin_weights is not None and in_bin_weights(j, g) is None:
+                continue
+            cols.append((int(g), int(j)))
+    return cols
+
+
+def accumulate_mesh_window_matrices(
+    parts: Sequence[DiscreteShellWindowMatrix],
+) -> DiscreteShellWindowMatrix:
+    """
+    Sum column-chunk mesh window matrices.
+
+    Each part must share ``k_in``, ``k_out``, ``ells_in`` / ``ells_out``.
+    ``offset`` is taken from the first non-None contribution (shot terms
+    should be applied only on a full ``columns=None`` build).
+    """
+    if not parts:
+        raise ValueError("accumulate_mesh_window_matrices needs at least one matrix")
+    first = parts[0]
+    matrix = np.array(first.matrix, dtype=float, copy=True)
+    offset = first.offset
+    for extra in parts[1:]:
+        if extra.matrix.shape != matrix.shape:
+            raise ValueError(
+                "mesh window chunks have mismatched matrix shapes "
+                f"{matrix.shape} vs {extra.matrix.shape}"
+            )
+        if not np.allclose(extra.k_in, first.k_in):
+            raise ValueError("mesh window chunks have mismatched k_in")
+        matrix = matrix + np.asarray(extra.matrix, dtype=float)
+        if offset is None and extra.offset is not None:
+            offset = extra.offset
+    return DiscreteShellWindowMatrix(
+        matrix=matrix,
+        k_in=first.k_in,
+        k_out=first.k_out,
+        nmodes=first.nmodes,
+        ells=first.ells_out,
+        ells_in=first.ells_in,
+        ells_out=first.ells_out,
+        offset=offset,
+    )
+
+
+def run_mesh_window_columns(kwargs: dict, columns) -> DiscreteShellWindowMatrix:
+    """
+    Pickleable worker: build a subset of mesh-window columns.
+
+    ``kwargs`` are keyword arguments to :func:`build_mesh_window_matrix`
+    except ``columns``.  Callers that cannot pickle ``ps`` or
+    ``in_bin_weights`` should reconstruct those in an initializer (see
+    :class:`~meer21cm.power.MultipolePowerSpectrum`).
+    """
+    return build_mesh_window_matrix(**kwargs, columns=columns)
 
 
 # ---------------------------------------------------------------------------
@@ -1401,6 +1566,7 @@ def build_mesh_window_matrix(
     in_group_index: ArrayLike | None = None,
     in_group_scale: Sequence[ArrayLike] | None = None,
     leg_scale: dict | None = None,
+    columns: Sequence[int] | Sequence[tuple[int, int]] | None = None,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Exact mesh-level (FFT) window matrix for a local-LOS Yamamoto estimator.
@@ -1535,11 +1701,18 @@ def build_mesh_window_matrix(
         :func:`~meer21cm.multipole_model.beam_input_diagonal_correction`).
         Use instead of ``diag_correction`` when the correction has to
         reach the window leakage too.
+    columns : sequence of int or (group, k_in) pairs, optional
+        Fill only these matrix columns.  Integers select theory nodes
+        ``j`` (no inner grouping).  ``(g, j)`` pairs select inner-mode
+        groups of ``in_bin_weights``.  ``None`` fills every column.
+        Chunks sum with :func:`accumulate_mesh_window_matrices`.
+        ``map_m2`` is applied only on a full (``columns is None``) build.
     """
     require_yamamoto_los(str(getattr(ps, "los", "endpoint")))
     ells_out_t = tuple(int(e) for e in ells)
     ells_in_t = (0,)
     k_in_np = np.asarray(k_in, dtype=float)
+    _warn_truncated_mesh_k_in(ps, k_in_np)
     w = np.asarray(weights, dtype=float)
     shape = tuple(w.shape)
     n_grid = int(np.prod(shape))
@@ -1742,6 +1915,15 @@ def build_mesh_window_matrix(
             else:
                 matrix[rows, j] += np.nan_to_num(binned)
 
+    col_j = None
+    col_gj = None
+    if columns is not None:
+        col_list = list(columns)
+        if col_list and isinstance(col_list[0], (tuple, list, np.ndarray)):
+            col_gj = {(int(g), int(j)) for g, j in col_list}
+        else:
+            col_j = {int(j) for j in col_list}
+
     if in_bin_weights is not None:
         empty_in = np.zeros(k_mode.size, dtype=bool)
         for g in range(n_gin):
@@ -1754,6 +1936,10 @@ def build_mesh_window_matrix(
                 sel_g = None
                 extra_g = scale_list[g]
             for j in range(len(k_in_np)):
+                if col_gj is not None and (g, j) not in col_gj:
+                    continue
+                if col_j is not None and j not in col_j:
+                    continue
                 if sel_g is not None and not np.any(in_shell[j] & sel_g):
                     continue
                 cube_g = in_bin_weights(j, g)
@@ -1785,20 +1971,29 @@ def build_mesh_window_matrix(
                 )
     elif weight_list is None:
         for j in range(len(k_in_np)):
+            if col_j is not None and j not in col_j:
+                continue
+            if col_gj is not None and j not in {jj for _, jj in col_gj}:
+                continue
             _fill_from_xi(xi, _theory_ifft(j), j)
     else:
-        xi_t_list = [_theory_ifft(j) for j in range(len(k_in_np))]
+        j_iter = range(len(k_in_np))
+        if col_j is not None:
+            j_iter = [j for j in j_iter if j in col_j]
+        xi_t_list = {j: _theory_ifft(j) for j in j_iter}
         for g, w_g in enumerate(weight_list):
             if not np.any(group_masks[g]):
                 continue
             xi_g, _ = _yamamoto_xi_kernels(
                 w_g, xhat, ells_out_t, deconvolve_mas=deconvolve_mas, wh_safe=wh_safe
             )
-            for j, xi_t in enumerate(xi_t_list):
+            for j, xi_t in xi_t_list.items():
+                if col_gj is not None and (g, j) not in col_gj:
+                    continue
                 _fill_from_xi(xi_g, xi_t, j, mask=group_masks[g])
 
     shot_offset = None
-    if map_m2 is not None:
+    if map_m2 is not None and columns is None:
         # exact b=b' diagonal: replace the model's own diagonal (whose
         # per-cell variance is mode_scale-suppressed) with the data's actual
         # diagonal (the map variance).  The subtraction is per column; the
@@ -1892,6 +2087,7 @@ def build_mesh_window_mas_out(
     beam_l_max: int | None = None,
     beam_ylm: bool = False,
     beam_ylm_lmax: int = 2,
+    columns: Sequence[int] | Sequence[tuple[int, int]] | None = None,
 ) -> DiscreteShellWindowMatrix:
     r"""
     Preferred MAS-at-output mesh window for lightcone CIC deposits.
@@ -1957,8 +2153,8 @@ def build_mesh_window_mas_out(
         it only affects the leakage and ``1`` is the measured optimum.
     beam_n_phi :
         Extra equal-count azimuth bins around \(\hat n_{\mathrm{ref}}\)
-        (production 1: measured null on the 06 leakage;
-        ``misc/rsd_sims/06_beam_az_leakage.py``).
+        (production 1: measured null on the 06 leakage; historical
+        ``06_beam_az_leakage.py``, see ``misc/rsd_sims/HANDOVER.md``).
     beam_diag_correction :
         Apply the exact per-mode beam response of
         :func:`~meer21cm.multipole_model.beam_input_diagonal_correction`.
@@ -1983,8 +2179,7 @@ def build_mesh_window_mas_out(
         stays :math:`n_\mu=4` + additive :math:`\kappa=0`.  Requires
         ``beam_at_input``.  Incompatible with ``beam_leg_scale``.
         The 06 one-shell probe failed (diagonal closed −26% of the
-        leftover group–exact gap; see
-        ``misc/rsd_sims/06_beam_az_leakage.py --ylm``).
+        leftover group–exact gap; see ``misc/rsd_sims/HANDOVER.md``).
     beam_ylm_lmax :
         Highest even :math:`L` of the cubes (default 2: 6 cubes).
     """
@@ -2126,6 +2321,7 @@ def build_mesh_window_mas_out(
         in_group_index=in_group_index,
         in_group_scale=in_group_scale,
         leg_scale=leg_scale,
+        columns=columns,
     )
 
 
@@ -2156,10 +2352,8 @@ def predict_mesh_windowed_multipoles(
     Theory is ``get_theory_multipoles_kmu`` of ``ps`` on the matrix
     ``k_in``.  Returns ``{ell: P_ell(k_out)}``.
     """
-    from .multipole_model import propose_k_in
-
     if k_in is None:
-        k_in = propose_k_in(ps.k1dbins, n=int(n_k_in))
+        k_in = propose_mesh_k_in(ps, n=int(n_k_in))
     k_in_np = np.asarray(k_in, dtype=float)
     mat = build_mesh_window_mas_out(
         ps,
