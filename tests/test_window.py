@@ -6,13 +6,15 @@ import numpy as np
 import pytest
 
 from meer21cm.estimator import FieldPowerSpectrum
-from meer21cm.multipole_model import (
+from meer21cm.multipole import (
     SmoothWindowEstimator,
     WindowedMultipoleModel,
+    predict_windowed_multipoles,
+)
+from meer21cm.multipole_ops import (
     accumulate_window_multipoles,
     make_galaxy_poisson_mean_density,
     make_im_selection_field,
-    predict_windowed_multipoles,
     propose_k_in,
     propose_k1dbins_window,
     propose_window_measure_ells,

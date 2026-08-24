@@ -31,15 +31,15 @@ _LAZY_ATTRS = {
     "CosmologyCalculator": ("meer21cm.cosmology", "CosmologyCalculator"),
     "PowerSpectrum": ("meer21cm.power", "PowerSpectrum"),
     "MockSimulation": ("meer21cm.mock", "MockSimulation"),
-    "MultipolePowerSpectrum": ("meer21cm.multipole_power", "MultipolePowerSpectrum"),
-    "SmoothWindowEstimator": ("meer21cm.multipole_model", "SmoothWindowEstimator"),
-    "WindowedMultipoleModel": ("meer21cm.multipole_model", "WindowedMultipoleModel"),
+    "MultipolePowerSpectrum": ("meer21cm.multipole", "MultipolePowerSpectrum"),
+    "SmoothWindowEstimator": ("meer21cm.multipole", "SmoothWindowEstimator"),
+    "WindowedMultipoleModel": ("meer21cm.multipole", "WindowedMultipoleModel"),
     "DiscreteShellWindowMatrix": (
         "meer21cm.window",
         "DiscreteShellWindowMatrix",
     ),
     "predict_windowed_multipoles": (
-        "meer21cm.multipole_model",
+        "meer21cm.multipole",
         "predict_windowed_multipoles",
     ),
     "build_mesh_window_matrix": (

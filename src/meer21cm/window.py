@@ -30,11 +30,11 @@ discrete-shell row structure (``k_out`` bins from
   evaluated on the mesh with the estimator's own operators.  The varying
   :math:`\hat n(x)` of a true lightcone observer is fully contained in
   :math:`Y_{\ell m}(\hat n(x))`; the discrete-:math:`\mu` projector is its
-  :math:`1/d\to 0` limit (see ``misc/rsd_sims/window_formalism.md`` §11).
+  :math:`1/d\to 0` limit.
 
 The window matrices are Yamamoto-only (``los='firstpoint'`` /
-``'endpoint'``).  ``los='global'`` raises; that estimator is path **(1)+(2)**
-(:meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of 3D cubes).
+``'endpoint'``).  ``los='global'`` raises; use
+:meth:`~meer21cm.power.PowerSpectrum.get_1d_power` of the 3D cubes instead.
 
 The outer discrete-shell sum applies the discrete-:math:`\mu` projector:
 reconstruct :math:`P(k,\mu)=\sum_L P_L(|k|)\,\mathcal{L}_L(\mu)` and bin
@@ -170,18 +170,18 @@ def propose_mesh_k_in(
 
     :func:`build_mesh_window_matrix` tiles **all** rFFT modes into Voronoi
     shells of ``k_in``.  A ``k_in`` that stops below the grid's
-    ``max |k|`` (as :func:`~meer21cm.multipole_model.propose_k_in`'s
+    ``max |k|`` (as :func:`~meer21cm.multipole_ops.propose_k_in`'s
     ``1.5 k_max`` often does — the grid reaches
     :math:`\\sqrt{3}\,k_{\\mathrm{Nyq}}`) assigns every outer mode the
     constant :math:`P(k_{\\mathrm{in}}[-1])` instead of the falling
     theory.
 
-    Keeps :func:`~meer21cm.multipole_model.propose_k_in`'s low end and log
+    Keeps :func:`~meer21cm.multipole_ops.propose_k_in`'s low end and log
     node density and extends the top to the grid maximum.  The smooth
     (Hankel) path integrates :math:`k` continuously and should keep
-    :func:`~meer21cm.multipole_model.propose_k_in`.
+    :func:`~meer21cm.multipole_ops.propose_k_in`.
     """
-    from .multipole_model import propose_k_in
+    from .multipole_ops import propose_k_in
 
     k1dbins = getattr(ps, "k1dbins", None)
     if k1dbins is None:
@@ -1219,8 +1219,8 @@ def _extend_hermitian_z(
 #     M_0(k) = (R / N_box^2) sum_q t(q) P(q) sum_b |W_b(k-q)|^2,
 #
 # whose per-cell variance is the mode_scale-suppressed sigma_t^2, not the map
-# variance.  The difference D_0 - M_0 is the additive monopole "shot" floor of
-# ``misc/rsd_sims/p0_shot_fix_todo.md``.  Both terms are computed exactly from
+# variance.  The difference D_0 - M_0 is the additive monopole "shot" floor.
+# Both terms are computed exactly from
 # the per-cell stencils via per-lag scalar sums:
 #
 #     |W_b(k)|^2 = sum_d e^{-2pi i d.n/N} P_d(b),   d = box-index lag between
@@ -1400,8 +1400,7 @@ def map_sampling_shot_diagonal(
 
     (the mode_scale-suppressed variance, not the map variance).  This helper
     returns the binned pieces needed to replace :math:`M_0` by :math:`D_0`
-    (the additive monopole shot floor of
-    ``misc/rsd_sims/p0_shot_fix_todo.md``):
+    (the additive monopole shot floor):
 
     - ``offset``: ``{0: bin[D_0](k_out)}`` — the theory-independent data
       diagonal (per-seed realized ``m_b^2``), added on top of the windowed
@@ -1647,12 +1646,11 @@ def build_mesh_window_matrix(
         When given, the matrix includes the **Poisson-limit** map-sampling
         shot diagonal (see :func:`map_sampling_shot_diagonal`).  This is the
         Poisson estimate of a sub-Poissonian per-cell term and **must not
-        be applied** as a lightcone P0 correction — it over-corrects (see
-        ``misc/rsd_sims/p0_shot_fix_todo.md``).  Kept for diagnostics /
-        unit tests only.  Off by default.
+        be applied** as a lightcone P0 correction — it over-corrects.
+        Kept for diagnostics / unit tests only.  Off by default.
     out_bin_weights : sequence of arrays, optional
         Real-space cubes, one per **output mode group** (the beam-in-kernel
-        / B3 path: per-cell :math:`\tilde B_b(\mathbf k)` on the deposit
+        path: per-cell :math:`\tilde B_b(\mathbf k)` on the deposit
         comb).  Without ``out_group_index`` a group is one output
         :math:`|k|` bin and the length must be ``n_out``.
         ``renorm_weights`` still sets :math:`R`.  Incompatible with
@@ -1668,7 +1666,7 @@ def build_mesh_window_matrix(
     diag_correction : dict, optional
         ``{(ell, m): dS}`` on the rFFT grid, added to the kernel's
         :math:`\boldsymbol\kappa=0` term
-        (:func:`~meer21cm.multipole_model.beam_diagonal_correction`).
+        (:func:`~meer21cm.multipole_ops.beam_diagonal_correction`).
         The kernel's zero-lag value is
         :math:`\langle wY_{\ell m}\rangle\langle w\rangle`; a real-space
         cube can only carry a :math:`\hat k`-independent selection, so a
@@ -1680,7 +1678,7 @@ def build_mesh_window_matrix(
         skip an empty intersection).  This is where a beam belongs: it
         multiplies the field at the theory mode :math:`\mathbf q`, before
         the selection, so each :math:`(|q|, \hat q)` group needs its own
-        beamed cube (:func:`~meer21cm.multipole_model.beam_input_cell_kernels`).
+        beamed cube (:func:`~meer21cm.multipole_ops.beam_input_cell_kernels`).
         Groups sum into the same column.  Mutually exclusive with
         ``out_bin_weights`` / ``map_m2``.
     in_group_index : array_like, optional
@@ -1698,7 +1696,7 @@ def build_mesh_window_matrix(
         ``{(ell, m): r}`` on the rFFT grid, multiplying the whole
         :math:`\boldsymbol\kappa` profile of that leg product rather than
         only its :math:`\boldsymbol\kappa=0` value (the ``ratio`` form of
-        :func:`~meer21cm.multipole_model.beam_input_diagonal_correction`).
+        :func:`~meer21cm.multipole_ops.beam_input_diagonal_correction`).
         Use instead of ``diag_correction`` when the correction has to
         reach the window leakage too.
     columns : sequence of int or (group, k_in) pairs, optional
@@ -2102,9 +2100,7 @@ def build_mesh_window_mas_out(
       :math:`W_{\mathrm{MAS}}^2` here.
 
     The theory :math:`q` integral runs over the PS Fourier grid only.
-    Extending it past the grid was measured to be negligible (Band 2 +
-    Band 3 contribute :math:`0.05`–:math:`0.17\%` of :math:`P_0` on the
-    ``misc/rsd_sims/04`` lightcone): out-of-zone :math:`q` enters
+    Extending it past the grid is negligible: out-of-zone :math:`q` enters
     weighted by the cell-comb power at large lag, which is
     :math:`\sim 10^{-6}` of the :math:`\kappa = 0` spike.
 
@@ -2113,12 +2109,12 @@ def build_mesh_window_mas_out(
     particle_mass :
         Optional per-cell masses for the NGP comb (e.g. a pre-deposit
         frequency taper or the binary-mask beam edge factor
-        :func:`~meer21cm.multipole_model.beam_edge_cell_mass`).
+        :func:`~meer21cm.multipole_ops.beam_edge_cell_mass`).
         Ignored when ``raw_comb`` is provided.
     out_mode_scale_extra :
         Optional extra factor at the **output** Fourier mode, multiplied
         onto :math:`W_{\mathrm{MAS}}(k)^2` (e.g. the scalar beam transfer
-        :func:`~meer21cm.multipole_model.beam_out_mode_scale`).  With
+        :func:`~meer21cm.multipole_ops.beam_out_mode_scale`).  With
         ``beam_in_kernel`` the default extra is the residual anisotropy
         :math:`\\bar B^2(k)/\\langle B\\rangle_{\\mathrm{bin}}^2`.
     beam_in_kernel :
@@ -2126,38 +2122,37 @@ def build_mesh_window_mas_out(
         mean-field cell mass :math:`\langle\tilde B_b\rangle/n_b` (which
         supplies the beam-induced **leakage**), and the exact
         :math:`\ell`-dependent **diagonal** is restored additively by
-        :func:`~meer21cm.multipole_model.beam_diagonal_correction`.
+        :func:`~meer21cm.multipole_ops.beam_diagonal_correction`.
         The split is necessary: a real-space cube can only hold a
         :math:`\hat k`-independent selection, but the beam is
         :math:`u_{\mathbf k}(x)=w(x)\tilde B_x(\mathbf k)`.
     beam_at_input :
-        Preferred beam model ("B5").  Attaches
+        Preferred beam model.  Attaches
         :math:`\tilde B_b(\mathbf q)` to the **theory** mode, which is
         where the beam physically acts — it smooths the field before the
         selection multiplies it.  The theory shell is split into
         ``beam_n_mu`` :math:`|\mu|` groups, each with its own beamed cube
-        (:func:`~meer21cm.multipole_model.beam_input_cell_kernels`), and
+        (:func:`~meer21cm.multipole_ops.beam_input_cell_kernels`), and
         the groups sum into the same column.  Curved sky and chromaticity
         are exact per cell.  The cube still cannot hold the beam's
         azimuthal structure, so the default is an additive
         :math:`\boldsymbol\kappa=0` correction
-        (:func:`~meer21cm.multipole_model.beam_input_diagonal_correction`).
+        (:func:`~meer21cm.multipole_ops.beam_input_diagonal_correction`).
         Overrides ``beam_in_kernel``.
     beam_n_mu :
         With ``beam_at_input``, number of :math:`|\mu|` groups of the
         **theory** mode (production default 4: enough to resolve
-        \(k_\perp\)-dependent leakage; 8 is the same on the 06 cy
-        corners).  With ``beam_in_kernel``, number of :math:`|\mu|`
+        \(k_\perp\)-dependent leakage).  With ``beam_in_kernel``, number of :math:`|\mu|`
         sub-groups per output :math:`|k|` bin for the mean-field cube
-        (:func:`~meer21cm.multipole_model.beam_mode_group_index`); there
+        (:func:`~meer21cm.multipole_ops.beam_mode_group_index`); there
         it only affects the leakage and ``1`` is the measured optimum.
     beam_n_phi :
         Extra equal-count azimuth bins around \(\hat n_{\mathrm{ref}}\)
-        (production 1: measured null on the 06 leakage; historical
-        ``06_beam_az_leakage.py``, see ``misc/rsd_sims/HANDOVER.md``).
+        (default 1: a further azimuth split does not recover the beam's
+        azimuthal structure around each cell's own \(\hat n_b\)).
     beam_diag_correction :
         Apply the exact per-mode beam response of
-        :func:`~meer21cm.multipole_model.beam_input_diagonal_correction`.
+        :func:`~meer21cm.multipole_ops.beam_input_diagonal_correction`.
         Needed because no real-space cube can hold the beam's azimuthal
         structure: on its own the cube saturates at \(0.40\) of the exact
         \(\ell=2\) zero-lag response, however fine ``beam_n_mu`` is.
@@ -2174,12 +2169,10 @@ def build_mesh_window_mas_out(
         ``max(ells) + 4`` for per-mode convergence.
     beam_ylm :
         Opt-in diagonal :math:`Y_{LM}` cubes
-        (:func:`~meer21cm.multipole_model.beam_ylm_cell_kernels`)
+        (:func:`~meer21cm.multipole_ops.beam_ylm_cell_kernels`)
         instead of :math:`|\mu|` groups.  Off by default — production
         stays :math:`n_\mu=4` + additive :math:`\kappa=0`.  Requires
         ``beam_at_input``.  Incompatible with ``beam_leg_scale``.
-        The 06 one-shell probe failed (diagonal closed −26% of the
-        leftover group–exact gap; see ``misc/rsd_sims/HANDOVER.md``).
     beam_ylm_lmax :
         Highest even :math:`L` of the cubes (default 2: 6 cubes).
     """
@@ -2198,7 +2191,7 @@ def build_mesh_window_mas_out(
     if beam_at_input:
         if raw_comb is not None:
             raise ValueError("beam_at_input cannot be combined with raw_comb")
-        from .multipole_model import (
+        from .multipole_ops import (
             beam_edge_cell_mass,
             beam_input_cell_kernels,
             beam_input_diagonal_correction,
@@ -2265,7 +2258,7 @@ def build_mesh_window_mas_out(
     elif beam_in_kernel:
         if raw_comb is not None:
             raise ValueError("beam_in_kernel cannot be combined with raw_comb")
-        from .multipole_model import (
+        from .multipole_ops import (
             beam_diagonal_correction,
             beam_edge_cell_mass,
             beam_kernel_bin_masses,

@@ -660,8 +660,7 @@ class MockSimulation(PowerSpectrum):
         Linear local plane-parallel Kaiser correction in :math:`k`-space.
 
         Real-space operator (derivatives on Cartesian :math:`u_j` only,
-        then contract with the per-voxel line of sight; see
-        ``misc/rsd_sims/kaiser_fourier_integral.md``):
+        then contract with the per-voxel line of sight):
 
         .. math::
 

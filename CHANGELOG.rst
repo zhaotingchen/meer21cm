@@ -35,6 +35,13 @@ Enhancements
 
 Changed
 +++++++
+* rename ``multipole_power.py`` → ``multipole.py`` and split helpers from
+  ``multipole_model.py`` into ``multipole_ops.py`` (same layout as
+  ``power.py`` / ``power_ops.py``).  Classes
+  (``MultipolePowerSpectrum``, ``WindowedMultipoleModel``,
+  ``SmoothWindowEstimator``) live in ``meer21cm.multipole``; beam /
+  sampling / k-grid helpers live in ``meer21cm.multipole_ops``.
+  ``tests/test_multipole_power.py`` → ``tests/test_multipole.py``.
 * rename ``smooth_window.py`` → ``window.py`` (the module now holds both the
   smooth Hankel/Wigner layer and the exact mesh-level FFT window
   ``build_mesh_window_matrix``); imports change from

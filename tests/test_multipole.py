@@ -7,7 +7,7 @@ import pytest
 
 from meer21cm.estimator import FieldPowerSpectrum
 from meer21cm.grid import fourier_window_for_assignment
-from meer21cm.multipole_power import MultipolePowerSpectrum
+from meer21cm.multipole import MultipolePowerSpectrum
 from meer21cm.window import (
     accumulate_mesh_window_matrices,
     build_mesh_window_mas_out,
@@ -67,7 +67,7 @@ def test_constructor_defaults():
 
 def test_window_matrix_warns_before_run(caplog):
     mps = _make_mps()
-    with caplog.at_level(logging.WARNING, logger="meer21cm.multipole_power"):
+    with caplog.at_level(logging.WARNING, logger="meer21cm.multipole"):
         got = mps.window_matrix
     assert got is None
     assert "run_window_matrix" in caplog.text
@@ -98,7 +98,7 @@ def test_beam_setting_marks_window_stale(caplog):
     assert mps._window_stale is False
     mps.beam_n_mu = 8
     assert mps._window_stale is True
-    with caplog.at_level(logging.WARNING, logger="meer21cm.multipole_power"):
+    with caplog.at_level(logging.WARNING, logger="meer21cm.multipole"):
         _ = mps.model_multipoles
     assert "stale" in caplog.text.lower()
     assert mps._window_matrix_obj is not None

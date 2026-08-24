@@ -511,7 +511,7 @@ def test_ngp_raw_cell_comb_and_mas_out_api():
 
 def test_map_sampling_mode_scale_level0():
     """Level-0 map sampling matches mean-sinc |S|^2."""
-    from meer21cm.multipole_model import map_sampling_mode_scale
+    from meer21cm.multipole_ops import map_sampling_mode_scale
     from meer21cm.power_ops import step_window_attenuation
     from meer21cm.util import get_nd_slicer
 
@@ -539,7 +539,7 @@ def test_map_sampling_mode_scale_level0():
 
 def test_cell_sampling_kernel_matches_radial_sinc():
     """Aligned cells + q ∥ n̂ recover sinc(q Δ_∥ / 2)."""
-    from meer21cm.multipole_model import cell_sampling_kernel
+    from meer21cm.multipole_ops import cell_sampling_kernel
     from meer21cm.power_ops import step_window_attenuation
 
     n_cell = 32
@@ -558,7 +558,7 @@ def test_cell_sampling_kernel_matches_radial_sinc():
 
 def test_cell_sampling_kernel_lowq_matches_level0_mean():
     """Angle-averaged |S_b|² tracks the survey-mean sinc at low q."""
-    from meer21cm.multipole_model import (
+    from meer21cm.multipole_ops import (
         cell_sampling_kernel_mu_rms,
         map_sampling_mode_scale,
     )
@@ -587,7 +587,7 @@ def test_cell_sampling_kernel_lowq_matches_level0_mean():
 
 def test_beam_out_mode_scale_level0_matches_gaussian_attenuation():
     """Level 0 is the legacy Gaussian B(k_perp)^2 on the box-frame k_perp."""
-    from meer21cm.multipole_model import beam_out_mode_scale
+    from meer21cm.multipole_ops import beam_out_mode_scale
     from meer21cm.power_ops import gaussian_beam_attenuation
     from meer21cm.util import get_nd_slicer
 
@@ -607,7 +607,7 @@ def test_beam_out_mode_scale_level0_matches_gaussian_attenuation():
 
 def test_beam_ylm_decomposition_matches_cell_average():
     """Addition-theorem <B> equals the brute-force cell mean on a small set."""
-    from meer21cm.multipole_model import mean_gaussian_beam_on_modes
+    from meer21cm.multipole_ops import mean_gaussian_beam_on_modes
     from meer21cm.spherical import get_real_Ylm
 
     rng = np.random.default_rng(4)
@@ -633,7 +633,7 @@ def test_beam_ylm_decomposition_matches_cell_average():
 
 def test_beam_level1_reduces_to_level0_for_narrow_footprint():
     """Constant sigma and n̂ ≈ ẑ recovers the box-frame k_perp Gaussian."""
-    from meer21cm.multipole_model import (
+    from meer21cm.multipole_ops import (
         beam_out_mode_scale,
         mean_gaussian_beam_on_modes,
     )
@@ -695,7 +695,7 @@ def test_mesh_window_beam_out_mode_scale_matches_direct():
 
 def test_mean_beam_amplitude_on_cells_matches_direct():
     """Y_LM cell amplitude equals the brute-force Gaussian at one mode."""
-    from meer21cm.multipole_model import mean_beam_amplitude_on_cells
+    from meer21cm.multipole_ops import mean_beam_amplitude_on_cells
 
     rng = np.random.default_rng(5)
     nhat = rng.normal(size=(32, 3))
@@ -758,7 +758,7 @@ def test_mesh_window_constant_bin_mass_equals_out_mode_scale():
 
 def test_beam_mode_group_index_partitions_estimator_modes():
     """(|k| bin, |mu|) groups tile exactly the modes the estimator bins."""
-    from meer21cm.multipole_model import beam_mode_group_index
+    from meer21cm.multipole_ops import beam_mode_group_index
 
     weights = _mask(BOX_NDIM, BOX_LEN)
     fps = _make_fps(0, weights, _true_observer())
@@ -790,7 +790,7 @@ def test_cell_grid_los_reproduces_the_deposited_cube():
     ngp_raw_cell_comb + los_xhat actually produce, the subtraction leaves
     a spurious ell>0 residual instead of removing one.
     """
-    from meer21cm.multipole_model import cell_grid_los
+    from meer21cm.multipole_ops import cell_grid_los
     from meer21cm.spherical import get_real_Ylm
     from meer21cm.window import ngp_raw_cell_comb
 
@@ -858,7 +858,7 @@ def test_exact_beam_legs_match_brute_force():
     ell > 0: the estimator's Y_lm(nhat) leg couples to the beam's own L
     structure, so ell needs beam moments up to L = ell.
     """
-    from meer21cm.multipole_model import exact_beam_legs
+    from meer21cm.multipole_ops import exact_beam_legs
     from meer21cm.spherical import get_real_Ylm
 
     rng = np.random.default_rng(7)
@@ -908,7 +908,7 @@ def test_beam_legs_l0_truncation_fails_above_monopole():
     This is the reason a scalar out_mode_scale (or any mean-field comb
     mass) cannot carry the beam into P2/P4.
     """
-    from meer21cm.multipole_model import exact_beam_legs
+    from meer21cm.multipole_ops import exact_beam_legs
 
     rng = np.random.default_rng(8)
     n_cell = 400
@@ -968,7 +968,7 @@ def test_mesh_window_mode_groups_reduce_to_ungrouped():
     The group fill must be additive with the *full* bin weight as the
     denominator, otherwise the shell average is silently rescaled.
     """
-    from meer21cm.multipole_model import beam_mode_group_index
+    from meer21cm.multipole_ops import beam_mode_group_index
 
     weights = _mask(BOX_NDIM, BOX_LEN)
     fps = _make_fps(0, weights, _true_observer())
@@ -1004,7 +1004,7 @@ def test_mesh_window_input_groups_reduce_to_ungrouped():
     matrix bit for bit.  This pins the q-side bookkeeping (shell x group
     partition, additive fill) independently of any beam.
     """
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     weights = _mask(BOX_NDIM, BOX_LEN)
     fps = _make_fps(0, weights, _true_observer())
@@ -1043,7 +1043,7 @@ def test_beam_input_cell_kernels_group_mean_is_the_exact_perp_moment():
     azimuthal spread of q̂ about n̂_ref is kept.  This is the step that
     a flat-sky ⟨B⟩ over a |k| shell gets wrong.
     """
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     fps = _shot_fps()
     rng = np.random.default_rng(4)
@@ -1138,7 +1138,7 @@ def test_mesh_window_leg_scale_multiplies_only_its_own_ell():
 
 def test_beam_input_n_mu_4_partitions_all_theory_modes():
     """Production n_mu=4 covers every rFFT mode; groups are nonempty."""
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     fps = _shot_fps()
     idx, n_group = beam_input_mode_groups(fps, n_mu=4)
@@ -1155,7 +1155,7 @@ def test_beam_input_n_mu_4_groups_split_q_perp():
     That is the n_mu=4 leakage split: the same |q| is no longer assigned
     one shell-mean ⟨q_⊥²⟩ ~ (2/3) q² for every direction.
     """
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     fps = _shot_fps()
     idx, n_group = beam_input_mode_groups(fps, n_mu=4)
@@ -1212,7 +1212,7 @@ def test_beam_diag_additive_and_ratio_are_both_defined():
     still exact on the diagonal; it is not the default because it
     rescales the n_mu-split leakage.
     """
-    from meer21cm.multipole_model import beam_input_diagonal_correction
+    from meer21cm.multipole_ops import beam_input_diagonal_correction
 
     ps = _beamed_ps_namespace()
     n_cell = int(np.asarray(ps.pix_coor_in_box).reshape(-1, 3).shape[0])
@@ -1232,7 +1232,7 @@ def test_beam_diag_additive_and_ratio_are_both_defined():
 
 def test_beam_input_n_phi_1_matches_mu_only():
     """n_phi=1 is bit-identical to the |μ|-only grouping."""
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     fps = _shot_fps()
     a, na = beam_input_mode_groups(fps, n_mu=4)
@@ -1243,7 +1243,7 @@ def test_beam_input_n_phi_1_matches_mu_only():
 
 def test_beam_input_n_phi_4_partitions_all_modes():
     """n_mu=4 × n_phi=4 covers every rFFT mode; all 16 groups are nonempty."""
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     fps = _shot_fps()
     idx, n_group = beam_input_mode_groups(fps, n_mu=4, n_phi=4)
@@ -1255,7 +1255,7 @@ def test_beam_input_n_phi_4_partitions_all_modes():
 
 def test_beam_input_phi_bins_have_different_M_axes():
     """Two φ bins at the same |μ| have different in-plane M principal axes."""
-    from meer21cm.multipole_model import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_input_mode_groups
 
     fps = _shot_fps()
     idx, _n = beam_input_mode_groups(fps, n_mu=4, n_phi=4)
@@ -1301,7 +1301,7 @@ def test_beam_input_phi_bins_have_different_M_axes():
 
 def test_beam_ylm_labels_lmax2():
     """L≤2 even real Y_LM is 1 + 5 = 6 terms."""
-    from meer21cm.multipole_model import beam_ylm_labels
+    from meer21cm.multipole_ops import beam_ylm_labels
 
     labels = beam_ylm_labels(2)
     assert labels[0] == (0, 0)
@@ -1321,7 +1321,7 @@ def test_beam_ylm_s0_matches_truncated_exact_legs():
     f_L is frozen at the theory node and k_abs is set to that node so the
     two expressions are the same addition theorem.
     """
-    from meer21cm.multipole_model import (
+    from meer21cm.multipole_ops import (
         beam_cell_sigma_perp,
         beam_ylm_alpha,
         beam_ylm_labels,
@@ -1395,7 +1395,7 @@ def test_in_group_scale_ones_matches_single_group():
 
 def test_beam_ylm_diagonal_correction_quadrupole_nonzero():
     """L≤2 diagonal cubes miss cross terms and higher L; the additive is not 0."""
-    from meer21cm.multipole_model import beam_ylm_diagonal_correction
+    from meer21cm.multipole_ops import beam_ylm_diagonal_correction
 
     ps = _beamed_ps_namespace()
     n_cell = int(np.asarray(ps.pix_coor_in_box).reshape(-1, 3).shape[0])

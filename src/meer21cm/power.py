@@ -724,7 +724,7 @@ for _glue_name in _GLUE_NAMES:
 
 def __getattr__(name):
     if name == "MultipolePowerSpectrum":
-        from .multipole_power import MultipolePowerSpectrum
+        from .multipole import MultipolePowerSpectrum
 
         return MultipolePowerSpectrum
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
