@@ -1678,7 +1678,7 @@ def build_mesh_window_matrix(
         skip an empty intersection).  This is where a beam belongs: it
         multiplies the field at the theory mode :math:`\mathbf q`, before
         the selection, so each :math:`(|q|, \hat q)` group needs its own
-        beamed cube (:func:`~meer21cm.multipole_ops.beam_input_cell_kernels`).
+        beamed cube (:func:`~meer21cm.multipole_ops.beam_theory_cell_kernels`).
         Groups sum into the same column.  Mutually exclusive with
         ``out_bin_weights`` / ``map_m2``.
     in_group_index : array_like, optional
@@ -1696,7 +1696,7 @@ def build_mesh_window_matrix(
         ``{(ell, m): r}`` on the rFFT grid, multiplying the whole
         :math:`\boldsymbol\kappa` profile of that leg product rather than
         only its :math:`\boldsymbol\kappa=0` value (the ``ratio`` form of
-        :func:`~meer21cm.multipole_ops.beam_input_diagonal_correction`).
+        :func:`~meer21cm.multipole_ops.beam_theory_diagonal_correction`).
         Use instead of ``diag_correction`` when the correction has to
         reach the window leakage too.
     columns : sequence of int or (group, k_in) pairs, optional
@@ -2076,12 +2076,12 @@ def build_mesh_window_mas_out(
     particle_mass: ArrayLike | None = None,
     raw_comb: ArrayLike | None = None,
     out_mode_scale_extra: ArrayLike | None = None,
-    beam_in_kernel: bool = False,
-    beam_at_input: bool = False,
+    beam_at_output_mode: bool = False,
+    beam_at_theory_mode: bool = False,
     beam_n_mu: int = 4,
     beam_n_phi: int = 1,
     beam_diag_correction: bool = True,
-    beam_leg_scale: bool = False,
+    beam_diag_as_ratio: bool = False,
     beam_l_max: int | None = None,
     beam_ylm: bool = False,
     beam_ylm_lmax: int = 2,
@@ -2115,35 +2115,37 @@ def build_mesh_window_mas_out(
         Optional extra factor at the **output** Fourier mode, multiplied
         onto :math:`W_{\mathrm{MAS}}(k)^2` (e.g. the scalar beam transfer
         :func:`~meer21cm.multipole_ops.beam_out_mode_scale`).  With
-        ``beam_in_kernel`` the default extra is the residual anisotropy
+        ``beam_at_output_mode`` the default extra is the residual anisotropy
         :math:`\\bar B^2(k)/\\langle B\\rangle_{\\mathrm{bin}}^2`.
-    beam_in_kernel :
-        If True, model the sky-plane beam.  The cube kernel carries the
-        mean-field cell mass :math:`\langle\tilde B_b\rangle/n_b` (which
-        supplies the beam-induced **leakage**), and the exact
+    beam_at_output_mode :
+        If True, attach :math:`\tilde B_b(\mathbf k)` to the **output**
+        Fourier mode (the deposit comb at the estimator :math:`k`).
+        The cube kernel carries the mean-field cell mass
+        :math:`\langle\tilde B_b\rangle/n_b` (leakage), and the exact
         :math:`\ell`-dependent **diagonal** is restored additively by
         :func:`~meer21cm.multipole_ops.beam_diagonal_correction`.
-        The split is necessary: a real-space cube can only hold a
-        :math:`\hat k`-independent selection, but the beam is
+        A real-space cube can only hold a :math:`\hat k`-independent
+        selection, but the beam is
         :math:`u_{\mathbf k}(x)=w(x)\tilde B_x(\mathbf k)`.
-    beam_at_input :
+    beam_at_theory_mode :
         Preferred beam model.  Attaches
         :math:`\tilde B_b(\mathbf q)` to the **theory** mode, which is
         where the beam physically acts — it smooths the field before the
         selection multiplies it.  The theory shell is split into
         ``beam_n_mu`` :math:`|\mu|` groups, each with its own beamed cube
-        (:func:`~meer21cm.multipole_ops.beam_input_cell_kernels`), and
+        (:func:`~meer21cm.multipole_ops.beam_theory_cell_kernels`), and
         the groups sum into the same column.  Curved sky and chromaticity
         are exact per cell.  The cube still cannot hold the beam's
         azimuthal structure, so the default is an additive
         :math:`\boldsymbol\kappa=0` correction
-        (:func:`~meer21cm.multipole_ops.beam_input_diagonal_correction`).
-        Overrides ``beam_in_kernel``.
+        (:func:`~meer21cm.multipole_ops.beam_theory_diagonal_correction`).
+        Overrides ``beam_at_output_mode``.
     beam_n_mu :
-        With ``beam_at_input``, number of :math:`|\mu|` groups of the
+        With ``beam_at_theory_mode``, number of :math:`|\mu|` groups of the
         **theory** mode (production default 4: enough to resolve
-        \(k_\perp\)-dependent leakage).  With ``beam_in_kernel``, number of :math:`|\mu|`
-        sub-groups per output :math:`|k|` bin for the mean-field cube
+        \(k_\perp\)-dependent leakage).  With ``beam_at_output_mode``,
+        number of :math:`|\mu|` sub-groups per output :math:`|k|` bin for
+        the mean-field cube
         (:func:`~meer21cm.multipole_ops.beam_mode_group_index`); there
         it only affects the leakage and ``1`` is the measured optimum.
     beam_n_phi :
@@ -2152,11 +2154,11 @@ def build_mesh_window_mas_out(
         azimuthal structure around each cell's own \(\hat n_b\)).
     beam_diag_correction :
         Apply the exact per-mode beam response of
-        :func:`~meer21cm.multipole_ops.beam_input_diagonal_correction`.
+        :func:`~meer21cm.multipole_ops.beam_theory_diagonal_correction`.
         Needed because no real-space cube can hold the beam's azimuthal
         structure: on its own the cube saturates at \(0.40\) of the exact
         \(\ell=2\) zero-lag response, however fine ``beam_n_mu`` is.
-    beam_leg_scale :
+    beam_diag_as_ratio :
         If True, apply that correction as a **ratio** on the whole
         :math:`\boldsymbol\kappa` profile.  Production default is False:
         additive at :math:`\boldsymbol\kappa=0` only, so the
@@ -2172,11 +2174,15 @@ def build_mesh_window_mas_out(
         (:func:`~meer21cm.multipole_ops.beam_ylm_cell_kernels`)
         instead of :math:`|\mu|` groups.  Off by default — production
         stays :math:`n_\mu=4` + additive :math:`\kappa=0`.  Requires
-        ``beam_at_input``.  Incompatible with ``beam_leg_scale``.
+        ``beam_at_theory_mode``.  Incompatible with ``beam_diag_as_ratio``.
     beam_ylm_lmax :
         Highest even :math:`L` of the cubes (default 2: 6 cubes).
     """
     from .grid import fourier_window_for_assignment
+
+    beam_at_output_mode = bool(beam_at_output_mode)
+    beam_at_theory_mode = bool(beam_at_theory_mode)
+    beam_diag_as_ratio = bool(beam_diag_as_ratio)
 
     w_mas2 = fourier_window_for_assignment(ps.box_ndim, ps.grid_scheme) ** 2
     out_bin_weights = None
@@ -2186,15 +2192,15 @@ def build_mesh_window_mas_out(
     in_group_index = None
     in_group_scale = None
     leg_scale = None
-    if beam_ylm and not beam_at_input:
-        raise ValueError("beam_ylm requires beam_at_input")
-    if beam_at_input:
+    if beam_ylm and not beam_at_theory_mode:
+        raise ValueError("beam_ylm requires beam_at_theory_mode")
+    if beam_at_theory_mode:
         if raw_comb is not None:
-            raise ValueError("beam_at_input cannot be combined with raw_comb")
+            raise ValueError("beam_at_theory_mode cannot be combined with raw_comb")
         from .multipole_ops import (
             beam_edge_cell_mass,
-            beam_input_cell_kernels,
-            beam_input_diagonal_correction,
+            beam_theory_cell_kernels,
+            beam_theory_diagonal_correction,
             beam_ylm_alpha,
             beam_ylm_cell_kernels,
             beam_ylm_diagonal_correction,
@@ -2210,8 +2216,8 @@ def build_mesh_window_mas_out(
             edge = edge * extra_m
         use_ylm = bool(beam_ylm) and getattr(ps, "sigma_beam_ch", None) is not None
         if use_ylm:
-            if beam_leg_scale:
-                raise ValueError("beam_ylm does not support beam_leg_scale (ratio)")
+            if beam_diag_as_ratio:
+                raise ValueError("beam_ylm does not support beam_diag_as_ratio")
             labels, in_kernel = beam_ylm_cell_kernels(
                 ps, k_in, l_max=int(beam_ylm_lmax), cell_mass=edge
             )
@@ -2219,7 +2225,7 @@ def build_mesh_window_mas_out(
             in_group_scale = [alpha[g] ** 2 for g in range(len(labels))]
             in_bin_weights = in_kernel
         else:
-            in_group_index, in_kernel = beam_input_cell_kernels(
+            in_group_index, in_kernel = beam_theory_cell_kernels(
                 ps,
                 k_in,
                 n_mu=int(beam_n_mu),
@@ -2240,7 +2246,7 @@ def build_mesh_window_mas_out(
                     cell_mass=edge,
                 )
             else:
-                corr = beam_input_diagonal_correction(
+                corr = beam_theory_diagonal_correction(
                     ps,
                     k_in,
                     ells=ells,
@@ -2249,22 +2255,22 @@ def build_mesh_window_mas_out(
                     mode_scale=mode_scale,
                     cell_mass=edge,
                     l_max_beam=beam_l_max,
-                    ratio=bool(beam_leg_scale),
+                    ratio=bool(beam_diag_as_ratio),
                 )
-                if beam_leg_scale:
+                if beam_diag_as_ratio:
                     leg_scale = corr
                 else:
                     diag_correction = corr
-    elif beam_in_kernel:
+    elif beam_at_output_mode:
         if raw_comb is not None:
-            raise ValueError("beam_in_kernel cannot be combined with raw_comb")
+            raise ValueError("beam_at_output_mode cannot be combined with raw_comb")
         from .multipole_ops import (
             beam_diagonal_correction,
             beam_edge_cell_mass,
-            beam_kernel_bin_masses,
+            beam_output_cell_masses,
         )
 
-        masses, out_group_index = beam_kernel_bin_masses(ps, n_mu=int(beam_n_mu))
+        masses, out_group_index = beam_output_cell_masses(ps, n_mu=int(beam_n_mu))
         edge = beam_edge_cell_mass(ps)
         if particle_mass is not None:
             extra_m = np.asarray(particle_mass, dtype=float)
@@ -2328,12 +2334,12 @@ def predict_mesh_windowed_multipoles(
     particle_mass: ArrayLike | None = None,
     raw_comb: ArrayLike | None = None,
     out_mode_scale_extra: ArrayLike | None = None,
-    beam_in_kernel: bool = False,
-    beam_at_input: bool = False,
+    beam_at_output_mode: bool = False,
+    beam_at_theory_mode: bool = False,
     beam_n_mu: int = 4,
     beam_n_phi: int = 1,
     beam_diag_correction: bool = True,
-    beam_leg_scale: bool = False,
+    beam_diag_as_ratio: bool = False,
     beam_ylm: bool = False,
     beam_ylm_lmax: int = 2,
     n_k_in: int = 80,
@@ -2357,12 +2363,12 @@ def predict_mesh_windowed_multipoles(
         particle_mass=particle_mass,
         raw_comb=raw_comb,
         out_mode_scale_extra=out_mode_scale_extra,
-        beam_in_kernel=beam_in_kernel,
-        beam_at_input=beam_at_input,
+        beam_at_output_mode=beam_at_output_mode,
+        beam_at_theory_mode=beam_at_theory_mode,
         beam_n_mu=beam_n_mu,
         beam_n_phi=beam_n_phi,
         beam_diag_correction=beam_diag_correction,
-        beam_leg_scale=beam_leg_scale,
+        beam_diag_as_ratio=beam_diag_as_ratio,
         beam_ylm=beam_ylm,
         beam_ylm_lmax=beam_ylm_lmax,
     )

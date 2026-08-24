@@ -260,7 +260,12 @@ def _taper_operator_p0(box_ndim, box_len, axis, *, apply_taper=True):
         fps, k_in, weights=w_cic, ells=(0,), mode_scale=w_mas2, renorm_weights=w_cic
     )
     wrong = build_mesh_window_mas_out(
-        fps, k_in, renorm_weights=w_cic, ells=(0,), raw_comb=w_ngp, beam_at_input=False
+        fps,
+        k_in,
+        renorm_weights=w_cic,
+        ells=(0,),
+        raw_comb=w_ngp,
+        beam_at_theory_mode=False,
     )
     p0 = _falling_p0(inner.k_in)
     p_in = np.asarray(inner.apply({0: p0})[0], dtype=float)

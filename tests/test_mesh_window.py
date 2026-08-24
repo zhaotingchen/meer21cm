@@ -585,8 +585,8 @@ def test_cell_sampling_kernel_lowq_matches_level0_mean():
 # ---------------------------------------------------------------------------
 
 
-def test_beam_out_mode_scale_level0_matches_gaussian_attenuation():
-    """Level 0 is the legacy Gaussian B(k_perp)^2 on the box-frame k_perp."""
+def test_beam_out_mode_scale_box_frame_matches_gaussian_attenuation():
+    """frame='box' is the legacy Gaussian B(k_perp)^2 on the box-frame k_perp."""
     from meer21cm.multipole_ops import beam_out_mode_scale
     from meer21cm.power_ops import gaussian_beam_attenuation
     from meer21cm.util import get_nd_slicer
@@ -594,7 +594,7 @@ def test_beam_out_mode_scale_level0_matches_gaussian_attenuation():
     weights = _mask(BOX_NDIM, BOX_LEN)
     fps = _make_fps(0, weights, _far_observer())
     sigma = 12.0
-    got = beam_out_mode_scale(fps, level=0, sigma_beam_in_mpc=sigma)
+    got = beam_out_mode_scale(fps, frame="box", sigma_beam_in_mpc=sigma)
     slicer = get_nd_slicer()
     kx = np.asarray(fps.k_vec[0][slicer[0]], dtype=float)
     ky = np.asarray(fps.k_vec[1][slicer[1]], dtype=float)
@@ -631,7 +631,7 @@ def test_beam_ylm_decomposition_matches_cell_average():
     del get_real_Ylm
 
 
-def test_beam_level1_reduces_to_level0_for_narrow_footprint():
+def test_beam_cells_frame_reduces_to_box_frame_for_narrow_footprint():
     """Constant sigma and n̂ ≈ ẑ recovers the box-frame k_perp Gaussian."""
     from meer21cm.multipole_ops import (
         beam_out_mode_scale,
@@ -661,9 +661,9 @@ def test_beam_level1_reduces_to_level0_for_narrow_footprint():
     ok = (k_abs > 0.02) & (k_abs < 0.10)
     rel = np.abs(mean_b[ok] / np.maximum(lvl0[ok], 1.0e-12) - 1.0)
     assert float(np.median(rel)) < 5e-3
-    # level-0 helper still matches the closed form
+    # box-frame helper still matches the closed form
     assert np.allclose(
-        beam_out_mode_scale(fps, level=0, sigma_beam_in_mpc=sigma),
+        beam_out_mode_scale(fps, frame="box", sigma_beam_in_mpc=sigma),
         lvl0**2,
     )
 
@@ -735,25 +735,25 @@ def test_mesh_window_constant_bin_mass_equals_out_mode_scale():
     c = 0.7
     n_out = len(np.asarray(fps.k1dbins)) - 1
     out_bin_weights = [c * weights for _ in range(n_out)]
-    mat_b3 = build_mesh_window_matrix(
+    mat_out = build_mesh_window_matrix(
         fps, k_in, ells=ELLS, weights=weights, out_bin_weights=out_bin_weights
     )
-    mat_b2 = build_mesh_window_matrix(
+    mat_scale = build_mesh_window_matrix(
         fps,
         k_in,
         ells=ELLS,
         weights=weights,
         out_mode_scale=np.full_like(b_amp, c**2),
     )
-    model_b3 = mat_b3.apply({0: theory_nodes})
-    model_b2 = mat_b2.apply({0: theory_nodes})
+    model_out = mat_out.apply({0: theory_nodes})
+    model_scale = mat_scale.apply({0: theory_nodes})
     for ell in ELLS:
         assert np.allclose(
-            model_b3[ell],
-            model_b2[ell],
+            model_out[ell],
+            model_scale[ell],
             rtol=1e-8,
-            atol=1e-8 * np.max(np.abs(model_b2[ell])),
-        ), f"ell={ell}: constant-mass B3 != scalar B^2"
+            atol=1e-8 * np.max(np.abs(model_scale[ell])),
+        ), f"ell={ell}: constant-mass output-mode kernel != scalar B^2"
 
 
 def test_beam_mode_group_index_partitions_estimator_modes():
@@ -996,21 +996,21 @@ def test_mesh_window_mode_groups_reduce_to_ungrouped():
         ), f"ell={ell}: mu-grouped fill != ungrouped"
 
 
-def test_mesh_window_input_groups_reduce_to_ungrouped():
+def test_mesh_window_theory_groups_reduce_to_ungrouped():
     """Splitting the *theory* shell into |mu| groups is exact for one kernel.
 
-    The input-mode beam path (``in_bin_weights``) sums groups into the
+    The theory-mode beam path (``in_bin_weights``) sums groups into the
     same column, so with a q-independent cube it must reproduce the plain
     matrix bit for bit.  This pins the q-side bookkeeping (shell x group
     partition, additive fill) independently of any beam.
     """
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     weights = _mask(BOX_NDIM, BOX_LEN)
     fps = _make_fps(0, weights, _true_observer())
     k_in = np.geomspace(0.012, 0.16, N_K_IN)
     theory_nodes = _theory_grid(k_in)
-    idx, n_group = beam_input_mode_groups(fps, n_mu=3)
+    idx, n_group = beam_theory_mode_groups(fps, n_mu=3)
     assert n_group == 3
     assert set(np.unique(idx)) == {0, 1, 2}
 
@@ -1034,7 +1034,7 @@ def test_mesh_window_input_groups_reduce_to_ungrouped():
         ), f"ell={ell}: q-grouped fill != ungrouped"
 
 
-def test_beam_input_cell_kernels_group_mean_is_the_exact_perp_moment():
+def test_beam_theory_cell_kernels_group_mean_is_the_exact_perp_moment():
     """u_b = tr(M) - n_b.M.n_b equals the group mean of q_perp,b² per cell.
 
     The cube can only hold one q, so the beam argument is averaged over
@@ -1043,13 +1043,13 @@ def test_beam_input_cell_kernels_group_mean_is_the_exact_perp_moment():
     azimuthal spread of q̂ about n̂_ref is kept.  This is the step that
     a flat-sky ⟨B⟩ over a |k| shell gets wrong.
     """
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     fps = _shot_fps()
     rng = np.random.default_rng(4)
     nhat = rng.normal(size=(600, 3)) + np.array([0.0, 0.0, 6.0])
     nhat /= np.linalg.norm(nhat, axis=1)[:, None]
-    idx, n_group = beam_input_mode_groups(fps, n_mu=3)
+    idx, n_group = beam_theory_mode_groups(fps, n_mu=3)
 
     k_in = np.geomspace(0.02, 0.12, 8)
     edges = np.concatenate(([0.0], 0.5 * (k_in[:-1] + k_in[1:]), [np.inf]))
@@ -1076,8 +1076,8 @@ def test_beam_input_cell_kernels_group_mean_is_the_exact_perp_moment():
                 assert abs(float(u_moment[c]) - brute) <= 1e-10 * max(brute, 1e-30)
 
 
-def test_beam_input_matrix_reduces_to_nobeam_without_a_beam():
-    """beam_at_input with sigma_beam_ch=None is the plain MAS-out matrix."""
+def test_beam_theory_matrix_reduces_to_nobeam_without_a_beam():
+    """beam_at_theory_mode with sigma_beam_ch=None is the plain MAS-out matrix."""
     from meer21cm.window import build_mesh_window_mas_out
 
     fps = _shot_fps()
@@ -1088,7 +1088,12 @@ def test_beam_input_matrix_reduces_to_nobeam_without_a_beam():
 
     base = build_mesh_window_mas_out(fps, k_in, renorm_weights=counts, ells=ELLS)
     beam = build_mesh_window_mas_out(
-        fps, k_in, renorm_weights=counts, ells=ELLS, beam_at_input=True, beam_n_mu=3
+        fps,
+        k_in,
+        renorm_weights=counts,
+        ells=ELLS,
+        beam_at_theory_mode=True,
+        beam_n_mu=3,
     )
     m_base = base.apply({0: theory_nodes})
     m_beam = beam.apply({0: theory_nodes})
@@ -1098,7 +1103,7 @@ def test_beam_input_matrix_reduces_to_nobeam_without_a_beam():
             m_base[ell],
             rtol=1e-8,
             atol=1e-8 * np.max(np.abs(m_base[ell])),
-        ), f"ell={ell}: beam_at_input changed the no-beam matrix"
+        ), f"ell={ell}: beam_at_theory_mode changed the no-beam matrix"
 
 
 def test_mesh_window_leg_scale_multiplies_only_its_own_ell():
@@ -1136,12 +1141,12 @@ def test_mesh_window_leg_scale_multiplies_only_its_own_ell():
         )
 
 
-def test_beam_input_n_mu_4_partitions_all_theory_modes():
+def test_beam_theory_n_mu_4_partitions_all_theory_modes():
     """Production n_mu=4 covers every rFFT mode; groups are nonempty."""
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     fps = _shot_fps()
-    idx, n_group = beam_input_mode_groups(fps, n_mu=4)
+    idx, n_group = beam_theory_mode_groups(fps, n_mu=4)
     assert n_group == 4
     flat = np.asarray(idx).ravel()
     assert set(np.unique(flat)) == {0, 1, 2, 3}
@@ -1149,16 +1154,16 @@ def test_beam_input_n_mu_4_partitions_all_theory_modes():
     assert np.all(counts > 0)
 
 
-def test_beam_input_n_mu_4_groups_split_q_perp():
+def test_beam_theory_n_mu_4_groups_split_q_perp():
     """Low-|μ| groups have larger ⟨q_⊥²⟩ than high-|μ| groups.
 
     That is the n_mu=4 leakage split: the same |q| is no longer assigned
     one shell-mean ⟨q_⊥²⟩ ~ (2/3) q² for every direction.
     """
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     fps = _shot_fps()
-    idx, n_group = beam_input_mode_groups(fps, n_mu=4)
+    idx, n_group = beam_theory_mode_groups(fps, n_mu=4)
     q_vec = np.stack(
         [
             np.broadcast_to(np.asarray(c, dtype=float), fps.k_mode.shape).ravel()
@@ -1180,7 +1185,7 @@ def test_beam_input_n_mu_4_groups_split_q_perp():
 
 
 def _beamed_ps_namespace():
-    """Minimal duck type with a chromatic Gaussian for B5 cell-space tests."""
+    """Minimal duck type with a chromatic Gaussian for theory-mode beam tests."""
     from astropy.cosmology import Planck18
     from types import SimpleNamespace
 
@@ -1208,20 +1213,20 @@ def _beamed_ps_namespace():
 def test_beam_diag_additive_and_ratio_are_both_defined():
     """Both κ=0 corrections run; the quadrupole is not a no-op.
 
-    Production is additive (beam_leg_scale=False).  The ratio form is
+    Production is additive (beam_diag_as_ratio=False).  The ratio form is
     still exact on the diagonal; it is not the default because it
     rescales the n_mu-split leakage.
     """
-    from meer21cm.multipole_ops import beam_input_diagonal_correction
+    from meer21cm.multipole_ops import beam_theory_diagonal_correction
 
     ps = _beamed_ps_namespace()
     n_cell = int(np.asarray(ps.pix_coor_in_box).reshape(-1, 3).shape[0])
     k_in = np.geomspace(0.02, 0.12, 6)
     cell_mass = np.ones(n_cell, dtype=float)
-    ratio = beam_input_diagonal_correction(
+    ratio = beam_theory_diagonal_correction(
         ps, k_in, ells=(0, 2), n_mu=4, ratio=True, cell_mass=cell_mass
     )
-    add = beam_input_diagonal_correction(
+    add = beam_theory_diagonal_correction(
         ps, k_in, ells=(0, 2), n_mu=4, ratio=False, cell_mass=cell_mass
     )
     assert set(ratio) == set(add)
@@ -1230,35 +1235,35 @@ def test_beam_diag_additive_and_ratio_are_both_defined():
     assert float(np.max(np.abs(np.asarray(ratio[(2, 0)]) - 1.0))) > 1e-3
 
 
-def test_beam_input_n_phi_1_matches_mu_only():
+def test_beam_theory_n_phi_1_matches_mu_only():
     """n_phi=1 is bit-identical to the |μ|-only grouping."""
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     fps = _shot_fps()
-    a, na = beam_input_mode_groups(fps, n_mu=4)
-    b, nb = beam_input_mode_groups(fps, n_mu=4, n_phi=1)
+    a, na = beam_theory_mode_groups(fps, n_mu=4)
+    b, nb = beam_theory_mode_groups(fps, n_mu=4, n_phi=1)
     assert na == nb == 4
     assert np.array_equal(a, b)
 
 
-def test_beam_input_n_phi_4_partitions_all_modes():
+def test_beam_theory_n_phi_4_partitions_all_modes():
     """n_mu=4 × n_phi=4 covers every rFFT mode; all 16 groups are nonempty."""
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     fps = _shot_fps()
-    idx, n_group = beam_input_mode_groups(fps, n_mu=4, n_phi=4)
+    idx, n_group = beam_theory_mode_groups(fps, n_mu=4, n_phi=4)
     assert n_group == 16
     flat = np.asarray(idx).ravel()
     assert set(np.unique(flat)) == set(range(16))
     assert np.all(np.bincount(flat, minlength=16) > 0)
 
 
-def test_beam_input_phi_bins_have_different_M_axes():
+def test_beam_theory_phi_bins_have_different_M_axes():
     """Two φ bins at the same |μ| have different in-plane M principal axes."""
-    from meer21cm.multipole_ops import beam_input_mode_groups
+    from meer21cm.multipole_ops import beam_theory_mode_groups
 
     fps = _shot_fps()
-    idx, _n = beam_input_mode_groups(fps, n_mu=4, n_phi=4)
+    idx, _n = beam_theory_mode_groups(fps, n_mu=4, n_phi=4)
     nref = np.array(
         [float(np.mean(np.asarray(c, dtype=float))) for c in fps.los_xhat],
         dtype=float,

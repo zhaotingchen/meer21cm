@@ -47,7 +47,7 @@ from .multipole_ops import (
     _window_effective_weights,
     accumulate_window_multipoles,
     beam_edge_cell_mass,
-    beam_input_cell_kernels,
+    beam_theory_cell_kernels,
     make_galaxy_poisson_mean_density,
     map_sampling_mode_scale,
     propose_k1dbins_window,
@@ -819,9 +819,9 @@ class MultipolePowerSpectrum(
         ``window_taper_axes`` is set).  Theory input is the isotropic
         monopole.  ``'smooth'`` is the Hankel / Wigner window matrix
         (Kaiser :math:`P_\\ell` in, including optional wide-angle resum).
-    beam_n_mu, beam_at_input, beam_leg_scale, ...
-        Forwarded to the mesh input-mode beam model
-        (``beam_at_input``).  Defaults are ``n_mu=4`` and additive
+    beam_n_mu, beam_at_theory_mode, beam_diag_as_ratio, ...
+        Forwarded to the mesh theory-mode beam model
+        (``beam_at_theory_mode``).  Defaults are ``n_mu=4`` and additive
         :math:`\\kappa=0`.
     """
 
@@ -875,12 +875,12 @@ class MultipolePowerSpectrum(
         los_observer=None,
         window="mesh",
         window_ells=(0, 2, 4),
-        beam_at_input=True,
+        beam_at_theory_mode=True,
         beam_n_mu=4,
         beam_n_phi=1,
         beam_diag_correction=True,
-        beam_leg_scale=False,
-        beam_in_kernel=False,
+        beam_diag_as_ratio=False,
+        beam_at_output_mode=False,
         beam_ylm=False,
         beam_ylm_lmax=2,
         theory_nmu=64,
@@ -977,12 +977,12 @@ class MultipolePowerSpectrum(
         self._window_kind = str(window).lower()
         if self._window_kind not in ("mesh", "smooth"):
             raise ValueError("window must be 'mesh' or 'smooth'")
-        self._beam_at_input = bool(beam_at_input)
+        self._beam_at_theory_mode = bool(beam_at_theory_mode)
         self._beam_n_mu = int(beam_n_mu)
         self._beam_n_phi = int(beam_n_phi)
         self._beam_diag_correction = bool(beam_diag_correction)
-        self._beam_leg_scale = bool(beam_leg_scale)
-        self._beam_in_kernel = bool(beam_in_kernel)
+        self._beam_diag_as_ratio = bool(beam_diag_as_ratio)
+        self._beam_at_output_mode = bool(beam_at_output_mode)
         self._beam_ylm = bool(beam_ylm)
         self._beam_ylm_lmax = int(beam_ylm_lmax)
         self.theory_nmu = int(theory_nmu)
@@ -1039,7 +1039,7 @@ class MultipolePowerSpectrum(
 
     @property
     def beam_n_mu(self) -> int:
-        """Number of :math:`|\\mu|` groups for the input-mode beam kernel."""
+        """Number of :math:`|\\mu|` groups for the theory-mode beam kernel."""
         return self._beam_n_mu
 
     @beam_n_mu.setter
@@ -1049,13 +1049,35 @@ class MultipolePowerSpectrum(
             self.clean_cache(self.window_dep_attr)
 
     @property
-    def beam_at_input(self) -> bool:
+    def beam_at_theory_mode(self) -> bool:
         """If True, attach the dish beam at the theory mode :math:`\\mathbf q`."""
-        return self._beam_at_input
+        return self._beam_at_theory_mode
 
-    @beam_at_input.setter
-    def beam_at_input(self, value: bool) -> None:
-        self._beam_at_input = bool(value)
+    @beam_at_theory_mode.setter
+    def beam_at_theory_mode(self, value: bool) -> None:
+        self._beam_at_theory_mode = bool(value)
+        if "window_dep_attr" in dir(self):
+            self.clean_cache(self.window_dep_attr)
+
+    @property
+    def beam_diag_as_ratio(self) -> bool:
+        """If True, apply the :math:`\\kappa=0` beam correction as a ratio."""
+        return self._beam_diag_as_ratio
+
+    @beam_diag_as_ratio.setter
+    def beam_diag_as_ratio(self, value: bool) -> None:
+        self._beam_diag_as_ratio = bool(value)
+        if "window_dep_attr" in dir(self):
+            self.clean_cache(self.window_dep_attr)
+
+    @property
+    def beam_at_output_mode(self) -> bool:
+        """If True, attach the dish beam at the output Fourier mode."""
+        return self._beam_at_output_mode
+
+    @beam_at_output_mode.setter
+    def beam_at_output_mode(self, value: bool) -> None:
+        self._beam_at_output_mode = bool(value)
         if "window_dep_attr" in dir(self):
             self.clean_cache(self.window_dep_attr)
 
@@ -1169,7 +1191,7 @@ class MultipolePowerSpectrum(
         """
         return np.asarray(self._renorm_weights(), dtype=float)
 
-    def _warn_inner_taper_no_b5(self) -> None:
+    def _warn_inner_taper_no_theory_beam(self) -> None:
         global _INNER_TAPER_BEAM_WARNED
         if getattr(self, "sigma_beam_ch", None) is None:
             return
@@ -1178,7 +1200,7 @@ class MultipolePowerSpectrum(
         _INNER_TAPER_BEAM_WARNED = True
         logger.warning(
             "Post-deposit taper uses inner-mode (tapered CIC weights); "
-            "input-mode beam (beam_at_input) is not applied on this path."
+            "theory-mode beam (beam_at_theory_mode) is not applied on this path."
         )
 
     def _use_mas_out(self) -> bool:
@@ -1191,9 +1213,9 @@ class MultipolePowerSpectrum(
         return str(self.grid_scheme).lower() != "nnb"
 
     def _use_beam(self) -> bool:
-        """True when an input-mode dish beam is attached to the mesh window."""
+        """True when a theory-mode dish beam is attached to the mesh window."""
         return (
-            bool(self.beam_at_input)
+            bool(self._beam_at_theory_mode)
             and getattr(self, "sigma_beam_ch", None) is not None
         )
 
@@ -1219,7 +1241,7 @@ class MultipolePowerSpectrum(
         if self._use_inner_mode_taper():
             # Data: CIC then T on weights (apply_taper_to_field).  MAS-out
             # with T×NGP is the wrong operator when T varies on CIC scales.
-            self._warn_inner_taper_no_b5()
+            self._warn_inner_taper_no_theory_beam()
             weights = self._inner_mode_taper_weights()
             return build_mesh_window_matrix(
                 self,
@@ -1238,12 +1260,12 @@ class MultipolePowerSpectrum(
                 renorm_weights=self._renorm_weights(),
                 ells=ells,
                 mode_scale=mode_scale,
-                beam_at_input=self._use_beam(),
-                beam_in_kernel=self._beam_in_kernel and not self._use_beam(),
+                beam_at_theory_mode=self._use_beam(),
+                beam_at_output_mode=self._beam_at_output_mode and not self._use_beam(),
                 beam_n_mu=self._beam_n_mu,
                 beam_n_phi=self._beam_n_phi,
                 beam_diag_correction=self._beam_diag_correction,
-                beam_leg_scale=self._beam_leg_scale,
+                beam_diag_as_ratio=self._beam_diag_as_ratio,
                 beam_ylm=self._beam_ylm,
                 beam_ylm_lmax=self._beam_ylm_lmax,
                 columns=columns,
@@ -1287,7 +1309,7 @@ class MultipolePowerSpectrum(
             return list(range(n_in))
         mode_scale = self._window_mode_scale()
         edge = beam_edge_cell_mass(self)
-        gi, kernel = beam_input_cell_kernels(
+        gi, kernel = beam_theory_cell_kernels(
             self,
             k_in,
             n_mu=self._beam_n_mu,
@@ -1316,7 +1338,7 @@ class MultipolePowerSpectrum(
 
         Mesh without beam kernels: ``kwargs`` is a dict for
         :func:`~meer21cm.window.run_mesh_window_columns`.  Mesh with
-        input-mode beam kernels sets ``use_worker_object=True`` so the pool must be
+        theory-mode beam kernels sets ``use_worker_object=True`` so the pool must be
         started with :func:`init_window_column_worker`.
         """
         if self.window_kind == "smooth":
@@ -1338,7 +1360,7 @@ class MultipolePowerSpectrum(
                     chunks.append(list(cols[idx : idx + take]))
                     idx += take
         if self._use_inner_mode_taper():
-            self._warn_inner_taper_no_b5()
+            self._warn_inner_taper_no_theory_beam()
             weights = self._inner_mode_taper_weights()
             build_kwargs = dict(
                 ps=self,

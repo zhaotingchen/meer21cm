@@ -9,7 +9,7 @@ Helpers here cover:
 
 - fine theory / window-measure :math:`k` grids (``propose_k_in``, …);
 - map-sampling and dish-beam transfers for the mesh window
-  (``map_sampling_mode_scale``, ``beam_input_cell_kernels``, …);
+  (``map_sampling_mode_scale``, ``beam_theory_cell_kernels``, …);
 - selection fields and pickleable workers for measuring survey-window
   multipoles :math:`W_L(k)` (``run_smooth_window_realization``, …).
 
@@ -49,11 +49,11 @@ __all__ = [
     "beam_cell_sigma_perp",
     "beam_diagonal_correction",
     "beam_edge_cell_mass",
-    "beam_input_cell_kernels",
-    "beam_input_cell_masses",
-    "beam_input_diagonal_correction",
-    "beam_input_mode_groups",
-    "beam_kernel_bin_masses",
+    "beam_output_cell_masses",
+    "beam_theory_cell_kernels",
+    "beam_theory_cell_masses",
+    "beam_theory_diagonal_correction",
+    "beam_theory_mode_groups",
     "beam_mode_group_index",
     "beam_out_mode_scale",
     "beam_ylm_alpha",
@@ -317,7 +317,7 @@ def mean_gaussian_beam_on_modes(
 def beam_out_mode_scale(
     ps,
     *,
-    level: int = 1,
+    frame: str = "cells",
     coherent: bool = True,
     ell_max: int = 16,
     nmu: int = 64,
@@ -334,11 +334,11 @@ def beam_out_mode_scale(
     (or :math:`\langle B^2\rangle` if ``coherent=False``) on the rFFT grid
     of ``ps``.
 
-    Level 0: box-frame :math:`k_\perp=\sqrt{k_x^2+k_y^2}` and the
+    ``frame='box'``: box-frame :math:`k_\perp=\sqrt{k_x^2+k_y^2}` and the
     channel-mean ``sigma_beam_in_mpc`` — the legacy
     :func:`~meer21cm.power_ops.gaussian_beam_attenuation` squared.
 
-    Level 1: uniform average over map cells
+    ``frame='cells'`` (default): uniform average over map cells
     :math:`B_b=\exp[-\tfrac12 k^2(1-\mu_b^2)\sigma_{\perp,b}^2]`,
     evaluated with a real-:math:`Y_{LM}` addition theorem.  ``coherent``
     selects :math:`\langle B\rangle^2` versus :math:`\langle B^2\rangle`.
@@ -351,17 +351,20 @@ def beam_out_mode_scale(
     ky = np.asarray(ps.k_vec[1][slicer[1]], dtype=float)
     kz = np.asarray(ps.k_vec[2][slicer[2]], dtype=float)
 
-    if int(level) == 0:
+    frame_s = str(frame).lower()
+    if frame_s not in ("box", "cells"):
+        raise ValueError(
+            f"beam_out_mode_scale frame must be 'box' or 'cells'; got {frame!r}"
+        )
+
+    if frame_s == "box":
         if sigma_beam_in_mpc is None:
             sigma_beam_in_mpc = getattr(ps, "sigma_beam_in_mpc", None)
         if sigma_beam_in_mpc is None:
-            raise ValueError("beam_out_mode_scale level 0 needs sigma_beam_in_mpc")
+            raise ValueError("beam_out_mode_scale frame='box' needs sigma_beam_in_mpc")
         k_perp = np.sqrt(kx**2 + ky**2 + 0.0 * kz)
         b_amp = gaussian_beam_attenuation(k_perp, float(sigma_beam_in_mpc))
         return b_amp**2
-
-    if int(level) != 1:
-        raise ValueError(f"beam_out_mode_scale level must be 0 or 1; got {level}")
 
     if sigma_beam_ch_in_mpc is None:
         sigma_beam_ch_in_mpc = getattr(ps, "sigma_beam_ch_in_mpc", None)
@@ -369,7 +372,9 @@ def beam_out_mode_scale(
         if sigma_beam_in_mpc is None:
             sigma_beam_in_mpc = getattr(ps, "sigma_beam_in_mpc", None)
         if sigma_beam_in_mpc is None:
-            raise ValueError("beam_out_mode_scale level 1 needs sigma_beam_ch_in_mpc")
+            raise ValueError(
+                "beam_out_mode_scale frame='cells' needs sigma_beam_ch_in_mpc"
+            )
         sigma_beam_ch_in_mpc = np.array([float(sigma_beam_in_mpc)])
     sig_ch = np.atleast_1d(np.asarray(sigma_beam_ch_in_mpc, dtype=float))
     k_abs = np.sqrt(kx**2 + ky**2 + kz**2)
@@ -770,8 +775,9 @@ def beam_diagonal_correction(
 
     so it costs cell moments, no FFTs.
 
-    A cell mass that does not depend on :math:`\hat k` (any B1/B2/B3
-    mean field) only ever supplies the :math:`L=0` term.  That is exact
+    A cell mass that does not depend on :math:`\hat k` (box-frame or
+    cell-mean scalar :math:`B^2`, or an output-mode mean field) only ever
+    supplies the :math:`L=0` term.  That is exact
     for :math:`\ell=0` and badly wrong above it — the estimator's
     :math:`Y_{\ell m}(\hat n)` leg couples to the beam's own :math:`L`
     structure, and :math:`\ell` needs :math:`L\le\ell`.  Measured on the
@@ -799,7 +805,7 @@ def beam_diagonal_correction(
     if e_b.shape != (n_cell,):
         raise ValueError(f"cell_mass shape {e_b.shape} != n_cell {n_cell}")
     if masses is None:
-        masses, group_index = beam_kernel_bin_masses(ps, group_index=group_index)
+        masses, group_index = beam_output_cell_masses(ps, group_index=group_index)
     masses = np.asarray(masses, dtype=float)
     g_flat = np.asarray(group_index, dtype=np.int64).ravel()
 
@@ -854,11 +860,11 @@ def beam_diagonal_correction(
     }
 
 
-def beam_kernel_bin_masses(
+def beam_output_cell_masses(
     ps, *, n_mu: int = 1, ell_max: int = 8, nmu: int = 32, group_index=None
 ):
     r"""
-    Per-group, per-cell beam amplitudes for the B3 kernel.
+    Per-group, per-cell beam amplitudes for the output-mode kernel.
 
     Row :math:`g` is :math:`\langle\tilde B_b(\mathbf k)\rangle` averaged
     over the estimator modes of group :math:`g`
@@ -868,7 +874,7 @@ def beam_kernel_bin_masses(
 
     Pass ``masses[g] * beam_edge_cell_mass(ps)`` as ``particle_mass`` of
     :func:`~meer21cm.window.ngp_raw_cell_comb` for that group, or set
-    ``beam_in_kernel=True`` on
+    ``beam_at_output_mode=True`` on
     :func:`~meer21cm.window.build_mesh_window_mas_out`.
 
     Returns ``(masses, group_index)`` with ``masses`` of shape
@@ -933,7 +939,7 @@ def _phi_around_nref(khat, nref):
     return np.arctan2(q2, q1)
 
 
-def beam_input_mode_groups(ps, *, n_mu: int = 4, n_phi: int = 1):
+def beam_theory_mode_groups(ps, *, n_mu: int = 4, n_phi: int = 1):
     r"""
     Group the **theory** modes :math:`\mathbf q` by :math:`|\mu|` and
     optionally azimuth :math:`\phi` around :math:`\hat n_{\mathrm{ref}}`.
@@ -985,7 +991,7 @@ def beam_input_mode_groups(ps, *, n_mu: int = 4, n_phi: int = 1):
     return index.reshape(shape).astype(np.int64), n_mu_i * n_phi_i
 
 
-def beam_input_cell_masses(
+def beam_theory_cell_masses(
     ps,
     k_in,
     *,
@@ -995,19 +1001,19 @@ def beam_input_cell_masses(
     cell_mass=None,
 ):
     r"""
-    Per-cell beam masses of the input-mode kernel (``beam_at_input``).
+    Per-cell beam masses of the theory-mode kernel (``beam_at_theory_mode``).
 
-    Shared by :func:`beam_input_cell_kernels` (which deposits them) and
-    :func:`beam_input_diagonal_correction` (which needs the same masses
+    Shared by :func:`beam_theory_cell_kernels` (which deposits them) and
+    :func:`beam_theory_diagonal_correction` (which needs the same masses
     to subtract the model's own :math:`\kappa=0` term).  See
-    :func:`beam_input_cell_kernels` for the derivation.
+    :func:`beam_theory_cell_kernels` for the derivation.
 
     Returns ``(index, shell_edges, mass_fn)``; ``mass_fn(j, g)`` gives the
     length-``n_cell`` mass for column ``j`` and group ``g`` (``None`` if
     that shell/group intersection is empty).
     """
     k_in_np = np.asarray(k_in, dtype=float)
-    index, _n_group = beam_input_mode_groups(ps, n_mu=n_mu, n_phi=n_phi)
+    index, _n_group = beam_theory_mode_groups(ps, n_mu=n_mu, n_phi=n_phi)
     g_flat = index.ravel()
 
     if cell_mass is None:
@@ -1055,7 +1061,7 @@ def beam_input_cell_masses(
     return index, edges, mass_fn
 
 
-def beam_input_cell_kernels(
+def beam_theory_cell_kernels(
     ps,
     k_in,
     *,
@@ -1065,7 +1071,7 @@ def beam_input_cell_kernels(
     cell_mass=None,
 ):
     r"""
-    Input-mode beam kernels for :func:`~meer21cm.window.build_mesh_window_matrix`.
+    Theory-mode beam kernels for :func:`~meer21cm.window.build_mesh_window_matrix`.
 
     The observed map cell :math:`b` sees the field smoothed by its own
     beam, so the estimator leg is
@@ -1110,7 +1116,7 @@ def beam_input_cell_kernels(
     :math:`|\mu|` but different azimuth see different beams.  One cube per
     group averages that away, and the loss does **not** shrink with
     ``n_mu``.  The per-mode diagonal of
-    :func:`beam_input_diagonal_correction` restores that azimuthal
+    :func:`beam_theory_diagonal_correction` restores that azimuthal
     structure; the cube then only has to carry the leakage.
 
     Parameters
@@ -1120,7 +1126,7 @@ def beam_input_cell_kernels(
         (the same edges :func:`~meer21cm.window.build_mesh_window_matrix`
         uses) set the :math:`|q|` membership.
     n_mu :
-        Number of :math:`|\mu|` groups (:func:`beam_input_mode_groups`).
+        Number of :math:`|\mu|` groups (:func:`beam_theory_mode_groups`).
     mode_scale :
         Optional same-:math:`q` transfer used to weight the group mean of
         :math:`M` (should be the ``mode_scale`` passed to the matrix).
@@ -1137,7 +1143,7 @@ def beam_input_cell_kernels(
     """
     from .window import ngp_raw_cell_comb
 
-    index, _edges, mass_fn = beam_input_cell_masses(
+    index, _edges, mass_fn = beam_theory_cell_masses(
         ps, k_in, n_mu=n_mu, n_phi=n_phi, mode_scale=mode_scale, cell_mass=cell_mass
     )
 
@@ -1150,7 +1156,7 @@ def beam_input_cell_kernels(
     return index, kernel_fn
 
 
-def beam_input_diagonal_correction(
+def beam_theory_diagonal_correction(
     ps,
     k_in,
     *,
@@ -1165,14 +1171,14 @@ def beam_input_diagonal_correction(
     clip: float = 8.0,
 ):
     r"""
-    Exact per-mode beam diagonal minus the input-mode group cube's own diagonal.
+    Exact per-mode beam diagonal minus the theory-mode group cube's own diagonal.
 
     The mesh kernel's :math:`\boldsymbol\kappa=0` (i.e.
     :math:`\mathbf q=\mathbf k`) term is
     :math:`S^{\ell m}(\mathbf k)S^{0}(\mathbf k)` with
     :math:`S^{\ell m}=\langle w\tilde B(\mathbf k)Y_{\ell m}(\hat n)\rangle`.
     A real-space cube can only hold one :math:`\hat k`, so
-    :func:`beam_input_cell_kernels` deposits the group mean and loses the
+    :func:`beam_theory_cell_kernels` deposits the group mean and loses the
     beam's azimuthal structure.  Here both sides are evaluated in cell
     space — exact via :func:`exact_beam_legs` (a :math:`Y_{LM}` addition
     theorem, no FFTs), group mean via the *same* masses the cube uses —
@@ -1207,7 +1213,7 @@ def beam_input_diagonal_correction(
     from .spherical import get_real_Ylm, unit_khat_from_k_vec
 
     ells_t = tuple(int(e) for e in ells)
-    index, edges, mass_fn = beam_input_cell_masses(
+    index, edges, mass_fn = beam_theory_cell_masses(
         ps, k_in, n_mu=n_mu, n_phi=n_phi, mode_scale=mode_scale, cell_mass=cell_mass
     )
     g_flat = np.asarray(index, dtype=np.int64).ravel()
@@ -1326,7 +1332,7 @@ def beam_ylm_cell_masses(
 
     :math:`c_{LM,j}(b)=m_b\,f_L(k_{\mathrm{in}}[j]\,\sigma_b)\,
     Y_{LM}(\hat n_b)`.  ``f_L`` is frozen at the theory node (the same
-    Voronoi-shell convention as :func:`beam_input_cell_kernels`).
+    Voronoi-shell convention as :func:`beam_theory_cell_kernels`).
     """
     from .spherical import get_real_Ylm
 

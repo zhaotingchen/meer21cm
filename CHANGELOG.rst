@@ -35,6 +35,14 @@ Enhancements
 
 Changed
 +++++++
+* rename dish-beam kwargs and helpers to physical names:
+  ``beam_at_input`` → ``beam_at_theory_mode``,
+  ``beam_in_kernel`` → ``beam_at_output_mode``,
+  ``beam_leg_scale`` → ``beam_diag_as_ratio``;
+  ``beam_input_*`` → ``beam_theory_*``;
+  ``beam_kernel_bin_masses`` → ``beam_output_cell_masses``;
+  ``beam_out_mode_scale(level=)`` → ``frame='box'|'cells'``.
+  Old names remain as ``DeprecationWarning`` aliases for one cycle.
 * rename ``multipole_power.py`` → ``multipole.py`` and split helpers from
   ``multipole_model.py`` into ``multipole_ops.py`` (same layout as
   ``power.py`` / ``power_ops.py``).  Classes
