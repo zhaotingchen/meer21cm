@@ -414,6 +414,13 @@ def project_particle_to_regular_grid(
     )
     shift_mat = np.array([shift_mat[i].ravel() for i in range(3)]).T
     mass_w = particle_mass * particle_weights
+    # One stencil for every scheme: NGP 1 cell, CIC/TSC 3³, PCS 5³.
+    # ``project_function`` zeros cells outside the kernel support, then
+    # all in-box corners are concatenated and scattered once per array.
+    flats = []
+    w_mass = []
+    w_wei = []
+    w_cnt = []
     for sh in shift_mat:
         s_shift = particle_s + sh[None, :]
         wprod = np.prod(project_function(s_shift, grid_scheme), axis=1)
@@ -427,13 +434,16 @@ def project_particle_to_regular_grid(
         ix = indx_shift[indx_sel, 0]
         iy = indx_shift[indx_sel, 1]
         iz = indx_shift[indx_sel, 2]
-        flat = ix * nynz + iy * nz + iz
         wsel = wprod[indx_sel]
-        mesh_mass += np.bincount(flat, weights=mass_w[indx_sel] * wsel, minlength=nmesh)
-        mesh_weights += np.bincount(
-            flat, weights=particle_weights[indx_sel] * wsel, minlength=nmesh
-        )
-        mesh_counts += np.bincount(flat, weights=wsel, minlength=nmesh)
+        flats.append(ix * nynz + iy * nz + iz)
+        w_mass.append(mass_w[indx_sel] * wsel)
+        w_wei.append(particle_weights[indx_sel] * wsel)
+        w_cnt.append(wsel)
+    if flats:
+        flat = np.concatenate(flats)
+        mesh_mass = np.bincount(flat, weights=np.concatenate(w_mass), minlength=nmesh)
+        mesh_weights = np.bincount(flat, weights=np.concatenate(w_wei), minlength=nmesh)
+        mesh_counts = np.bincount(flat, weights=np.concatenate(w_cnt), minlength=nmesh)
     mesh_mass = mesh_mass.reshape(nx, ny, nz)
     mesh_weights = mesh_weights.reshape(nx, ny, nz)
     mesh_counts = mesh_counts.reshape(nx, ny, nz)
