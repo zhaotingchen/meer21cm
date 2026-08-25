@@ -1179,7 +1179,7 @@ class MockSimulation(PowerSpectrum):
         """
         Project a box mock field onto the sparse HEALPix map (optional harmonic beam smoothing).
 
-        Gridding uses :meth:`~meer21cm.power.PowerSpectrum.grid_field_to_sky_map` on LOS
+        Gridding uses :meth:`~meer21cm.grid.LightconeGriddingMixin.grid_field_to_sky_map` on LOS
         chunks; sums and voxel counts are merged like the curved-sky WCS path. Beam
         convolution uses :meth:`~meer21cm.dataanalysis.Specification.convolve_data`
         with ``kernel=None`` (harmonic smoothing).

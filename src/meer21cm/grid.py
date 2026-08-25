@@ -308,6 +308,10 @@ def particle_to_mesh_distance(
     The distance is in the unit of the cell size.
     For particles outside the box, the nearest mesh center is the one on the boundary.
 
+    Cell membership is uniform-grid floor indexing
+    (``floor(x / dx)``, clipped to ``[0, n-1]``), equivalent to
+    ``digitize`` on ``linspace(0, L, n+1)`` for a regular mesh.
+
     Parameters
     ----------
         particle_pos: array.
@@ -324,24 +328,19 @@ def particle_to_mesh_distance(
         indx_grid: array.
             The index of the nearest mesh center.
     """
+    particle_pos = np.asarray(particle_pos)
+    box_len = np.asarray(box_len, dtype=float)
+    box_ndim = np.asarray(box_ndim, dtype=int)
     box_resol = box_len / box_ndim
-    mesh_edges = [np.linspace(0, box_len[i], box_ndim[i] + 1) for i in range(3)]
-    mesh_cen = [(mesh_edges[i][:-1] + mesh_edges[i][1:]) / 2 for i in range(3)]
     indx_grid = []
     for i in range(3):
-        indx_i = np.digitize(particle_pos[:, i], mesh_edges[i]) - 1
-        # if particle is outside the box, set to 0 or box_ndim-1 as appropriate
-        indx_i[indx_i < 0] = 0
-        indx_i[indx_i >= box_ndim[i]] = box_ndim[i] - 1
-        indx_grid += [
-            indx_i,
-        ]
-    mesh_cen = [
-        (np.linspace(0, box_ndim[i] - 1, box_ndim[i]) + 0.5) * box_resol[i]
-        for i in range(3)
-    ]
-    particle_pos_mesh = [mesh_cen[i][indx_grid[i]] for i in range(3)]
-    particle_pos_mesh = np.array(particle_pos_mesh).T
+        indx_i = np.floor(particle_pos[:, i] / box_resol[i]).astype(np.int64)
+        indx_i = np.clip(indx_i, 0, int(box_ndim[i]) - 1)
+        indx_grid.append(indx_i)
+    particle_pos_mesh = np.stack(
+        [(indx_grid[i] + 0.5) * box_resol[i] for i in range(3)],
+        axis=1,
+    )
     return (particle_pos - particle_pos_mesh) / box_resol[None, :], indx_grid
 
 
@@ -394,10 +393,15 @@ def project_particle_to_regular_grid(
         particle_mass = np.ones(len(particle_pos))
     if particle_weights is None:
         particle_weights = np.ones(len(particle_pos))
+    box_len = np.asarray(box_len, dtype=float)
+    box_ndim = np.asarray(box_ndim, dtype=int)
     box_resol = box_len / box_ndim
-    mesh_mass = np.zeros(box_ndim)
-    mesh_weights = np.zeros(box_ndim)
-    mesh_counts = np.zeros(box_ndim)
+    nx, ny, nz = (int(box_ndim[0]), int(box_ndim[1]), int(box_ndim[2]))
+    nmesh = nx * ny * nz
+    nynz = ny * nz
+    mesh_mass = np.zeros(nmesh)
+    mesh_weights = np.zeros(nmesh)
+    mesh_counts = np.zeros(nmesh)
     par_pos = particle_pos + shift * box_resol[None, :]
     particle_s, indx_grid = particle_to_mesh_distance(par_pos, box_len, box_ndim)
     indx_grid = np.array(indx_grid).T
@@ -409,30 +413,30 @@ def project_particle_to_regular_grid(
         indexing="ij",
     )
     shift_mat = np.array([shift_mat[i].ravel() for i in range(3)]).T
-    for shift in shift_mat:
-        s_shift = particle_s + shift[None, :]
-        grid_func_shift = project_function(s_shift, grid_scheme)
-        indx_shift = (indx_grid - shift[None, :]).astype("int")
-        indx_sel = np.prod(indx_shift >= 0, axis=1)
-        indx_sel *= np.prod(indx_shift < box_ndim[None, :], axis=1)
-        indx_sel = indx_sel.astype("bool")
-        np.add.at(
-            mesh_mass,
-            tuple(indx_shift[indx_sel].T),
-            (particle_mass * particle_weights * np.prod(grid_func_shift, axis=1))[
-                indx_sel
-            ],
+    mass_w = particle_mass * particle_weights
+    for sh in shift_mat:
+        s_shift = particle_s + sh[None, :]
+        wprod = np.prod(project_function(s_shift, grid_scheme), axis=1)
+        indx_shift = (indx_grid - sh[None, :]).astype(np.int64)
+        indx_sel = np.all(
+            (indx_shift >= 0) & (indx_shift < box_ndim[None, :]),
+            axis=1,
         )
-        np.add.at(
-            mesh_weights,
-            tuple(indx_shift[indx_sel].T),
-            (particle_weights * np.prod(grid_func_shift, axis=1))[indx_sel],
+        if not np.any(indx_sel):
+            continue
+        ix = indx_shift[indx_sel, 0]
+        iy = indx_shift[indx_sel, 1]
+        iz = indx_shift[indx_sel, 2]
+        flat = ix * nynz + iy * nz + iz
+        wsel = wprod[indx_sel]
+        mesh_mass += np.bincount(flat, weights=mass_w[indx_sel] * wsel, minlength=nmesh)
+        mesh_weights += np.bincount(
+            flat, weights=particle_weights[indx_sel] * wsel, minlength=nmesh
         )
-        np.add.at(
-            mesh_counts,
-            tuple(indx_shift[indx_sel].T),
-            np.prod(grid_func_shift, axis=1)[indx_sel],
-        )
+        mesh_counts += np.bincount(flat, weights=wsel, minlength=nmesh)
+    mesh_mass = mesh_mass.reshape(nx, ny, nz)
+    mesh_weights = mesh_weights.reshape(nx, ny, nz)
+    mesh_counts = mesh_counts.reshape(nx, ny, nz)
     if average:
         with np.errstate(divide="ignore", invalid="ignore"):
             mesh_mass = np.where(mesh_weights > 0, mesh_mass / mesh_weights, 0)
@@ -442,6 +446,56 @@ def project_particle_to_regular_grid(
             grid_scheme,
         )
     return mesh_mass, mesh_weights, mesh_counts
+
+
+def accumulate_ngp_cells(
+    cell_index,
+    box_ndim,
+    particle_mass=None,
+    average=True,
+    dtype=None,
+):
+    """NGP scatter when cell indices are already known.
+
+    Used by field→sky HEALPix, where ``ang2pix`` + ``find_ch_id`` have
+    already assigned ``(row, channel)``.  Skips floor indexing and the
+    3D MAS stencil.
+    """
+    box_ndim = np.asarray(box_ndim, dtype=int)
+    nmesh = int(np.prod(box_ndim))
+    cell_index = np.asarray(cell_index, dtype=np.int64)
+    if cell_index.ndim != 2 or cell_index.shape[1] != box_ndim.size:
+        raise ValueError(
+            f"cell_index shape {cell_index.shape} does not match "
+            f"box_ndim {tuple(box_ndim.tolist())}"
+        )
+    n_part = cell_index.shape[0]
+    if dtype is None:
+        dtype = (
+            np.asarray(particle_mass).dtype if particle_mass is not None else np.float64
+        )
+    out_shape = tuple(int(n) for n in box_ndim)
+    if n_part == 0:
+        z = np.zeros(out_shape, dtype=dtype)
+        return z, z.copy()
+    if particle_mass is None:
+        particle_mass = np.ones(n_part, dtype=np.float64)
+    else:
+        particle_mass = np.asarray(particle_mass, dtype=np.float64)
+    strides = np.empty(box_ndim.size, dtype=np.int64)
+    s = 1
+    for i in range(box_ndim.size - 1, -1, -1):
+        strides[i] = s
+        s *= int(box_ndim[i])
+    flat = (cell_index * strides).sum(axis=1)
+    mesh_mass = np.bincount(flat, weights=particle_mass, minlength=nmesh)
+    mesh_counts = np.bincount(flat, minlength=nmesh).astype(np.float64, copy=False)
+    mesh_mass = mesh_mass.reshape(out_shape)
+    mesh_counts = mesh_counts.reshape(out_shape)
+    if average:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mesh_mass = np.where(mesh_counts > 0, mesh_mass / mesh_counts, 0.0)
+    return np.asarray(mesh_mass, dtype=dtype), np.asarray(mesh_counts, dtype=dtype)
 
 
 def rotation_matrix_to_radec0(ra, dec):
@@ -1183,17 +1237,20 @@ class LightconeGriddingMixin:
             particle_weights=weights_particle,
             compensate=False,  # compensate should be at model level
         )
-        hi_map_rg2, _, _ = project_particle_to_regular_grid(
-            pix_coor_in_box,
-            self.box_len,
-            self.box_ndim,
-            grid_scheme=self.grid_scheme,
-            particle_mass=data_particle,
-            particle_weights=weights_particle,
-            compensate=False,  # compensate should be at model level
-            shift=self.interlace_shift,
-        )
-        hi_map_rg = interlace_two_fields(hi_map_rg, hi_map_rg2, self.interlace_shift)
+        if float(self.interlace_shift) != 0.0:
+            hi_map_rg2, _, _ = project_particle_to_regular_grid(
+                pix_coor_in_box,
+                self.box_len,
+                self.box_ndim,
+                grid_scheme=self.grid_scheme,
+                particle_mass=data_particle,
+                particle_weights=weights_particle,
+                compensate=False,  # compensate should be at model level
+                shift=self.interlace_shift,
+            )
+            hi_map_rg = interlace_two_fields(
+                hi_map_rg, hi_map_rg2, self.interlace_shift
+            )
         hi_map_rg = np.asarray(hi_map_rg, dtype=real_dtype)
         hi_weights_rg = np.asarray(hi_weights_rg, dtype=real_dtype)
         return hi_map_rg, hi_weights_rg, pixel_counts_hi_rg
@@ -1308,16 +1365,19 @@ class LightconeGriddingMixin:
             compensate=False,  # compensate should be at model level
             average=False,
         )
-        gal_map_rg2, _, _ = project_particle_to_regular_grid(
-            gal_pos_i,
-            self.box_len,
-            self.box_ndim,
-            grid_scheme=self.grid_scheme,
-            compensate=False,  # compensate should be at model level
-            average=False,
-            shift=self.interlace_shift,
-        )
-        gal_map_rg = interlace_two_fields(gal_map_rg, gal_map_rg2, self.interlace_shift)
+        if float(self.interlace_shift) != 0.0:
+            gal_map_rg2, _, _ = project_particle_to_regular_grid(
+                gal_pos_i,
+                self.box_len,
+                self.box_ndim,
+                grid_scheme=self.grid_scheme,
+                compensate=False,  # compensate should be at model level
+                average=False,
+                shift=self.interlace_shift,
+            )
+            gal_map_rg = interlace_two_fields(
+                gal_map_rg, gal_map_rg2, self.interlace_shift
+            )
         real_dtype = self.real_dtype
         gal_map_rg = np.asarray(gal_map_rg, dtype=real_dtype)
         gal_weights_rg = np.asarray(gal_weights_rg, dtype=real_dtype)
@@ -1353,36 +1413,8 @@ class LightconeGriddingMixin:
         pos_ra, pos_dec = hp.vec2ang(pos_arr / pos_comov_dist[:, None], lonlat=True)
         return pos_ra, pos_dec, pos_z, pos_comov_dist
 
-    def _grid_field_to_sky_map_wcs(
-        self,
-        field,
-        average=True,
-        mask=True,
-        wproj=None,
-        num_pix_x=None,
-        num_pix_y=None,
-        los_sel=None,
-    ):
-        """
-        Grid a box field onto the WCS map cube (raster ``(num_pix_x, num_pix_y, n_ch)``).
-        """
-        if wproj is None:
-            wproj = self.wproj
-        if num_pix_x is None:
-            num_pix_x = self.num_pix_x
-        if num_pix_y is None:
-            num_pix_y = self.num_pix_y
-        los_sel = (
-            np.arange(self.box_ndim[2], dtype=int)
-            if los_sel is None
-            else np.asarray(los_sel, dtype=int)
-        )
-        expected_shape = (self.box_ndim[0], self.box_ndim[1], los_sel.size)
-        if field.shape != expected_shape:
-            raise ValueError(
-                f"field shape {field.shape} does not match expected shape "
-                f"{expected_shape} for los_sel size {los_sel.size}"
-            )
+    def _box_voxel_centres(self, los_sel):
+        """Box-frame voxel centres for a field with the given LOS slice."""
         x_vec = self.x_vec[0]
         y_vec = self.x_vec[1]
         z_vec = self.x_vec[2][los_sel]
@@ -1394,69 +1426,19 @@ class LightconeGriddingMixin:
         pos_xyz[:, 0] = np.repeat(x_vec, ny * nz)
         pos_xyz[:, 1] = np.tile(np.repeat(y_vec, nz), nx)
         pos_xyz[:, 2] = np.tile(z_vec, nx * ny)
-        pos_ra, pos_dec, pos_z, _ = self.ra_dec_z_for_coord_in_box(pos_xyz)
-        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
-        pos_indx_z = redshift_to_freq(pos_z) - self.nu.min()
-        pos_indx_array = np.empty((nxyz, 3), dtype=self.real_dtype)
-        pos_indx_array[:, 0] = pos_indx_1
-        pos_indx_array[:, 1] = pos_indx_2
-        pos_indx_array[:, 2] = pos_indx_z
-        map_bin, _, count_bin = project_particle_to_regular_grid(
-            pos_indx_array,
-            np.array([num_pix_x, num_pix_y, self.nu.max() - self.nu.min()]),
-            np.array([num_pix_x, num_pix_y, self.nu.size]),
-            particle_mass=field.ravel(),
-            average=average,
-            compensate=False,
-            grid_scheme="nnb",
-        )
-        if mask:
-            map_bin *= self.W_HI
-        return map_bin, count_bin
+        return pos_xyz
 
-    def _grid_field_to_sky_map_healpix(
-        self,
-        field,
-        average=True,
-        mask=True,
-        los_sel=None,
-    ):
-        """
-        Grid a box field onto the sparse HEALPix map ``(len(pixel_id), n_ch)``.
+    def _field_to_sky_healpix_cell_indices(self, pos_xyz, mass_in):
+        """Integer ``(row, channel)`` for each in-survey voxel centre.
 
-        Voxel centres are assigned to HEALPix pixels at ``self.hp_nside`` and to
-        frequency channels via :func:`~meer21cm.util.find_ch_id`. Only voxels whose
-        pixel lies in ``self.pixel_id`` contribute.
+        Pixel/channel assignment is ``hp.ang2pix`` + ``find_ch_id``.
         """
-        los_sel = (
-            np.arange(self.box_ndim[2], dtype=int)
-            if los_sel is None
-            else np.asarray(los_sel, dtype=int)
-        )
-        expected_shape = (self.box_ndim[0], self.box_ndim[1], los_sel.size)
-        if field.shape != expected_shape:
-            raise ValueError(
-                f"field shape {field.shape} does not match expected shape "
-                f"{expected_shape} for los_sel size {los_sel.size}"
-            )
         nside = int(self.hp_nside)
         pixel_id = np.asarray(self.pixel_id, dtype=np.int64)
-        n_out = pixel_id.size
         n_ch = int(self.nu.size)
+        n_out = int(pixel_id.size)
         order = np.argsort(pixel_id, kind="mergesort")
         pix_sorted = pixel_id[order]
-
-        x_vec = self.x_vec[0]
-        y_vec = self.x_vec[1]
-        z_vec = self.x_vec[2][los_sel]
-        nx = x_vec.size
-        ny = y_vec.size
-        nz = z_vec.size
-        nxyz = nx * ny * nz
-        pos_xyz = np.empty((nxyz, 3), dtype=self.real_dtype)
-        pos_xyz[:, 0] = np.repeat(x_vec, ny * nz)
-        pos_xyz[:, 1] = np.tile(np.repeat(y_vec, nz), nx)
-        pos_xyz[:, 2] = np.tile(z_vec, nx * ny)
         pos_ra, pos_dec, pos_z, _ = self.ra_dec_z_for_coord_in_box(pos_xyz)
         hpix = hp.ang2pix(nside, pos_ra, pos_dec, lonlat=True).astype(np.int64)
         pos_nu = np.asarray(redshift_to_freq(pos_z), dtype=np.float64)
@@ -1464,30 +1446,39 @@ class LightconeGriddingMixin:
         valid_ch = (ch_idx >= 0) & (ch_idx < n_ch)
         hpix = hpix[valid_ch]
         ch_idx = ch_idx[valid_ch]
-        mass = np.asarray(field, dtype=self.real_dtype).ravel()[valid_ch]
-
+        mass = np.asarray(mass_in, dtype=self.real_dtype)[valid_ch]
         row_s = np.searchsorted(pix_sorted, hpix)
-        # Do not index pix_sorted[row_s] when row_s == n_out (past end of searchsorted).
         in_bounds = row_s < n_out
         in_survey = np.zeros(hpix.shape, dtype=bool)
         in_survey[in_bounds] = pix_sorted[row_s[in_bounds]] == hpix[in_bounds]
         row = order[row_s[in_survey]]
         ch_idx = ch_idx[in_survey]
         mass = mass[in_survey]
+        cell_index = np.empty((mass.size, 2), dtype=np.int64)
+        if mass.size:
+            cell_index[:, 0] = row
+            cell_index[:, 1] = ch_idx
+        return cell_index, mass, (n_out, n_ch)
 
-        map_sum = np.zeros((n_out, n_ch), dtype=self.real_dtype)
-        cnt = np.zeros((n_out, n_ch), dtype=self.real_dtype)
-        np.add.at(map_sum, (row, ch_idx), mass)
-        np.add.at(cnt, (row, ch_idx), 1.0)
-        if average:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                map_bin = np.where(cnt > 0, map_sum / cnt, 0.0)
-        else:
-            map_bin = map_sum
-        count_bin = cnt
-        if mask:
-            map_bin *= self.W_HI
-        return map_bin, count_bin
+    def _field_to_sky_ngp_particles_wcs(
+        self, pos_xyz, mass_in, wproj, num_pix_x, num_pix_y
+    ):
+        """WCS ``(n_x, n_y, n_ch)`` particles in pixel × frequency-Hz index space."""
+        pos_ra, pos_dec, pos_z, _ = self.ra_dec_z_for_coord_in_box(pos_xyz)
+        pos_indx_1, pos_indx_2 = radec_to_indx(pos_ra, pos_dec, wproj, to_int=False)
+        pos_indx_z = redshift_to_freq(pos_z) - self.nu.min()
+        nxyz = pos_xyz.shape[0]
+        pos = np.empty((nxyz, 3), dtype=self.real_dtype)
+        pos[:, 0] = pos_indx_1
+        pos[:, 1] = pos_indx_2
+        pos[:, 2] = pos_indx_z
+        n_ch = int(self.nu.size)
+        box_ndim = np.array([int(num_pix_x), int(num_pix_y), n_ch], dtype=int)
+        box_len = np.array(
+            [float(num_pix_x), float(num_pix_y), float(self.nu.max() - self.nu.min())]
+        )
+        out_shape = (int(num_pix_x), int(num_pix_y), n_ch)
+        return pos, np.asarray(mass_in), box_len, box_ndim, out_shape
 
     def grid_field_to_sky_map(
         self,
@@ -1500,7 +1491,15 @@ class LightconeGriddingMixin:
         los_sel=None,
     ):
         """
-        Grid a field in the rectangular box onto the sky.
+        Grid a field in the rectangular box onto the sky (NGP only).
+
+        * **WCS** — voxel centres deposited with
+          :func:`project_particle_to_regular_grid` (``grid_scheme='nnb'``)
+          on the 2D angular raster ``(n_x, n_y, n_ch)`` in WCS pixel ×
+          frequency-Hz index space.
+        * **HEALPix** — ``hp.ang2pix`` + :func:`~meer21cm.util.find_ch_id`
+          assign integer ``(row, channel)``; those cells are scattered
+          with :func:`accumulate_ngp_cells` to ``(n_pix, n_ch)``.
 
         Parameters
         ----------
@@ -1538,24 +1537,65 @@ class LightconeGriddingMixin:
             Per-cell accumulation used for averaging (WCS) or voxel counts (HEALPix).
 
         """
+        los_sel = (
+            np.arange(self.box_ndim[2], dtype=int)
+            if los_sel is None
+            else np.asarray(los_sel, dtype=int)
+        )
+        expected_shape = (self.box_ndim[0], self.box_ndim[1], los_sel.size)
+        if field.shape != expected_shape:
+            raise ValueError(
+                f"field shape {field.shape} does not match expected shape "
+                f"{expected_shape} for los_sel size {los_sel.size}"
+            )
+        pos_xyz = self._box_voxel_centres(los_sel)
+        mass_in = np.asarray(field).ravel()
         fmt = self.skymap.format
-        if fmt == "wcs":
-            return self._grid_field_to_sky_map_wcs(
-                field,
-                average=average,
-                mask=mask,
-                wproj=wproj,
-                num_pix_x=num_pix_x,
-                num_pix_y=num_pix_y,
-                los_sel=los_sel,
-            )
         if fmt == "healpix":
-            return self._grid_field_to_sky_map_healpix(
-                field,
-                average=average,
-                mask=mask,
-                los_sel=los_sel,
+            cell_index, mass, out_shape = self._field_to_sky_healpix_cell_indices(
+                pos_xyz, mass_in
             )
+            map_bin, count_bin = accumulate_ngp_cells(
+                cell_index,
+                out_shape,
+                particle_mass=mass,
+                average=average,
+                dtype=self.real_dtype,
+            )
+        elif fmt == "wcs":
+            if wproj is None:
+                wproj = self.wproj
+            if num_pix_x is None:
+                num_pix_x = self.num_pix_x
+            if num_pix_y is None:
+                num_pix_y = self.num_pix_y
+            (
+                pos,
+                mass,
+                box_len,
+                box_ndim,
+                out_shape,
+            ) = self._field_to_sky_ngp_particles_wcs(
+                pos_xyz, mass_in, wproj, num_pix_x, num_pix_y
+            )
+            if mass.size == 0:
+                map_bin = np.zeros(out_shape, dtype=self.real_dtype)
+                count_bin = np.zeros(out_shape, dtype=self.real_dtype)
+            else:
+                map_bin, _, count_bin = project_particle_to_regular_grid(
+                    pos,
+                    box_len,
+                    box_ndim,
+                    particle_mass=mass,
+                    average=average,
+                    compensate=False,
+                    grid_scheme="nnb",
+                )
+        else:
+            raise ValueError(f"unsupported skymap format {fmt!r}")
+        if mask:
+            map_bin = map_bin * self.W_HI
+        return map_bin, count_bin
 
     def gen_random_poisson_galaxy(
         self, sel=None, num_g_rand=None, seed=None, dndz=None
